@@ -61,12 +61,12 @@ ElevationManager::ElevationManager (const CelestialBody *_cbody)
 	char path[MAX_PATH]; char fname[MAX_PATH];
 	sprintf(fname, "%s\\Elev", cbody->Name());
 	g_pOrbiter->Cfg()->PTexPath(path, fname);
-	auto x = std::filesystem::status(path);
+	auto x = std::filesystem::status(oapiResolvePath(path));
 	bDirExists = std::filesystem::is_directory(x);
 
 	sprintf(fname, "%s\\Elev_mod", cbody->Name());
 	g_pOrbiter->Cfg()->PTexPath(path, fname);
-	auto y = std::filesystem::status(path);
+	auto y = std::filesystem::status(oapiResolvePath(path));
 	bModExists = std::filesystem::is_directory(y);
 }
 
@@ -109,7 +109,7 @@ bool ElevationManager::HasElevationTile(int lvl, int ilat, int ilng) const
 			char fname[256], path[256];
 			sprintf(fname, "%s\\Elev\\%02d\\%06d\\%06d.elv", cbody->Name(), lvl, ilat, ilng);
 			g_pOrbiter->Cfg()->PTexPath(path, fname);
-			if (std::filesystem::exists(path)) return true;
+			if (std::filesystem::exists(oapiResolvePath(path))) return true;
 		}
 		if (treeMgr[0]) {
 			if (treeMgr[0]->Idx(lvl, ilat, ilng) != DWORD(-1)) return true;
@@ -132,7 +132,7 @@ INT16 *ElevationManager::LoadElevationTile (int lvl, int ilat, int ilng, double 
 			char fname[256], path[256];
 			sprintf (fname, "%s\\Elev\\%02d\\%06d\\%06d.elv", cbody->Name(), lvl, ilat, ilng);
 			g_pOrbiter->Cfg()->PTexPath(path, fname);
-			if (f = fopen(path, "rb")) {
+			if (f = fopen(oapiResolvePath(path).c_str(), "rb")) {
 				elev = new INT16[ndat];
 				ELEVFILEHEADER hdr;
 				fread (&hdr, sizeof(ELEVFILEHEADER), 1, f);
@@ -216,7 +216,7 @@ bool ElevationManager::LoadElevationTile_mod (int lvl, int ilat, int ilng, doubl
 			char fname[256], path[256];
 			sprintf (fname, "%s\\Elev_mod\\%02d\\%06d\\%06d.elv", cbody->Name(), lvl, ilat, ilng);
 			g_pOrbiter->Cfg()->PTexPath(path, fname);
-			if (f = fopen(path, "rb")) {
+			if (f = fopen(oapiResolvePath(path).c_str(), "rb")) {
 				ELEVFILEHEADER hdr;
 				fread (&hdr, sizeof(ELEVFILEHEADER), 1, f);
 				if (hdr.hdrsize != sizeof(ELEVFILEHEADER)) {

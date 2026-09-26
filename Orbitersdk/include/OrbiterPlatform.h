@@ -8,6 +8,7 @@
 
 // integer types keep their Win32 names and sizes
 typedef uint8_t   BYTE;
+typedef uint8_t   UINT8;
 typedef uint16_t  WORD;
 typedef uint32_t  DWORD;
 typedef int16_t   INT16;

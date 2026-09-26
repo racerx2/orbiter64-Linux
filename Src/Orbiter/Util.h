@@ -87,4 +87,7 @@ struct FltFormat
 // Convert a CSS color string to a DWORD (in 0xbbggrr format)
 DWORD GetCSSColor(const char *col);
 
+// not upstream: GetProcAddress counterpart; dlsym also searches a module's dependencies, only the module's own symbol counts
+void *ModuleProc (void *hModule, const char *name);
+
 #endif //!__UTIL_H

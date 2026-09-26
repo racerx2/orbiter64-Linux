@@ -67,13 +67,13 @@ void PlanetarySystem::Clear ()
 void PlanetarySystem::InitState (const char *fname)
 {
 	char cbuf[256], *pc, *pd;
-	ifstream ifs (fname);
+	ifstream ifs (oapiResolvePath (fname));
 	if (!ifs) return;
 	if (FindLine (ifs, "BEGIN_SHIPS")) {
 		for (;;) {
 			if (!ifs.getline (cbuf, 256)) break;
 			pc = trim_string (cbuf);
-			if (!_stricmp (pc, "END_SHIPS")) break;
+			if (!strcasecmp (pc, "END_SHIPS")) break;
 			for (pd = pc; *pd != '\0' && *pd != ':'; pd++);
 			if (*pd) *pd++ = '\0';
 			else pd = 0;
@@ -170,7 +170,7 @@ bool PlanetarySystem::Read (char *fname, const Config* config, OutputLoadStatusC
 	DWORD j;
 	char cbuf[256], label[128];
 	
-	ifstream ifs (config->ConfigPath(fname));
+	ifstream ifs (oapiResolvePath (config->ConfigPath(fname)));
 	if (!ifs) return false;
 	Clear();
 	if (GetItemString (ifs, "Name", cbuf)) {
@@ -242,33 +242,33 @@ void PlanetarySystem::ScanLabelLists (ifstream &cfg, bool bScanHeaders)
 			if (FindLine(ulf, "BEGIN_HEADER")) {
 				char item[256], value[256];
 				for (;;) {
-					if (!ulf.getline(cbuf, 256) || !_strnicmp(cbuf, "END_HEADER", 10)) break;
+					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
 					sscanf(cbuf, "%s %s", item, value);
-					if (!_stricmp(item, "InitialState")) {
-						if (!_stricmp(value, "on")) list.active = true;
+					if (!strcasecmp(item, "InitialState")) {
+						if (!strcasecmp(value, "on")) list.active = true;
 					}
-					else if (!_stricmp(item, "ColourIdx")) {
+					else if (!strcasecmp(item, "ColourIdx")) {
 						int col;
 						sscanf(value, "%d", &col);
 						list.colour = max(0, min(5, col));
 					}
-					else if (!_stricmp(item, "ShapeIdx")) {
+					else if (!strcasecmp(item, "ShapeIdx")) {
 						int shape;
 						sscanf(value, "%d", &shape);
 						list.shape = max(0, min(6, shape));
 					}
-					else if (!_stricmp(item, "Size")) {
+					else if (!strcasecmp(item, "Size")) {
 						float size;
 						sscanf(value, "%f", &size);
 						list.size = max(0.1f, min(2.0f, size));
 					}
-					else if (!_stricmp(item, "DistanceFactor")) {
+					else if (!strcasecmp(item, "DistanceFactor")) {
 						float distfac;
 						sscanf(value, "%f", &distfac);
 						list.distfac = max(1e-5f, min(1e3f, distfac));
 					}
-					else if (!_stricmp(item, "Frame")) {
-						if (_stricmp(value, "Ecliptic"))
+					else if (!strcasecmp(item, "Frame")) {
+						if (strcasecmp(value, "Ecliptic"))
 							list.flag = 1; // flag for celestial position data
 					}
 				}

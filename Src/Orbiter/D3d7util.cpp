@@ -1,7 +1,7 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #include "D3d7util.h"
 #include "Log.h"
 

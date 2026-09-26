@@ -16,6 +16,8 @@
 #include "Log.h"
 #include "Orbitersdk.h"
 #include "PinesGrav.h"
+#include "Util.h"
+#include <dlfcn.h>
 
 using namespace std;
 
@@ -48,7 +50,7 @@ CelestialBody::CelestialBody (char *fname)
 	DefaultParam ();
 	ClearModule ();
 
-	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+	ifstream ifs (oapiResolvePath (g_pOrbiter->ConfigPath (fname)));
 	if (!ifs) {
 		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath (fname), "while initialising celestial body");
 		g_pOrbiter->TerminateOnError();
@@ -123,7 +125,7 @@ CelestialBody::CelestialBody (char *fname)
 
 	if (GetItemBool (ifs, "HasElements", bInitFromElements) && bInitFromElements) {
 		if (GetItemString (ifs, "ElReference", cbuf) &&
-			!_stricmp (cbuf, "ParentEquator"))
+			!strcasecmp (cbuf, "ParentEquator"))
 			elframe = ELFRAME_PARENTEQU;
 		el = new Elements (fname); TRACENEW
 	}
@@ -716,27 +718,25 @@ void CelestialBody::RegisterModule (char *dllname)
 	char cbuf[256];
 	module = 0;                              // reset new interface
 	memset (&modIntf, 0, sizeof (modIntf));  // reset old interface
-	sprintf (cbuf, "Modules\\Celbody\\%s.dll", dllname); // try new module location
-	hMod = LoadLibrary (cbuf);
+	sprintf (cbuf, "Modules/Celbody/%s.so", dllname); // try new module location
+	hMod = dlopen (oapiResolvePath (cbuf).c_str(), RTLD_NOW);
 	if (!hMod) {
-		sprintf (cbuf, "Modules\\%s.dll", dllname);  // try legacy module location
-		hMod = LoadLibrary (cbuf);
+		sprintf (cbuf, "Modules/%s.so", dllname);  // try legacy module location
+		hMod = dlopen (oapiResolvePath (cbuf).c_str(), RTLD_NOW);
 	}
 	if (!hMod) {
 		// A body whose module cannot be loaded falls back to its config elements, or, if it has none, to a
 		// dynamic integration from a zero relative state; both are wrong silently, so the failure is logged
 		// with the meaning of the two usual causes: a DLL built for the other architecture, and a DLL whose
 		// runtime library (for example an older Visual C++ redistributable) is not installed.
-		const DWORD err = GetLastError();
-		const char *hint = (err == ERROR_BAD_EXE_FORMAT) ? ": the DLL was built for a different architecture than this Orbiter" :
-		                   (err == ERROR_MOD_NOT_FOUND)  ? ": the DLL or one of its dependencies, such as a runtime library it was built against, is missing" : "";
-		LOGOUT_WARN("Celestial body %s: ephemeris module %s.dll could not be loaded (Windows error %lu%s); the body falls back to the orbital elements in its config file, if it has any", name.c_str(), dllname, err, hint);
+		const char *err = dlerror(); // GetLastError + hint: dlerror names the missing file or library, a wrong ELF class or an unresolved symbol
+		LOGOUT_WARN("Celestial body %s: ephemeris module %s.so could not be loaded (%s); the body falls back to the orbital elements in its config file, if it has any", name.c_str(), dllname, err ? err : "unknown error");
 		return;
 	}
 
 	// Check if the module provides instance initialisation
 	typedef CELBODY* (*INITPROC)(OBJHANDLE);
-	INITPROC init_proc = (INITPROC)GetProcAddress (hMod, "InitInstance");
+	INITPROC init_proc = (INITPROC)ModuleProc (hMod, "InitInstance");
 	if (init_proc) { // load interface class
 
 		module = init_proc ((OBJHANDLE)this);
@@ -745,16 +745,16 @@ void CelestialBody::RegisterModule (char *dllname)
 		string funcname;
 
 		funcname = name + "_SetPrecision";
-		modIntf.oplanetSetPrecision = (OPLANET_SetPrecision)GetProcAddress (hMod, funcname.c_str());
+		modIntf.oplanetSetPrecision = (OPLANET_SetPrecision)ModuleProc (hMod, funcname.c_str());
 
 		funcname = name + "_Ephemeris";
-		modIntf.oplanetEphemeris = (OPLANET_Ephemeris)GetProcAddress (hMod, funcname.c_str());
+		modIntf.oplanetEphemeris = (OPLANET_Ephemeris)ModuleProc (hMod, funcname.c_str());
 
 		funcname = name + "_FastEphemeris";
-		modIntf.oplanetFastEphemeris = (OPLANET_FastEphemeris)GetProcAddress (hMod, funcname.c_str());
+		modIntf.oplanetFastEphemeris = (OPLANET_FastEphemeris)ModuleProc (hMod, funcname.c_str());
 
 		funcname = name + "_AtmPrm";
-		modIntf.oplanetAtmPrm = (OPLANET_AtmPrm)GetProcAddress (hMod, funcname.c_str());
+		modIntf.oplanetAtmPrm = (OPLANET_AtmPrm)ModuleProc (hMod, funcname.c_str());
 	}
 }
 
@@ -763,7 +763,7 @@ void CelestialBody::ClearModule ()
 	if (hMod) {
 		if (module) { // new interface
 			typedef void (*EXITPROC)(CELBODY*);
-			EXITPROC exit_proc = (EXITPROC)GetProcAddress (hMod, "ExitInstance");
+			EXITPROC exit_proc = (EXITPROC)ModuleProc (hMod, "ExitInstance");
 			if (exit_proc) { // allow module to clean up
 				exit_proc (module);
 			} else {         // no cleanup - we delete the interface class here
@@ -771,7 +771,7 @@ void CelestialBody::ClearModule ()
 			}
 			module = 0;
 		}
-		FreeLibrary (hMod);
+		dlclose (hMod);
 		hMod = 0;
 	}
 	memset (&modIntf, 0, sizeof (modIntf)); // old interface
@@ -906,7 +906,7 @@ void CELBODY2::clbkInit (FILEHANDLE cfg)
 		strcat (name, "\\Atmosphere.cfg");
 		FILEHANDLE hFile = oapiOpenFile (name, FILE_IN, CONFIG);
 		if (oapiReadItem_string (hFile, (char*)"MODULE_ATM", fname) || oapiReadItem_string (cfg, (char*)"MODULE_ATM", fname)) {
-			if (_stricmp (fname, "[None]"))
+			if (strcasecmp (fname, "[None]"))
 				LoadAtmosphereModule (fname);
 		}
 		oapiCloseFile (hFile, FILE_IN);
@@ -947,7 +947,7 @@ bool CELBODY2::LoadAtmosphereModule (const char *fname)
 	oapiGetObjectName (hBody, name, 256);
 	sprintf (path, "Modules\\Celbody\\%s\\Atmosphere", name);
 	if (!(hAtmModule = g_pOrbiter->LoadModule (path, fname))) return false;
-	ATMOSPHERE *(*func)(CELBODY2*) = (ATMOSPHERE*(*)(CELBODY2*))GetProcAddress (hAtmModule, "CreateAtmosphere");
+	ATMOSPHERE *(*func)(CELBODY2*) = (ATMOSPHERE*(*)(CELBODY2*))ModuleProc (hAtmModule, "CreateAtmosphere");
 	if (!func) {
 		g_pOrbiter->UnloadModule (fname);
 		hAtmModule = NULL;
@@ -961,7 +961,7 @@ bool CELBODY2::FreeAtmosphereModule ()
 {
 	if (!hAtmModule) return false;
 	if (atm) {
-		void (*func)(ATMOSPHERE*) = (void(*)(ATMOSPHERE*))GetProcAddress(hAtmModule, "DeleteAtmosphere");
+		void (*func)(ATMOSPHERE*) = (void(*)(ATMOSPHERE*))ModuleProc(hAtmModule, "DeleteAtmosphere");
 		if (func) {
 			func (atm);
 		} else {

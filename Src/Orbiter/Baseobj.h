@@ -87,11 +87,11 @@ public:
 	// Note that this function is for updates according to changes in sun position.
 	// Fast changing shadows due to dynamic objects should be updated in 'Update'
 
-	virtual void Render (LPDIRECT3DDEVICE7 dev, bool day=true) {}
+	// Render (LPDIRECT3DDEVICE7, bool) left out: Direct3D 7 inline render path, never called (graphics clients render bases)
 	// Object renders itself or part of itself. Only objects which set
 	// OBJSPEC_RENDERBEFORESHADOW and/or OBJESPEC_RENDERAFTERSHADOW need to implement this
 
-	virtual void RenderShadow (LPDIRECT3DDEVICE7 dev) {}
+	// RenderShadow (LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path, never called
 	// Object renders its own shadow or part of it.
 	// Only objects which set OBJSPEC_RENDERSHADOW need to implement this
 
@@ -100,7 +100,7 @@ public:
 	// The radius value includes ground elevation
 	// x=lng [rad], y=lat [rad], z=radius [m]
 
-	D3DVALUE ElevCorrection (D3DVALUE px, D3DVALUE pz);
+	float ElevCorrection (float px, float pz);
 	// Calculate elevation (y) correction as a result of sphere curvature
 	// for position px, pz.
 
@@ -148,8 +148,7 @@ public:
 	Mesh *ExportMesh ();
 	Mesh *ExportShadowMesh (double &elev);
 	void UpdateShadow (Vector &fromsun, double az);
-	void Render (LPDIRECT3DDEVICE7 dev, bool day=true);
-	void RenderShadow (LPDIRECT3DDEVICE7 dev);
+	// Render/RenderShadow (LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path
 	
 private:
 	bool LoadMesh (char *fname); // load mesh into local buffer
@@ -185,9 +184,9 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
+	float  tuscale[3], tvscale[3]; // texture scaling factors
 	struct DYNDATA {
-		D3DVALUE *databuf;    // some geometry data
+		float *databuf;    // some geometry data
 		//D3DVERTEX *gv0;       // location of exported vertices for group 0
 		//VERTEX_XYZ *shvtx;    // location of exported shadow
 	} *dyndata;               // lives only during activation
@@ -214,7 +213,7 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
+	float  tuscale[3], tvscale[3]; // texture scaling factors
 	struct DYNDATA {
 		NTVERTEX *Vtx;       // block vertices
 		//VERTEX_XYZ *shvtx;    // location of exported shadow
@@ -241,9 +240,9 @@ public:
 	void Deactivate ();
 
 private:
-	D3DVALUE  roofh;      // roof height from base to ridge
+	float  roofh;      // roof height from base to ridge
 	LONGLONG  texid[3];   // texture ids
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
+	float  tuscale[3], tvscale[3]; // texture scaling factors
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
 		//VERTEX_XYZ *shvtx;   // location of exported shadow
@@ -272,7 +271,7 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
+	float  tuscale[3], tvscale[3]; // texture scaling factors
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
 		//VERTEX_XYZ *shvtx;   // location of exported shadow
@@ -299,7 +298,7 @@ public:
 
 private:
 	LONGLONG  texid[2];   // texture ids
-	D3DVALUE  tuscale[2], tvscale[2]; // texture scaling factors (mantle and top)
+	float  tuscale[2], tvscale[2]; // texture scaling factors (mantle and top)
 	DWORD     nstep;      // segments for circle
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
@@ -385,22 +384,22 @@ public:
 	BeaconArray (const Base *_base);
 	DWORD GetSpecs() const { return OBJSPEC_RENDERAFTERSHADOW | OBJSPEC_UPDATEVERTEX; }
 	int Read (std::istream &is);
-	void Render (LPDIRECT3DDEVICE7 dev, bool day=true);
+	// Render (LPDIRECT3DDEVICE7, bool) left out: Direct3D 7 inline render path
 	void Update ();
 	void Activate ();
 	void Deactivate();
 
 private:
-	D3DVECTOR end1, end2;
+	oapi::FVECTOR3 end1, end2;
 	DWORD count;
 	double size;
 	Vector *Pos;
 	POSTEXVERTEX *Vtx;
 	WORD *Idx;
 	DWORD nVtx, nIdx;
-	LPDIRECTDRAWSURFACE7 tex;  // texture to use
+	SURFHANDLE tex;            // texture to use
 	float col_r, col_g, col_b; // beacon colour
-	D3DMATERIAL7 *lightmat;
+	MATERIAL *lightmat;
 };
 
 // ======================================================================================
@@ -421,15 +420,15 @@ public:
 	const float GetILSfreq (int i) const { return ILSfreq[i]; }
 
 private:
-	D3DVECTOR end1, end2;
+	oapi::FVECTOR3 end1, end2;
 	float ILSfreq[2];
 	DWORD nrwseg;      // number of texture segments in runway mesh
 	struct RWSEG {                   // runway segment specs
 		DWORD subseg;                // number of sub-segments
-		D3DVALUE len;                // segment length (1=full runway)
-		D3DVALUE tu0, tu1, tv0, tv1; // segment texture coordinates
+		float len;                // segment length (1=full runway)
+		float tu0, tu1, tv0, tv1; // segment texture coordinates
 	} *rwseg;
-	D3DVALUE width;    // runway (half-)width [m]
+	float width;    // runway (half-)width [m]
 	LONGLONG texid[1]; // texture ids
 	struct DYNDATA {
 		DWORD nRwVtx;        // number of vertices for runway mesh
@@ -450,7 +449,7 @@ public:
 	void Setup ();
 	DWORD GetSpecs() const { return OBJSPEC_RENDERAFTERSHADOW | OBJSPEC_UPDATEVERTEX; }
 	int Read (std::istream &is);
-	void Render (LPDIRECT3DDEVICE7 dev, bool day=true);
+	// Render (LPDIRECT3DDEVICE7, bool) left out: Direct3D 7 inline render path
 	void Update ();
 	void Activate ();
 	void Deactivate ();
@@ -461,9 +460,9 @@ private:
 	// by 'ofs'. cpos is camera position, 'size' is beacon size, 'Vtx' is the result
 	// The Vtx pointer is moved past the end of the current list on return
 
-	D3DVECTOR end1, end2;
+	oapi::FVECTOR3 end1, end2;
 	DWORD count1;   // number of side line beacons
-	D3DVALUE width; // runway (half-)width [m]
+	float width; // runway (half-)width [m]
 	struct VASIDATA {                 // parameters for Visual Approach Slope Indicator (VASI)
 		float apprangle;              //    designated approach angle
 		float lightsep;               //    separation between red and white indicator lights
@@ -496,7 +495,7 @@ private:
 		DWORD nVtx, nVtx_white_night, nVtx_white_day, nVtx_red;
 		DWORD nIdx, nIdx_white_night, nIdx_white_day, nIdx_red;
 		DWORD PAPIwhite;
-		LPDIRECTDRAWSURFACE7 tex;
+		SURFHANDLE tex;
 	} *dyndata;
 };
 
@@ -508,29 +507,29 @@ public:
 	Train (const Base *_base);
 
 protected:
-	void Init (const D3DVECTOR &_end1, const D3DVECTOR &_end2);
+	void Init (const oapi::FVECTOR3 &_end1, const oapi::FVECTOR3 &_end2);
 	void Setup ();
 
 	void SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res,
-		const D3DVECTOR &pos, const D3DVECTOR &ofs);
+		const oapi::FVECTOR3 &pos, const oapi::FVECTOR3 &ofs);
 	// Place cabin, defined by vertices 'ref' at position 'pos' (relative
 	// to end1) and return transformed vertices in 'res'
 	// 'ofs' is a translation applied up front
 
-	D3DVALUE MoveCabin (D3DVALUE &pos, D3DVALUE &vel, bool &atmin);
+	float MoveCabin (float &pos, float &vel, bool &atmin);
 	// update cabin position 'pos' and velocity 'vel' and return
 	// the displacement. if 'atmin' is true on exit, the cabin is
 	// at minpos
 
-	D3DVECTOR end1, end2;    // track terminal points in local base coords
-	D3DVECTOR dir;           // direction from end1 to end2
-	D3DVALUE length;         // distance between end1 and end2
-	D3DVALUE minpos, maxpos; // movement limits for train along track
-	D3DVALUE maxspeed;       // max speed [m/s]
-	D3DVALUE slowzone;       // distance over which train decelerates at ends
+	oapi::FVECTOR3 end1, end2;    // track terminal points in local base coords
+	oapi::FVECTOR3 dir;           // direction from end1 to end2
+	float length;         // distance between end1 and end2
+	float minpos, maxpos; // movement limits for train along track
+	float maxspeed;       // max speed [m/s]
+	float slowzone;       // distance over which train decelerates at ends
 
 private:
-	D3DVALUE speedfac;       // aux for cabin movement
+	float speedfac;       // aux for cabin movement
 };
 
 // ======================================================================================
@@ -553,14 +552,14 @@ public:
 	void Deactivate ();
 
 private:
-	D3DVALUE cpos, cvel;          // cabin position (from p1) and speed
+	float cpos, cvel;          // cabin position (from p1) and speed
 	LONGLONG texid;               // texture id for cabin and track
-	D3DVALUE tuscale_track;       // texture scaling (for track only)
+	float tuscale_track;       // texture scaling (for track only)
 	NTVERTEX *cabinvtx;           // pointer to exported cabin vertices
 	VERTEX_XYZ *shvtx;            // pointer to exported shadow vertices
 	struct DYNDATA {
 		NTVERTEX *Vtx;            // cabin and track vertices
-		LPDIRECTDRAWSURFACE7 tex; // texture to use
+		SURFHANDLE tex;           // texture to use
 		int tick;                 // render counter
 	} *dyndata;
 };
@@ -584,21 +583,20 @@ public:
 	void UpdateShadow (Vector &fromsun, double az);
 	void Activate ();
 	void Deactivate ();
-	void Render (LPDIRECT3DDEVICE7 dev, bool day);
-	void RenderShadow (LPDIRECT3DDEVICE7 dev);
+	// Render/RenderShadow (LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path
 
 private:
-	D3DVALUE height;            // height of supports over ground
+	float height;            // height of supports over ground
 	LONGLONG texid;             // texture id for cabin and track
-	D3DVALUE tuscale_track;     // texture scaling (for track only)
+	float tuscale_track;     // texture scaling (for track only)
 	NTVERTEX *cabinvtx[2];     // pointers to exported cabin vertices
 	VERTEX_XYZ *shvtx;          // pointer to exported shadow vertices
 	struct DYNDATA {
-		D3DVALUE cpos[2];       // cabin positions (from end1)
-		D3DVALUE cvel[2];		// cabin speeds
+		float cpos[2];       // cabin positions (from end1)
+		float cvel[2];		// cabin speeds
 		NTVERTEX *rail;        // girder and traverse vertices
 		VERTEX_XYZ *rshvtx;     // pointer to rail shadow
-		LPDIRECTDRAWSURFACE7 dtex, ntex; // textures to use
+		SURFHANDLE dtex, ntex;  // textures to use
 		WORD ng;                // number of girders
 		int tick;               // render counter
 	} *dyndata;
@@ -613,30 +611,29 @@ public:
 	~SolarPlant ();
 	int Read (std::istream &is);
 	DWORD GetSpecs() const { return OBJSPEC_RENDERAFTERSHADOW | OBJSPEC_RENDERSHADOW | OBJSPEC_UPDATEVERTEX; }
-	void Render (LPDIRECT3DDEVICE7 dev, bool day=true);
-	void RenderShadow (LPDIRECT3DDEVICE7 dev);
+	// Render/RenderShadow (LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path
 	void Update ();
 	void UpdateShadow (Vector &fromsun, double az);
 	void Activate ();
 	void Deactivate();
 
 private:
-	D3DVECTOR pos;             // position of footprint centre in local base coords
-	D3DVALUE scale;            // scale factor for panels
-	D3DVALUE rot;              // rotation around vertical axis
-	D3DVALUE sepx, sepz;       // panel spacing in x and z direction [m]
+	oapi::FVECTOR3 pos;             // position of footprint centre in local base coords
+	float scale;            // scale factor for panels
+	float rot;              // rotation around vertical axis
+	float sepx, sepz;       // panel spacing in x and z direction [m]
 	int nrow, ncol;            // number of rows and columns of panel matrix
 	int npanel;                // number of panels in the plant
 	LONGLONG texid;            // texture id
-	D3DVALUE tuscale, tvscale; // texture scaling factors
-	D3DVECTOR *ppos;           // reference positions for each panel
+	float tuscale, tvscale; // texture scaling factors
+	oapi::FVECTOR3 *ppos;           // reference positions for each panel
 	NTVERTEX *Vtx;            // panel vertices
 	VERTEX_XYZ *ShVtx;         // shadow vertices
 	WORD *Idx, *ShIdx;         // panel and shadow mesh indices
 	DWORD nVtx, nShVtx;        // number of vertices
 	DWORD nIdx, nShIdx;        // number of indices
 	bool *flash;               // panel flashing in sunlight?
-	LPDIRECTDRAWSURFACE7 tex;  // texture to use
+	SURFHANDLE tex;            // texture to use
 	Vector nml;                // pointing direction of panels (towards sun)
 	//VBase *vbase;              // associated base visual
 

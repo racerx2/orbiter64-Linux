@@ -7,6 +7,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <QWidget>
+#include <dlfcn.h>
+#include <link.h>
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
@@ -291,4 +293,13 @@ DWORD GetCSSColor(const char *col)
 
 	// Color not found, default to fuchsia
 	return 0xFF00FF;
+}
+
+void *ModuleProc (void *hModule, const char *name)
+{
+	void *proc = dlsym (hModule, name);
+	struct link_map *lm;
+	Dl_info info;
+	if (proc && (dlinfo (hModule, RTLD_DI_LINKMAP, &lm) || !dladdr (proc, &info) || strcmp (info.dli_fname, lm->l_name))) proc = 0;
+	return proc;
 }

@@ -62,7 +62,7 @@ RigidBody::RigidBody (double _mass, double _size, const Vector &_pmi): Body (_ma
 RigidBody::RigidBody (char *fname): Body (fname)
 {
 	SetDefaultCaps ();
-	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+	ifstream ifs (oapiResolvePath (g_pOrbiter->ConfigPath (fname)));
 	if (ifs) ReadGenericCaps (ifs);
 }
 

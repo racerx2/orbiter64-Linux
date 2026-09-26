@@ -9,7 +9,7 @@
 #ifndef __NAV_H
 #define __NAV_H
 
-#include <windows.h>
+// windows.h left out: OrbiterAPI.h brings the Win32-named integer types
 #include <fstream>
 #include "Vessel.h"
 

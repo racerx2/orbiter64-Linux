@@ -55,7 +55,7 @@ Body::Body(char* fname)
 	//g_pOrbiter->OutputLoadStatus (fname, 0);
 	g_pOrbiter->OutputLoadStatus (cpath, 1);
 
-	ifstream ifs (cpath);
+	ifstream ifs (oapiResolvePath (cpath));
 	if (!ifs) return;
 	
 	filename = cpath;

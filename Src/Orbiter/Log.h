@@ -53,7 +53,7 @@ void PrintModules();
 #define LOGOUT_ERR_FILENOTFOUND_MSG(file,msg,...) { \
 	LogOut_Error_Start(); \
 	LogOut("File not found: %s", file); \
-	LogOut(msg, __VA_ARGS__); \
+	LogOut(msg, ##__VA_ARGS__); \
 	LogOut_Location(__FUNCTION__,__FILE__,__LINE__); \
 	LogOut_Error_End(); \
 }

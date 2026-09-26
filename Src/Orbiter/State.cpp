@@ -7,7 +7,7 @@
 // Contains solar system environment, time, focus vessel, scenario help page
 // =============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 
 #include <fstream>
 #include <iomanip>
@@ -41,7 +41,7 @@ void State::Update ()
 
 bool State::Read (const char *fname)
 {
-	ifstream ifs (fname, ios::in);
+	ifstream ifs (oapiResolvePath (fname), ios::in);
 	if (!ifs) return false;
 
 	int i;
@@ -67,31 +67,31 @@ bool State::Read (const char *fname)
 		for (;;) {
 			if (!ifs.getline (cbuf, 256)) break;
 			pc = trim_string (cbuf);
-			if (!_stricmp (pc, "END_ENVIRONMENT")) break;
-			if (!_strnicmp (pc, "Date", 4)) {
+			if (!strcasecmp (pc, "END_ENVIRONMENT")) break;
+			if (!strncasecmp (pc, "Date", 4)) {
 				pc = trim_string (pc+4);
-				if (!_strnicmp (pc, "MJD", 3) && sscanf (pc+3, "%lf", &t) == 1)
+				if (!strncasecmp (pc, "MJD", 3) && sscanf (pc+3, "%lf", &t) == 1)
 					mjd = mjd0 = t;
-				else if (!_strnicmp (pc, "JD", 2) && sscanf (pc+2, "%lf", &t) == 1)
+				else if (!strncasecmp (pc, "JD", 2) && sscanf (pc+2, "%lf", &t) == 1)
 					mjd = mjd0 = t-2400000.5;
-				else if (!_strnicmp (pc, "JE", 2) && sscanf (pc+2, "%lf", &t) == 1)
+				else if (!strncasecmp (pc, "JE", 2) && sscanf (pc+2, "%lf", &t) == 1)
 					mjd = mjd0 = Jepoch2MJD (t);
-			} else if (!_strnicmp (pc, "System", 6)) {
+			} else if (!strncasecmp (pc, "System", 6)) {
 				solsys = trim_string (pc+6);
-			} else if (!_strnicmp (pc, "Context", 7)) {
+			} else if (!strncasecmp (pc, "Context", 7)) {
 				context = trim_string (pc+7);
-			} else if (!_strnicmp (pc, "SplashScreen", 12)) {
+			} else if (!strncasecmp (pc, "SplashScreen", 12)) {
 				char color[256];
 				int nChar = 0;
 				if(sscanf(pc+12, "%255s %n", &color, &nChar)==1) {
 					splashcolor = GetCSSColor(color);
 					splashscreen = trim_string (pc+12+nChar);
 				}
-			} else if (!_strnicmp (pc, "Script", 6)) {
+			} else if (!strncasecmp (pc, "Script", 6)) {
 				script = trim_string (pc+6);
-			} else if (!_strnicmp (pc, "Help", 4)) {
+			} else if (!strncasecmp (pc, "Help", 4)) {
 				scnhelp = trim_string (pc+4);
-			} else if (!_strnicmp (pc, "Playback", 8)) {
+			} else if (!strncasecmp (pc, "Playback", 8)) {
 				playback = trim_string (pc+8);
 			}
 		}
@@ -100,8 +100,8 @@ bool State::Read (const char *fname)
 		for (;;) {
 			if (!ifs.getline (cbuf, 256)) break;
 			pc = trim_string (cbuf);
-			if (!_stricmp (pc, "END_FOCUS")) break;
-			if (!_strnicmp (pc, "Ship", 4)) {
+			if (!strcasecmp (pc, "END_FOCUS")) break;
+			if (!strncasecmp (pc, "Ship", 4)) {
 				focus = trim_string (pc+4);
 			}
 		}

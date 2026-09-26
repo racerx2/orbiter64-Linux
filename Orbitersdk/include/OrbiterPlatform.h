@@ -19,6 +19,11 @@ typedef intptr_t  INT_PTR;
 typedef uintptr_t UINT_PTR;
 typedef intptr_t  LONG_PTR;
 typedef uintptr_t DWORD_PTR;
+typedef uint64_t  DWORDLONG;
+typedef int64_t   LONGLONG;
+typedef int       INT;
+typedef float     FLOAT;
+#define VOID void
 
 #ifndef TRUE
 #define TRUE 1
@@ -34,6 +39,8 @@ typedef struct tagSIZE { LONG cx, cy; } SIZE;
 typedef RECT *LPRECT;
 typedef SIZE *LPSIZE;
 typedef wchar_t *LPWSTR; // wchar_t is UTF-32 on Linux, UTF-16 on Windows
+typedef char *PSTR;
+typedef const char *PCSTR;
 
 // COLORREF is 0x00bbggrr, as on Windows
 #define RGB(r,g,b) ((COLORREF)(((BYTE)(r)|((WORD)((BYTE)(g))<<8))|(((DWORD)(BYTE)(b))<<16)))

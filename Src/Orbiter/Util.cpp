@@ -2,7 +2,11 @@
 // Licensed under the MIT License
 
 #include "Util.h"
-#include <shlobj.h>
+// shlobj.h left out: directories are made with mkdir
+#include <sys/stat.h>
+#include <errno.h>
+#include <unistd.h>
+#include <QWidget>
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
@@ -37,16 +41,24 @@ bool MakePath (const char *fname)
 	char cbuf[256];
 	int i, len = strlen(fname);
 	for (i = len; i > 0; i--)
-		if (fname[i-1] == '\\') break;
+		if (fname[i-1] == '\\' || fname[i-1] == '/') break;
 	if (!i) return false;
-	if (fname[0] != '\\' && fname[1] != ':') {
-		GetCurrentDirectory (256, cbuf);
+	if (fname[0] != '\\' && fname[0] != '/') { // relative path (no drive letters on Linux)
+		if (!getcwd (cbuf, 256)) return false;
 		len = strlen(cbuf);
-		cbuf[len++] = '\\';
+		cbuf[len++] = '/';
 	} else len = 0;
-	strncpy_s (cbuf+len, 256-len, fname, i);
-	int res = SHCreateDirectoryEx (NULL, cbuf, NULL);
-	return res == ERROR_SUCCESS;
+	snprintf (cbuf+len, 256-len, "%.*s", i, fname);
+	// SHCreateDirectoryEx counterpart: create every missing level; ERROR_SUCCESS only if the last level is new
+	std::string path = oapiResolvePath (cbuf);
+	while (path.size() > 1 && path.back() == '/') path.pop_back();
+	bool created = false;
+	for (size_t p = 1; p <= path.size(); p++) {
+		if (p < path.size() && path[p] != '/') continue;
+		created = (mkdir (path.substr (0, p).c_str(), 0755) == 0);
+		if (!created && errno != EEXIST) return false;
+	}
+	return created;
 }
 
 bool iequal(const std::string& s1, const std::string& s2)
@@ -62,21 +74,18 @@ bool iequal(const std::string& s1, const std::string& s2)
 }
 
 
-RECT GetClientPos (HWND hWnd, HWND hChild)
+RECT GetClientPos (QWidget *hWnd, QWidget *hChild)
 {
 	RECT r;
-	POINT p;
-	GetWindowRect (hChild, &r);
-	p.x = r.left, p.y = r.top; ScreenToClient (hWnd, &p);
-	r.left = p.x, r.top = p.y;
-	p.x = r.right, p.y = r.bottom; ScreenToClient (hWnd, &p);
-	r.right = p.x, r.bottom = p.y;
+	QPoint p = hWnd->mapFromGlobal (hChild->mapToGlobal (QPoint (0, 0))); // GetWindowRect + ScreenToClient
+	r.left = p.x(), r.top = p.y();
+	r.right = r.left + hChild->width(), r.bottom = r.top + hChild->height();
 	return r;
 }
 
-void SetClientPos (HWND hWnd, HWND hChild, RECT &r)
+void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r)
 {
-	MoveWindow (hChild, r.left, r.top, r.right-r.left, r.bottom-r.top, true);
+	hChild->setGeometry (r.left, r.top, r.right-r.left, r.bottom-r.top); // MoveWindow: child coordinates are parent-client relative
 }
 
 

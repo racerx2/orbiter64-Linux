@@ -10,10 +10,10 @@
 #define __MESH_H
 
 #define OAPI_IMPLEMENTATION
-#include <d3d.h>
-#include <d3dtypes.h>
+// d3d.h/d3dtypes.h left out: the Direct3D 7 data types become the SDK's own (MATERIAL, FMATRIX4, float)
 #include <iostream>
 #include "OrbiterAPI.h"
+#include "DrawAPI.h"
 
 typedef char Str256[256];
 
@@ -54,7 +54,7 @@ typedef struct {
 	WORD      Flags;
 	DWORD     TexIdxEx[MAXTEX];
 	float     TexMixEx[MAXTEX];
-	LPDIRECT3DVERTEXBUFFER7 VtxBuf;
+	// VtxBuf (LPDIRECT3DVERTEXBUFFER7) left out: vertex buffers belong to the graphics client
 } GroupSpec;
 
 // =======================================================================
@@ -128,19 +128,17 @@ public:
 	int EditGroup (DWORD grp, GROUPEDITSPEC *ges);
 	// edit/replace parts of the group
 
-	bool MakeGroupVertexBuffer (DWORD grp);
-	// copy the group vertex information into a vertex buffer in video memory
-	// Ignored if the device has no T&L capability
+	// MakeGroupVertexBuffer left out: Direct3D 7 inline render path (vertex buffers belong to the graphics client)
 
 	void AddMesh (Mesh &mesh);
 	// Merge "mesh" into "this", by adding all groups of "mesh"
 	// Currently this does not use the materials and textures of "mesh"
 
-	inline D3DMATERIAL7 *GetMaterial (DWORD matidx)
+	inline MATERIAL *GetMaterial (DWORD matidx)
 	{ return (matidx < nMtrl ? Mtrl+matidx : 0); }
 	// return a material pointer
 
-	int AddMaterial (D3DMATERIAL7 &mtrl);
+	int AddMaterial (MATERIAL &mtrl);
 	// Add new material to the mesh and return its list index
 
 	bool DeleteMaterial (DWORD matidx);
@@ -156,32 +154,32 @@ public:
 	bool SetTexture (DWORD texidx, SURFHANDLE tex, bool release_old = true);
 	// replace a texture
 
-	inline LPDIRECTDRAWSURFACE7 GetTexture (DWORD texidx)
-	{ return (texidx < nTex ? (LPDIRECTDRAWSURFACE7)Tex[texidx] : 0); }
+	inline SURFHANDLE GetTexture (DWORD texidx)
+	{ return (texidx < nTex ? Tex[texidx] : 0); }
 	// return a texture pointer
 
 	void SetTexMixture (DWORD grp, DWORD ntex, float mix);
 	void SetTexMixture (DWORD ntex, float mix);
 
-	void ScaleGroup (DWORD grp, D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
-	void Scale (D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
+	void ScaleGroup (DWORD grp, float sx, float sy, float sz);
+	void Scale (float sx, float sy, float sz);
 	// scale an individual group or the whole mesh
 
-	void TranslateGroup (DWORD grp, D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
-	void Translate (D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
+	void TranslateGroup (DWORD grp, float dx, float dy, float dz);
+	void Translate (float dx, float dy, float dz);
 	// translate an individual group or the whole mesh
 
 	enum RotAxis { ROTATE_X, ROTATE_Y, ROTATE_Z };
-	void RotateGroup (DWORD grp, RotAxis axis, D3DVALUE angle);
-	void Rotate (RotAxis axis, D3DVALUE angle);
+	void RotateGroup (DWORD grp, RotAxis axis, float angle);
+	void Rotate (RotAxis axis, float angle);
 	// rotate the mesh 'angle' rad around a coordiate axis
 
-	void TransformGroup (DWORD grp, const D3DMATRIX &mat);
-	void Transform (const D3DMATRIX &mat);
+	void TransformGroup (DWORD grp, const oapi::FMATRIX4 &mat);
+	void Transform (const oapi::FMATRIX4 &mat);
 	// rotate mesh using the provided rotation matrix
 
-	void TexScaleGroup (DWORD grp, D3DVALUE su, D3DVALUE sv);
-	void TexScale (D3DVALUE su, D3DVALUE sv);
+	void TexScaleGroup (DWORD grp, float su, float sv);
+	void TexScale (float su, float sv);
 	// scale the texture coordinates of an individual group or the whole mesh
 
 	void CalcNormals (DWORD grp, bool missingonly);
@@ -193,13 +191,7 @@ public:
 
 	void Clear ();
 
-	DWORD Render (LPDIRECT3DDEVICE7 dev);
-	// render the mesh using device dev
-	// return value is the number of rendered groups
-
-	void RenderGroup (LPDIRECT3DDEVICE7 dev, DWORD grp, bool setstate = true) const;
-	// render a single mesh group
-	// if setstate=false, the group render parameters are skipped
+	// Render/RenderGroup (LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path, never called; the graphics client renders meshes
 
 	static void GlobalEnableSpecular (bool enable);
 	void EnableMatAlpha (bool enable);
@@ -219,14 +211,14 @@ private:
 	GroupSpec *Grp;     // list of group specs	
 
 	DWORD nMtrl;        // number of materials
-	D3DMATERIAL7 *Mtrl; // list of materials used by the mesh
+	MATERIAL *Mtrl;     // list of materials used by the mesh
 
 	DWORD nTex;         // number of textures
 	SURFHANDLE *Tex;    // list of textures used by the mesh
 
 	bool GrpSetup;      // true if the following arrays are allocated
-	D3DVECTOR *GrpCnt;  // list of barycentres for each group (local coords)
-	D3DVALUE *GrpRad;   // list of max. radii for each group
+	oapi::FVECTOR3 *GrpCnt; // list of barycentres for each group (local coords)
+	float *GrpRad;      // list of max. radii for each group
 	DWORD *GrpVis;      // visibility flags for each group
 	char* name;
 

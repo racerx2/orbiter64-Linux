@@ -4,7 +4,7 @@
 #ifndef __cmdline_h
 #define __cmdline_h
 
-#include <windows.h>
+#include "OrbiterPlatform.h" // windows.h left out: UINT, PSTR, PCSTR
 #include <vector>
 #include <string>
 

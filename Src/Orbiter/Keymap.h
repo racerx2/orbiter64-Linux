@@ -8,7 +8,7 @@
 #ifndef __KEYMAP_H
 #define __KEYMAP_H
 
-#include "windows.h"
+// windows.h left out: Orbitersdk.h brings the WORD/DWORD types
 #include "Orbitersdk.h"
 
 // key modifier list

@@ -4,7 +4,7 @@
 #ifndef __UTIL_H
 #define __UTIL_H
 
-#include <windows.h>
+// windows.h left out: OrbiterAPI.h brings the Win32-named integer types
 #include "Vecmat.h"
 #include "OrbiterAPI.h"
 #include "Orbiter.h"
@@ -65,8 +65,8 @@ inline void EulerAngles (const Matrix &R, VECTOR3 &e)
 double rand1();
 // uniformly distributed random number, range [0,1]
 
-RECT GetClientPos (HWND hWnd, HWND hChild);
-void SetClientPos (HWND hWnd, HWND hChild, RECT &r);
+RECT GetClientPos (QWidget *hWnd, QWidget *hChild);
+void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r);
 
 // Floating point output stream formatter
 struct FltFormatter

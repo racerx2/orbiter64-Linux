@@ -16,12 +16,14 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // =================================================================================================================================
 
-#include <windows.h>
+// windows.h, d3d9.h and d3dx9.h left out: Qt fonts and VkCore textures
 #include <stdio.h>
 #include <time.h>
-#include <d3d9.h> 
-#include <d3dx9.h>
+#include <QImage>
+#include <QPainter>
+#include <QFontMetrics>
 #include "D3D9TextMgr.h"
+#include "VkTexFile.h"
 #include "Log.h"
 #include "D3D9Client.h"
 #include "D3D9Surface.h"
@@ -35,7 +37,7 @@
 
 // ----------------------------------------------------------------------------------------
 //
-D3D9Text::D3D9Text(LPDIRECT3DDEVICE9 pDevice) :
+D3D9Text::D3D9Text(VkDev *pDevice) :
 	red        (1.0),
 	green      (1.0),
 	blue       (1.0),
@@ -54,11 +56,9 @@ D3D9Text::D3D9Text(LPDIRECT3DDEVICE9 pDevice) :
 	valign     (),
 	pDev       (pDevice),
 	pTex       (NULL),
-	FontData   (NULL),
-	wfont      (NULL)
+	FontData   (NULL)
 {
-	ZeroMemory(&tm, sizeof(TEXTMETRIC));
-	ZeroMemory(&lf, sizeof(LOGFONT));	
+	memset(&tm, 0, sizeof(D3D9TextMetric));
 }
 
 
@@ -67,8 +67,7 @@ D3D9Text::D3D9Text(LPDIRECT3DDEVICE9 pDevice) :
 D3D9Text::~D3D9Text()
 {
 	SAFE_DELETEA(FontData);
-	SAFE_RELEASE(pTex);
-	SAFE_RELEASE(wfont);
+	SAFE_DELETE(pTex);
 }
 
 
@@ -127,7 +126,17 @@ int D3D9Text::GetLineSpace()
 
 // ----------------------------------------------------------------------------------------
 //
-bool D3D9Text::Init(HFONT hFont)
+// not upstream: the character a byte stands for in the font's charset (TextOutA)
+static QChar CharsetChar(int c, int charset)
+{
+	static const unsigned short cp1252[32] = { 0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F,
+		0x90, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178 };
+	if (charset == GREEK_CHARSET && c >= 0xB8 && c != 0xBB && c != 0xBD && c != 0xD2 && c != 0xFF) return QChar(c + 0x2D0); // Windows-1253 letters
+	if (c >= 0x80 && c < 0xA0) return QChar(cp1252[c - 0x80]);
+	return QChar(c);
+}
+
+bool D3D9Text::Init(QFont *hFont)
 {
 	if (hFont==NULL) {
 		LogErr("NULL Font in D3D9Text::Init()");
@@ -135,7 +144,7 @@ bool D3D9Text::Init(HFONT hFont)
 	}
 
 	// Receive font attributes
-	GetObject(hFont, sizeof(LOGFONT), &lf);
+	lf = *hFont;
 
 	tex_w = 2048;	// Texture Width
 	tex_h = 32;
@@ -144,7 +153,7 @@ bool D3D9Text::Init(HFONT hFont)
 	//
 	FontData = new D3D9FontData[256]();	// zero-initialized
 	
-	LogAlw("[NEW FONT] (%31s), Size=%d, Weight=%d Pitch&Family=%x", lf.lfFaceName, lf.lfHeight, lf.lfWeight, lf.lfPitchAndFamily);
+	LogAlw("[NEW FONT] (%31s), Size=%d, Weight=%d Pitch&Family=%x", lf.family().toUtf8().constData(), lf.pixelSize(), (int)lf.weight(), lf.fixedPitch() ? 1 : 2);
 
 	bool bFirst = true;
 
@@ -155,45 +164,34 @@ restart:
 		return false;
 	}
 
-	LPDIRECT3DTEXTURE9 pSrcTex = NULL;
-	LPDIRECT3DSURFACE9 pSurf = NULL;
+	QImage *pSrcTex = new QImage(tex_w, tex_h, QImage::Format_RGB16); // D3DFMT_R5G6B5 system memory texture
+	pSrcTex->fill(0);
 
-	if (pDev->CreateTexture(tex_w, tex_h, 1, 0, D3DFMT_R5G6B5, D3DPOOL_SYSTEMMEM, &pSrcTex, NULL)!=S_OK) {
-		LogErr("D3D9Text::CreateOffscreenPlainSurface Fail");
-		return false;
-	}
-
-	HR(pSrcTex->GetSurfaceLevel(0, &pSurf));
-
-	HDC hDC = NULL;
-
-	if (pSurf->GetDC(&hDC)!=S_OK) {
-		LogErr("D3D9Text::GetDC Fail");
-		return false;
-	}
+	QPainter *hDC = new QPainter(pSrcTex);
 	
-	HFONT hOld = (HFONT)SelectObject(hDC, hFont);
-
-	if (hOld == NULL) { LogErr("SelectObject(hFont) FAIL"); return false; }
+	hDC->setFont(*hFont); // SelectObject
+	QFontMetrics fm(*hFont, pSrcTex);
 
 	if (bFirst) {
 
 		// Get Text Metrics information
 		// 
-		memset((void *)&tm, 0, sizeof(TEXTMETRIC));
+		memset((void *)&tm, 0, sizeof(D3D9TextMetric));
 		
-		if (GetTextMetrics(hDC, &tm)==false) {
-			LogErr("GetTextMetrics() FAIL");
-			return false;
-		}
+		tm.tmAscent = fm.ascent(); // GetTextMetrics
+		tm.tmDescent = fm.descent();
+		tm.tmHeight = fm.height();
+		tm.tmInternalLeading = std::max(0, fm.height() - (hFont->pixelSize() > 0 ? hFont->pixelSize() : fm.height()));
+		tm.tmExternalLeading = fm.leading();
+		tm.tmAveCharWidth = fm.averageCharWidth();
+		tm.tmMaxCharWidth = fm.maxWidth();
+		tm.tmWeight = (LONG)hFont->weight();
 		bFirst = false;
 	}
 
 	// Draw Charters
 	//
 	
-	char text[] = "c";
-
 	int s = tm.tmMaxCharWidth;
 	int a = tm.tmAscent + 1;
 	int d = tm.tmDescent + 1;
@@ -205,10 +203,8 @@ restart:
 
 	SIZE fnts;
 
-	SetTextAlign(hDC, TA_BASELINE | TA_LEFT);
-	SetTextColor(hDC, 0xFFFFFF);
-	SetBkColor(hDC, 0);
-	SetBkMode(hDC, TRANSPARENT);
+	// TA_BASELINE | TA_LEFT: drawText takes the baseline; white text, transparent background
+	hDC->setPen(QColor(255, 255, 255));
 
 	float tw = 1.0f / float(tex_w);
 	float th = 1.0f / float(tex_h);
@@ -216,10 +212,11 @@ restart:
 	while ( c < 256 ) {
 		pData = Data(c);
 
-		text[0] = c;
+		QChar text = CharsetChar(c, charset);
 	
-		TextOutA(hDC, x, y, text, 1);
-		GetTextExtentPoint32(hDC, text, 1, &fnts);
+		hDC->drawText(QPoint(x, y), QString(text)); // TextOutA
+		fnts.cx = fm.horizontalAdvance(text); // GetTextExtentPoint32
+		fnts.cy = fm.height();
 		
 		pData->sp  = float(fnts.cx);		// Char spacing
 		pData->w   = float(fnts.cx+3);		// Char Width
@@ -246,55 +243,40 @@ restart:
 		}
 
 		if ((y+h) >= tex_h) {
-			pSurf->ReleaseDC(hDC);
-			pSurf->Release();
-			pSrcTex->Release();
+			delete hDC;
+			delete pSrcTex;
 			tex_h *= 2;
 			goto restart;
 		}
 	}
 
-	SelectObject(hDC, hOld);
+	hDC->end();
+	delete hDC;
 
-	pSurf->ReleaseDC(hDC);
-	pSurf->Release();
+	delete hFont; // DeleteObject: the text object took the font over
 
-	DeleteObject(hFont);
-
-	HR(pDev->CreateTexture(tex_w, tex_h, 0, D3DUSAGE_AUTOGENMIPMAP, D3DFMT_R5G6B5, D3DPOOL_DEFAULT, &pTex, NULL));
+	// mip chain generated from the top level (D3DUSAGE_AUTOGENMIPMAP, UpdateTexture, GenerateMipSubLevels)
+	VkPixels px, mips;
+	px.w = tex_w; px.h = tex_h; px.levels = 1; px.layers = 1;
+	px.fmt = VK_FORMAT_R5G6B5_UNORM_PACK16;
+	px.data.assign(1, std::vector<BYTE>((size_t)tex_w * tex_h * 2));
+	for (int row = 0; row < tex_h; row++) memcpy(&px.data[0][(size_t)row * tex_w * 2], pSrcTex->constScanLine(row), (size_t)tex_w * 2);
+	delete pSrcTex;
 
 	LogAlw("Font Video Memory Usage = %u kb",tex_w*tex_h*2/1024);
 
-
-	if (pDev->UpdateTexture(pSrcTex, pTex)!=S_OK) {
+	if (!VkConvertPixels(px, mips, px.fmt, SWZ_NONE, tex_w, tex_h, 0) || !(pTex = VkCreateTexture(pDev, mips, VK_IMAGE_USAGE_SAMPLED_BIT))) {
 		LogErr("D3D9TextMgr: Surface Update Failed");
 		return false;
 	}
 
-	pTex->GenerateMipSubLevels();
-
 #ifdef FNTDBG
 	char texname[256];
-	sprintf_s(texname, 256, "_%s_%d_0x%X.dds", lf.lfFaceName, lf.lfHeight, DWORD(this));
-	D3DXSaveSurfaceToFile(texname, D3DXIFF_DDS, pSurf, NULL, NULL);
+	snprintf(texname, 256, "_%s_%d_0x%lX.dds", lf.family().toUtf8().constData(), lf.pixelSize(), (unsigned long)(uintptr_t)this);
+	VkSavePixels(texname, VKIFF_DDS, mips);
 #endif 
-	pSrcTex->Release();
 
-	// Init WCHAR font
-	HR(D3DXCreateFont(
-		pDev,                 // D3D Device
-		lf.lfHeight,          // Font height
-		lf.lfWidth,           // Font width
-		lf.lfWeight,          // Font Weight
-		1,                    // MipLevels
-		lf.lfItalic,          // Italic
-		lf.lfCharSet,         // CharSet
-		lf.lfOutPrecision,    // OutputPrecision
-		lf.lfQuality,         // Quality
-		lf.lfPitchAndFamily,  // PitchAndFamily
-		lf.lfFaceName,        // pFacename,
-		&wfont                // ppFont
-	));
+	// Init WCHAR font: lf, drawn by PrintSkp(const wchar_t *) (ID3DXFont upstream)
 
 	SetLineSpace(0);
 	SetTextShare(0);
@@ -527,7 +509,7 @@ float D3D9Text::PrintSkp(D3D9Pad *pSkp, float xpos, float ypos, const char *_str
 
 // ----------------------------------------------------------------------------------------
 //
-float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, LPCWSTR str, int len, bool bBox)
+float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, const wchar_t * str, int len, bool bBox)
 {
 
 	if (len == -1) len = int(wcslen(str));
@@ -536,17 +518,13 @@ float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, LPCWSTR str, in
 	     y = LONG(round(ypos));
 	RECT rect = { x, y, 0, 0 };
 
-	// Must Flush() pending graphics before using ID3DXFont interface
+	// Must Flush() pending graphics before drawing the text image
 	pSkp->Flush();
 
-	wfont->DrawTextW(
-		NULL,                     // pSprite
-		str,                      // pString
-		len,                      // Count
-		&rect,                    // pRect
-		DT_CALCRECT | DT_NOCLIP,  // Format
-		pSkp->textcolor.dclr      // Color
-	);
+	QString qs = QString::fromWCharArray(str, len);
+	QFontMetrics wfm(lf);
+	rect.right = rect.left + wfm.horizontalAdvance(qs); // DT_CALCRECT
+	rect.bottom = rect.top + wfm.height();
 
 	LONG width = rect.right - rect.left;
 
@@ -563,16 +541,14 @@ float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, LPCWSTR str, in
 			break;
 	}
 
-	TEXTMETRICW tm;
-	wfont->GetTextMetricsW(&tm);
 	switch(valign) {
 		case 1: // BASELINE
-			rect.top -= tm.tmAscent;
-			rect.bottom -= tm.tmAscent;
+			rect.top -= wfm.ascent();
+			rect.bottom -= wfm.ascent();
 			break;
 		case 2: // BOTTOM
-			rect.top -= tm.tmHeight;
-			rect.bottom -= tm.tmHeight;
+			rect.top -= wfm.height();
+			rect.bottom -= wfm.height();
 			break;
 		default: // TOP
 			break;
@@ -583,7 +559,7 @@ float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, LPCWSTR str, in
 		pSkp->FillRect(rect.left-2, rect.top+1, rect.right+2, rect.bottom-1, pSkp->bkcolor);
 	}
 
-	// Must Flush() pending graphics before using ID3DXFont interface
+	// Must Flush() pending graphics before drawing the text image
 	pSkp->Flush();
 
 	// pSkp->textcolor.dclr is in the wrong format
@@ -591,21 +567,35 @@ float D3D9Text::PrintSkp (D3D9Pad *pSkp, float xpos, float ypos, LPCWSTR str, in
 	col |= (pSkp->textcolor.dclr <<16)&0xff0000;
 	col |= (pSkp->textcolor.dclr >>16)&0xff;
 
-	wfont->DrawTextW(
-		NULL,                              // pSprite
-		str,                               // pString
-		len,                               // Count
-		&rect,                             // pRect
-		DT_VCENTER | DT_LEFT | DT_NOCLIP,  // Format
-		col                                // Color
-	);
+	// ID3DXFont::DrawTextW: the string drawn into an image and copied onto the target
+	if (width > 0 && rect.bottom > rect.top)
+	{
+		QImage img(width, rect.bottom - rect.top, QImage::Format_ARGB32);
+		img.fill(Qt::transparent);
+		QPainter p(&img);
+		p.setFont(lf);
+		p.setPen(QColor((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF, (col >> 24) & 0xFF));
+		p.drawText(0, wfm.ascent(), qs);
+		p.end();
+		VkPixels px;
+		px.w = img.width(); px.h = img.height(); px.levels = 1; px.layers = 1;
+		px.fmt = VK_FORMAT_B8G8R8A8_UNORM;
+		px.data.assign(1, std::vector<BYTE>((size_t)px.w * px.h * 4));
+		for (UINT row = 0; row < px.h; row++) memcpy(&px.data[0][(size_t)row * px.w * 4], img.constScanLine(row), (size_t)px.w * 4);
+		VkTex *pText = VkCreateTexture(pDev, px, VK_IMAGE_USAGE_SAMPLED_BIT);
+		if (pText) {
+			pSkp->CopyRectNative(pText, NULL, rect.left, rect.top);
+			pSkp->Flush();
+			delete pText; // released once the frame is done with it
+		}
+	}
 
 	return float(rect.right - rect.left);
 }
 
 // -----------------------------------------------------------------------------------------------
 //
-void D3D9Text::D3D9TechInit(D3D9Client *_gc, LPDIRECT3DDEVICE9 pDev)
+void D3D9Text::D3D9TechInit(D3D9Client *_gc, VkDev *pDev)
 {
 	Buffer = new char[512];
 }

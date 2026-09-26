@@ -12,8 +12,7 @@
 #include "D3D9Pad.h"
 #include "GDIPad.h"
 //#include "gcCore.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "VkTexFile.h" // d3d9.h/d3dx9.h: textures, surfaces and the texture file functions
 
 #define	MAP_NORMAL			0
 #define	MAP_SPECULAR		1
@@ -33,21 +32,38 @@
 
 #define OAPISURF_SKP_GDI_WARN	0x00000001
 
-LPDIRECT3DTEXTURE9	NatLoadSpecialTexture(const char* fname, const char* ext);
+// not upstream: D3DSURFACE_DESC counterpart (Pool and Usage as flags)
+struct SurfDesc {
+	UINT Width, Height;
+	VkFormat Format;
+	VkSwz Swizzle;          // X8R8G8B8, L8, A8 and A8L8 formats
+	VkImageUsageFlags Usage;
+	bool RenderTarget;      // D3DUSAGE_RENDERTARGET
+	bool Dynamic;           // D3DUSAGE_DYNAMIC
+	bool AutoGenMipMap;     // D3DUSAGE_AUTOGENMIPMAP
+	bool SysMem;            // D3DPOOL_SYSTEMMEM: GDI/CPU access; the image itself is on the GPU like the rest
+	VkSampleCountFlagBits MultiSampleType;
+};
+
+// resource types, numbered as D3DRESOURCETYPE
+#define NATTYPE_SURFACE		1
+#define NATTYPE_TEXTURE		3
+
+VkTex *				NatLoadSpecialTexture(const char* fname, const char* ext);
 SURFHANDLE			NatLoadSurface(const char* file, DWORD flags, bool bPath = false);
-bool				NatSaveSurface(const char* file, LPDIRECT3DRESOURCE9 pResource);
+bool				NatSaveSurface(const char* file, VkTex *pResource);
 SURFHANDLE			NatCreateSurface(int width, int height, DWORD flags);
 SURFHANDLE			NatGetMipSublevel(SURFHANDLE hSrf, int level);
 bool				NatGenerateMipmaps(SURFHANDLE hSrf);
 SURFHANDLE			NatCompressSurface(SURFHANDLE hSurface, DWORD flags);
 bool				NatCreateName(char* out, int mlen, const char* fname, const char* id);
-DWORD				NatConvertFormat_DX_to_OAPI(DWORD Format);
+DWORD				NatConvertFormat_DX_to_OAPI(DWORD Format, VkSwz swz = SWZ_NONE);
 DWORD				NatConvertFormat_OAPI_to_DX(DWORD Format);
 const char*			NatUsage(DWORD Usage);
-const char*			NatPool(D3DPOOL Pool);
+const char*			NatPool(bool SysMem);
 const char*			NatOAPIFlags(DWORD AF);
 const char*			NatOAPIFormat(DWORD PF);
-void				NatDumpResource(LPDIRECT3DRESOURCE9 pResource);
+void				NatDumpResource(VkTex *pResource);
 
 
 #define ERR_DC_NOT_AVAILABLE		0x1
@@ -63,21 +79,22 @@ class SurfNative
 	friend class GDIPad;
 
 	struct _HDC_LOCAL {
-		HDC hDC;
-		LPDIRECT3DSURFACE9 pSrf;
+		QPainter *hDC;
+		QImage *pSrf;         // CPU copy the painter draws into, uploaded by ReleaseDC
 	};
 
 public:
 
-							SurfNative(LPDIRECT3DRESOURCE9 pSrf, DWORD Flags, LPDIRECT3DSURFACE9 pDep = NULL);
+							SurfNative(VkTex *pTex, DWORD Flags, VkSurf *pDep = NULL);	// texture resource
+							SurfNative(VkSurf *pSrf, DWORD Flags, VkSurf *pDep = NULL);	// surface resource (owned)
 							SurfNative(SurfNative* hOrigin);
 							~SurfNative();
 
-	void					AddMap(DWORD id, LPDIRECT3DTEXTURE9 pMap);
-	const D3DSURFACE_DESC*	GetDesc() const { return &desc; }
+	void					AddMap(DWORD id, VkTex *pMap);
+	const SurfDesc*			GetDesc() const { return &desc; }
 	bool					GenerateMipMaps();
 	bool					Decompress();
-	LPDIRECT3DTEXTURE9		GetGDICache(DWORD Flags);
+	// GetGDICache left out: GetDC paints on a CPU copy of any surface
 	void					IncRef() { RefCount++; }
 	bool					DecRef() { RefCount--; return RefCount <= 0; }
 	bool					DeClone();
@@ -95,56 +112,54 @@ public:
 
 	const char*				GetName() const { return name; }
 	void					SetName(const char*);
-	HDC						GetDC();
-	void					ReleaseDC(HDC);
+	QPainter *				GetDC();
+	void					ReleaseDC(QPainter *);
 
 	bool					IsGDISurface() const;
 	bool					IsCompressed() const;
 	bool					IsBackBuffer() const;
-	bool					IsTexture() const { return (type == D3DRTYPE_TEXTURE); }
+	bool					IsTexture() const { return (type == NATTYPE_TEXTURE); }
 	bool					IsRenderTarget() const;
 	bool					Is3DRenderTarget() const;
 	bool					IsPowerOfTwo() const;
-	bool					IsSystemMem() const { return (desc.Pool == D3DPOOL_SYSTEMMEM); }
+	bool					IsSystemMem() const { return desc.SysMem; }
 	bool					IsAdvanced() const { return (Flags & OAPISURFACE_MAPS); }
 	bool					IsColorKeyEnabled() const { return (ColorKey != SURF_NO_CK); }
 	bool					IsClone() const { return hOrigin != this; }
 
-	LPDIRECT3DSURFACE9		GetTempSurface();
-	LPDIRECT3DRESOURCE9		GetResource() const { return pResource; }
-	LPDIRECT3DSURFACE9		GetDepthStencil() const { return pDepth; }
-	LPDIRECT3DSURFACE9		GetSurface();
-	LPDIRECT3DTEXTURE9		GetTexture() const;
-	LPDIRECT3DTEXTURE9		GetMap(int type) const { return pMap[type]; }
-	LPDIRECT3DTEXTURE9		GetMap(int type, int type2) const { return (pMap[type] ? pMap[type] : pMap[type2]); }
+	VkSurf *				GetTempSurface();
+	VkTex *					GetResource() const { return pResource ? pResource : (pSurface ? pSurface->tex : NULL); }
+	VkSurf *				GetDepthStencil() const { return pDepth; }
+	VkSurf *				GetSurface();
+	VkTex *					GetTexture() const;
+	VkTex *					GetMap(int type) const { return pMap[type]; }
+	VkTex *					GetMap(int type, int type2) const { return (pMap[type] ? pMap[type] : pMap[type2]); }
 	D3D9Pad*				GetPooledSketchPad();
 	void					SetColorKey(DWORD ck);			// Enable and set color key
 	DWORD					GetColorKey() const { return ColorKey; }
 
 	bool					Fill(LPRECT r, DWORD color);
 
-	DWORD					GetTextureSizeInBytes(LPDIRECT3DTEXTURE9 pT);
-	DWORD					GetFormatSizeInBytes(D3DFORMAT Format, DWORD pixels);
+	DWORD					GetTextureSizeInBytes(VkTex *pT);
+	DWORD					GetFormatSizeInBytes(VkFormat Format, DWORD pixels);
 
 	void					LogSpecs() const;
-	bool					CreateDX7();
-	void					DX7Sync(bool bUp);
+	// CreateDX7/DX7Sync left out: the DX7 lockable copy only existed to give render targets a GDI DC
 
 
 	// -------------------------------------------------------------------------------
 
 	char					name[128];				// Surface name
 	SURFHANDLE				hOrigin;
-	D3DSURFACE_DESC			desc;					// Surface size and format description
-	D3DRESOURCETYPE			type;					// Resource type
-	LPDIRECT3DTEXTURE9		pGDICache;				// Low level GDI cache for surface syncing
-	LPDIRECT3DSURFACE9		pTemp;					// Cache for in-surface blitting
-	LPDIRECT3DSURFACE9		pDepth;					// DepthStencil surface for 3D rendering
-	LPDIRECT3DSURFACE9		pTexSurf;				// Texture "surface" level cache
-	LPDIRECT3DRESOURCE9		pResource;				// Main resource
-	LPDIRECT3DSURFACE9		pDX7;
-	LPDIRECT3DTEXTURE9		pMap[MAP_MAX_COUNT];	// Additional texture maps _norm, _rghn, _spec, etc...
-	LPDIRECT3DDEVICE9		pDevice;
+	SurfDesc				desc;					// Surface size and format description
+	DWORD					type;					// Resource type
+	VkSurf *				pTemp;					// Cache for in-surface blitting
+	VkSurf *				pDepth;					// DepthStencil surface for 3D rendering
+	VkSurf *				pTexSurf;				// Texture "surface" level cache
+	VkTex *					pResource;				// Main resource (texture)
+	VkSurf *				pSurface;				// Main resource (surface)
+	VkTex *					pMap[MAP_MAX_COUNT];	// Additional texture maps _norm, _rghn, _spec, etc...
+	VkDev *					pDevice;
 	DWORD					ColorKey;
 	DWORD					Flags;					// Surface Flags/Attribs
 	DWORD					Mipmaps;				// Mipmap count. 1 = no mipmaps

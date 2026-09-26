@@ -22,9 +22,7 @@
 #include <queue>
 #include <string>
 #include "DrawAPI.h"
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h> // DWORD, LPCSTR
-#undef WIN32_LEAN_AND_MEAN
+#include "OrbiterPlatform.h" // DWORD
 
 typedef struct {
 	double time;
@@ -65,7 +63,7 @@ void   D3D9SetTime(D3D9Time &inout, double ref);
 
 void   MissingRuntimeError();
 void   FailedDeviceError();
-void   LogAttribs(DWORD attrib, DWORD w, DWORD h, LPCSTR origin);
+void   LogAttribs(DWORD attrib, DWORD w, DWORD h, const char *origin);
 
 #define HALT() { RuntimeError(__FILE__,__FUNCTION__,__LINE__); }
 

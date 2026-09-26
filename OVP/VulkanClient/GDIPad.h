@@ -9,8 +9,7 @@
 
 #include "OrbiterAPI.h"
 #include "D3D9Client.h"
-#include <d3d9.h> 
-#include <d3dx9.h>
+// d3d9.h/d3dx9.h left out: nothing Direct3D is used here
 
 
 // ======================================================================
@@ -23,7 +22,7 @@
 class GDIPad: public oapi::Sketchpad {
 public:
 
-	GDIPad (SURFHANDLE s, HDC hdc);
+	GDIPad (SURFHANDLE s, QPainter *hdc);
 	~GDIPad ();
 
 	/**
@@ -261,15 +260,15 @@ public:
 	 */
 	void PolyPolyline (const oapi::IVECTOR2 *pt, const int *npt, const int nline);
 
-	HDC GetDC();
+	QPainter *GetDC();
 
 	bool TextW(int x, int y, const LPWSTR str, int len);
 
 private:
-	HDC hDC;
-	HFONT hFontA;
+	QPainter *hDC;
+	QFont *hFontA;
 
-	HFONT hFont0;      // original GDI font
+	QFont *hFont0;      // original GDI font
 	oapi::Font *cfont; // currently selected font (NULL if none)
 	oapi::Pen *cpen;   // currently selected pen (NULL if none)
 	oapi::Brush *cbrush; // currently selected brush (NULL if none)

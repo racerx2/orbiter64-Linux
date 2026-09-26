@@ -73,8 +73,8 @@ typedef void * HPOLY;
 
 
 /// \brief Render HUD and Planetarium callback function 
-typedef void(__cdecl *__gcRenderProc)(oapi::Sketchpad *pSkp, void *pParam);
-typedef void(__cdecl *__gcGenericProc)(int iUser, void *pUser, void *pParam);
+typedef void(*__gcRenderProc)(oapi::Sketchpad *pSkp, void *pParam);
+typedef void(*__gcGenericProc)(int iUser, void *pUser, void *pParam);
 
 
 // ===========================================================================
@@ -165,7 +165,7 @@ public:
 	* \param AA Level of requested anti-aliasing. Valid values are 0, 2, 4, 8
 	* \return Handle to a Swap object or NULL in a case of an error
 	*/
-	virtual HSWAP		RegisterSwap(HWND hWnd, HSWAP hSwap = NULL, int AA = 0);
+	virtual HSWAP		RegisterSwap(QWindow *hWnd, HSWAP hSwap = NULL, int AA = 0);
 	
 	/**
 	* \brief Flip backbuffer to a front
@@ -459,13 +459,13 @@ public:
 	* \param fname name of the file to be loaded.
 	* \return Bitmap handle of NULL in a case of an error
 	*/
-	virtual HBITMAP			LoadBitmapFromFile(const char* fname);
+	virtual QImage *			LoadBitmapFromFile(const char* fname);
 
 	/**
 	* \brief Get render window handle
 	* \return Render window handle
 	*/
-	virtual HWND			GetRenderWindow();
+	virtual QWindow *			GetRenderWindow();
 
 	/**
 	* \brief Register generic callback function

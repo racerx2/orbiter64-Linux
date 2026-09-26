@@ -7,6 +7,7 @@
 #include "OrbiterAPI.h"
 #include "DrawAPI.h"
 #include <assert.h>
+#include <dlfcn.h> // GetModuleHandle, GetProcAddress
 
 #ifndef __GC_CORE
 #define __GC_CORE
@@ -19,7 +20,7 @@ using namespace oapi;
 class gcCore;
 class gcCore2;
 
-typedef void (__cdecl* __gcBindCoreMethod)(void** ppFnc, const char* name);
+typedef void (* __gcBindCoreMethod)(void** ppFnc, const char* name);
 
 static class gcCore2 *pCoreInterface = NULL;
 
@@ -141,8 +142,8 @@ namespace gcTileFlags
 
 
 /// \brief Render HUD and Planetarium callback function 
-typedef void(__cdecl *__gcRenderProc)(oapi::Sketchpad *pSkp, void *pParam);
-typedef void(__cdecl *__gcGenericProc)(int iUser, void *pUser, void *pParam);
+typedef void(*__gcRenderProc)(oapi::Sketchpad *pSkp, void *pParam);
+typedef void(*__gcGenericProc)(int iUser, void *pUser, void *pParam);
 
 
 
@@ -373,7 +374,7 @@ public:
 	* \param AA Level of requested anti-aliasing. Valid values are 0, 2, 4, 8
 	* \return Handle to a Swap object or NULL in a case of an error
 	*/
-	gc_interface HSWAP RegisterSwap(HWND hWnd, HSWAP hSwap = NULL, int AA = 0);
+	gc_interface HSWAP RegisterSwap(QWindow *hWnd, HSWAP hSwap = NULL, int AA = 0);
 	
 	/**
 	* \brief Flip backbuffer to a front
@@ -691,13 +692,13 @@ public:
 	* \param fname name of the file to be loaded.
 	* \return Bitmap handle of NULL in a case of an error
 	*/
-	gc_interface HBITMAP LoadBitmapFromFile(const char *fname);
+	gc_interface QImage * LoadBitmapFromFile(const char *fname);
 
 	/**
 	* \brief Get render window handle
 	* \return Render window handle
 	*/
-	gc_interface HWND GetRenderWindow();
+	gc_interface QWindow * GetRenderWindow();
 
 	/**
 	* \brief Register generic callback function
@@ -904,9 +905,10 @@ public:
 inline gcCore2* gcGetCoreInterface()
 {
 	if (pCoreInterface) return pCoreInterface;
-	HMODULE hModule = GetModuleHandle("D3D9Client.dll");
+	void *hModule = dlopen("VulkanClient.so", RTLD_NOW | RTLD_NOLOAD); // GetModuleHandle: matches the client's SONAME
 	if (hModule) {
-		__gcBindCoreMethod pBindCoreMethod = (__gcBindCoreMethod)GetProcAddress(hModule, "gcBindCoreMethod");
+		__gcBindCoreMethod pBindCoreMethod = (__gcBindCoreMethod)dlsym(hModule, "gcBindCoreMethod");
+		dlclose(hModule); // RTLD_NOLOAD took a reference, GetModuleHandle doesn't
 		if (pBindCoreMethod) return (pCoreInterface = new gcCore2(pBindCoreMethod));
 		else oapiWriteLogV("gcGetCoreInterface() FAILED");
 	} else oapiWriteLogV("gcGetCoreInterface() FAILED. D3D9Client Not Found");

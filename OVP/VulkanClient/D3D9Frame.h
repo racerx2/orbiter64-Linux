@@ -25,12 +25,21 @@
 #ifndef D3D9FRAME_H
 #define D3D9FRAME_H
 
-#include <d3d9.h>
-#include <d3dx9.h>
+// d3d9.h/d3dx9.h left out: VkCore.h (via D3D9Client.h)
 #include "Orbitersdk.h"
 #include "D3D9Client.h"
 
 class SurfNative;
+
+// not upstream: the device limits the client reads (D3DCAPS9 counterpart)
+struct VkDevCaps {
+	DWORD MaxTextureWidth;
+	DWORD MaxTextureHeight;
+	DWORD MaxTextureRepeat;
+	DWORD MaxPrimitiveCount;
+	DWORD MaxVertexIndex;
+	DWORD MaxAnisotropy;
+};
 
 //-----------------------------------------------------------------------------
 // Name: CD3DFramework9
@@ -43,7 +52,7 @@ class CD3DFramework9
 private:
 
     // Internal variables for the framework class
-    HWND                   hWnd;               // The window object
+    QWindow *              hWnd;               // The window object
     BOOL                   bIsFullscreen;      // Fullscreen vs. windowed
     BOOL                   bVertexTexture;
     BOOL                   bAAEnabled;
@@ -56,45 +65,54 @@ private:
     DWORD                  dwRenderWidth;      // Dimensions of the render target
     DWORD                  dwRenderHeight;     // Dimensions of the render target
     DWORD                  dwFSMode;
-    LPDIRECT3DDEVICE9      pDevice;            // The D3D device
-    LPD3DXFONT             pLargeFont;
-    LPD3DXFONT             pSmallFont;
+    VkDev *                pDevice;            // The D3D device
+    // pLargeFont/pSmallFont (ID3DXFont) left out: the client draws its labels with its own fonts
     DWORD                  dwZBufferBitDepth;  // Bit depth of z-buffer
     DWORD                  dwStencilBitDepth;  // Bit depth of stencil buffer (0 if none)
     DWORD                  Adapter;
     DWORD                  Mode;
     DWORD                  MultiSample;
 	DWORD				   dwDisplayMode;
-    LPDIRECT3DSURFACE9     pRenderTarget;
-	LPDIRECT3DSURFACE9     pDepthStencil;
+    VkSurf *               pRenderTarget;      // offscreen backbuffer, blitted to the swapchain by Present()
+	VkSurf *               pDepthStencil;
+	VkSurf *               pResolve;           // single sample copy of a multisampled backbuffer
     SURFHANDLE			   pBackBuffer;
-	D3DPRESENT_PARAMETERS  d3dPP;
-	D3DCAPS9               caps;
+	// d3dPP (D3DPRESENT_PARAMETERS) → the swapchain below
+	VkSurfaceKHR           surface;
+	VkSwapchainKHR         swapchain;
+	VkFormat               swapFormat;
+	VkExtent2D             swapExtent;
+	std::vector<VkImage>   swapImages;
+	std::vector<VkSemaphore> presentSem;       // one per swapchain image
+	VkSemaphore            acquireSem[VkDev::NFRAMES];
+	int                    iAcquire;
+	VkDevCaps              caps;
     RECT                   rcScreenRect;       // Screen rect for window
 
     // Internal functions for the framework class
 
-    HRESULT CreateFullscreenMode();
-    HRESULT CreateWindowedMode();
+    int     CreateFullscreenMode();
+    int     CreateWindowedMode();
+    int     CreateSwapchain();                 // not upstream
+    void    DestroySwapchain();                // not upstream
     void    Clear();
 
 public:
 
     // Access functions for DirectX objects
-    inline HWND                GetRenderWindow() const          { return hWnd; }
-    inline LPDIRECT3DDEVICE9   GetD3DDevice() const             { return pDevice; }
+    inline QWindow *           GetRenderWindow() const          { return hWnd; }
+    inline VkDev *             GetD3DDevice() const             { return pDevice; }
     inline DWORD               GetZBufferBitDepth() const       { return dwZBufferBitDepth; }
     inline DWORD               GetStencilBitDepth() const       { return dwStencilBitDepth; }
+    inline VkFormat            GetDepthFormat() const           { return dwZBufferBitDepth == 24 ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT; } // not upstream: D3DFMT_D24S8
     inline DWORD               GetWidth() const                 { return dwRenderWidth; }  // Dimensions of the render target
     inline DWORD               GetHeight() const                { return dwRenderHeight; } // Dimensions of the render target
     inline const RECT          GetScreenRect() const            { return rcScreenRect; }
-    inline LPDIRECT3DSURFACE9  GetBackBuffer() const            { return pRenderTarget; }
+    inline VkSurf *            GetBackBuffer() const            { return pRenderTarget; }
     inline SURFHANDLE          GetBackBufferHandle() const      { return pBackBuffer; }
-    inline LPD3DXFONT          GetLargeFont() const             { return pLargeFont; }
-    inline LPD3DXFONT          GetSmallFont() const             { return pSmallFont; }
     inline BOOL                IsFullscreen() const             { return bIsFullscreen; }
     inline BOOL                IsAAEnabled() const              { return bAAEnabled; }
-    inline const D3DCAPS9 *    GetCaps() const                  { return &caps; }
+    inline const VkDevCaps *   GetCaps() const                  { return &caps; }
     inline BOOL                HasVertexTextureSup() const      { return bVertexTexture; }
     inline BOOL                GetVSync() const                 { return (bNoVSync==FALSE); }
 
@@ -102,9 +120,11 @@ public:
 	inline DWORD			   GetDisplayMode() const			{ return dwDisplayMode; }
 
     // Creates the Framework
-    HRESULT Initialize(HWND hWnd, struct oapi::GraphicsClient::VIDEODATA *vData);
+    int Initialize(QWindow *hWnd, struct oapi::GraphicsClient::VIDEODATA *vData);
 
-    HRESULT DestroyObjects();
+    int DestroyObjects();
+
+    int Present();                             // not upstream: IDirect3DDevice9::Present
 
             CD3DFramework9();
            ~CD3DFramework9();

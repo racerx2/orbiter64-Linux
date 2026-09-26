@@ -16,8 +16,13 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // =================================================================================================================================
 
-#include <Windows.h>
 #include "Log.h"
+#include <mutex>
+#include <chrono>
+#include <csignal>
+#include <cstdarg>
+#include <unistd.h>
+#include <QMessageBox>
 #include "D3D9Util.h"
 #include "D3D9Config.h"
 #include "D3D9Client.h"
@@ -41,31 +46,32 @@ int iEnableLog = 0;     // Index into EnableLogStack
 int EnableLogStack[16];
 int iLine = 0;          // Line number counter (iLine <= LOG_MAX_LINES)
 
-__int64 qpcFrq = 0;     // Performance counter frequency
-__int64 qpcRef = 0;     // Performance counter reference value (for "delta t")
-__int64 qpcStart = 0;   // Performance counter start value ("zero")
+int64_t qpcFrq = 0;     // Performance counter frequency
+int64_t qpcRef = 0;     // Performance counter reference value (for "delta t")
+int64_t qpcStart = 0;   // Performance counter start value ("zero")
 
 std::queue<std::string> D3D9DebugQueue;
 
-CRITICAL_SECTION LogCrit;
+std::recursive_mutex LogCrit;
+
+// QueryPerformanceCounter counterpart: steady_clock ticks in nanoseconds
+static int64_t Ticks() { return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 
 //-------------------------------------------------------------------------------------------
 //
 void MissingRuntimeError()
 {
-	MessageBoxA(NULL,
-		"DirectX Runtimes may be missing. See /Doc/D3D9Client.pdf for more information",
-		"D3D9Client Initialization Failed", MB_OK);
+	QMessageBox::warning(NULL, "VulkanClient Initialization Failed",
+		"The Vulkan runtime may be missing. See /Doc/D3D9Client.pdf for more information");
 }
 
 //-------------------------------------------------------------------------------------------
 //
 void FailedDeviceError()
 {
-	MessageBoxA(NULL,
-		"DirectX9 Device Failed. Try to enable EnableDX12Wrapper from D3D9Client.cfg",
-		"D3D9Client Initialization Failed", MB_OK);
+	QMessageBox::warning(NULL, "VulkanClient Initialization Failed",
+		"Vulkan device failed. The graphics card needs Vulkan 1.4 with shader objects (see Orbiter.log)"); // the DX12 wrapper hint doesn't apply
 }
 
 //-------------------------------------------------------------------------------------------
@@ -74,9 +80,9 @@ void RuntimeError(const char* File, const char* Fnc, UINT Line)
 {
 	if (Config->DebugLvl == 0) return;
 	char buf[256];
-	sprintf_s(buf, 256, "[%s] [%s] Line: %u See Orbiter.log for details.", File, Fnc, Line);
-	MessageBoxA(g_client->GetRenderWindow(), buf, "Critical Error:", MB_OK);
-	DebugBreak();
+	snprintf(buf, 256, "[%s] [%s] Line: %u See Orbiter.log for details.", File, Fnc, Line);
+	QMessageBox::critical(NULL, "Critical Error:", buf);
+	raise(SIGTRAP); // DebugBreak
 }
 
 //-------------------------------------------------------------------------------------------
@@ -115,20 +121,20 @@ int PrintModules(DWORD pAdr)
 
 //-------------------------------------------------------------------------------------------
 // Log OAPISURFACE_xxx attributes
-void LogAttribs(DWORD attrib, DWORD w, DWORD h, LPCSTR origin)
+void LogAttribs(DWORD attrib, DWORD w, DWORD h, const char *origin)
 {
 	char buf[512];
-	sprintf_s(buf, 512, "%s (%d,%d)[0x%X]: ", origin, w, h, attrib);
-	if (attrib&OAPISURFACE_TEXTURE)		 strcat_s(buf, 512, "OAPISURFACE_TEXTURE ");
-	if (attrib&OAPISURFACE_RENDERTARGET) strcat_s(buf, 512, "OAPISURFACE_RENDERTARGET ");
-	if (attrib&OAPISURFACE_GDI)			 strcat_s(buf, 512, "OAPISURFACE_GDI ");
-	if (attrib&OAPISURFACE_SKETCHPAD)	 strcat_s(buf, 512, "OAPISURFACE_SKETCHPAD ");
-	if (attrib&OAPISURFACE_MIPMAPS)		 strcat_s(buf, 512, "OAPISURFACE_MIPMAPS ");
-	if (attrib&OAPISURFACE_NOMIPMAPS)	 strcat_s(buf, 512, "OAPISURFACE_NOMIPMAPS ");
-	if (attrib&OAPISURFACE_ALPHA)		 strcat_s(buf, 512, "OAPISURFACE_ALPHA ");
-	if (attrib&OAPISURFACE_NOALPHA)		 strcat_s(buf, 512, "OAPISURFACE_NOALPHA ");
-	if (attrib&OAPISURFACE_UNCOMPRESS)	 strcat_s(buf, 512, "OAPISURFACE_UNCOMPRESS ");
-	if (attrib&OAPISURFACE_SYSMEM)		 strcat_s(buf, 512, "OAPISURFACE_SYSMEM ");
+	snprintf(buf, 512, "%s (%d,%d)[0x%X]: ", origin, w, h, attrib);
+	if (attrib&OAPISURFACE_TEXTURE)		 strcat(buf, "OAPISURFACE_TEXTURE ");
+	if (attrib&OAPISURFACE_RENDERTARGET) strcat(buf, "OAPISURFACE_RENDERTARGET ");
+	if (attrib&OAPISURFACE_GDI)			 strcat(buf, "OAPISURFACE_GDI ");
+	if (attrib&OAPISURFACE_SKETCHPAD)	 strcat(buf, "OAPISURFACE_SKETCHPAD ");
+	if (attrib&OAPISURFACE_MIPMAPS)		 strcat(buf, "OAPISURFACE_MIPMAPS ");
+	if (attrib&OAPISURFACE_NOMIPMAPS)	 strcat(buf, "OAPISURFACE_NOMIPMAPS ");
+	if (attrib&OAPISURFACE_ALPHA)		 strcat(buf, "OAPISURFACE_ALPHA ");
+	if (attrib&OAPISURFACE_NOALPHA)		 strcat(buf, "OAPISURFACE_NOALPHA ");
+	if (attrib&OAPISURFACE_UNCOMPRESS)	 strcat(buf, "OAPISURFACE_UNCOMPRESS ");
+	if (attrib&OAPISURFACE_SYSMEM)		 strcat(buf, "OAPISURFACE_SYSMEM ");
 	LogDbg("BlueViolet", buf);
 }
 
@@ -138,7 +144,7 @@ void D3D9DebugLog(const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+	vsnprintf(ErrBuf, ERRBUF, format, args);
 	va_end(args);
 
 	D3D9DebugQueue.push(std::string(ErrBuf));
@@ -148,7 +154,7 @@ void D3D9DebugLog(const char *format, ...)
 //
 void D3D9DebugLogVec(const char* lbl, oapi::FVECTOR4 &v)
 {
-	sprintf_s(ErrBuf, ERRBUF, "%s = [%f, %f, %f, %f]", lbl, v.x, v.y, v.z, v.w);
+	snprintf(ErrBuf, ERRBUF, "%s = [%f, %f, %f, %f]", lbl, v.x, v.y, v.z, v.w);
 	D3D9DebugQueue.push(std::string(ErrBuf));
 }
 
@@ -156,16 +162,16 @@ void D3D9DebugLogVec(const char* lbl, oapi::FVECTOR4 &v)
 //
 void D3D9InitLog(const char *file)
 {
-	QueryPerformanceFrequency((LARGE_INTEGER*)&qpcFrq);
-	QueryPerformanceCounter((LARGE_INTEGER*)&qpcStart);
+	qpcFrq = 1000000000; // QueryPerformanceFrequency: nanosecond ticks
+	qpcStart = Ticks();
 
-	if (fopen_s(&d3d9client_log,file,"w+")) { d3d9client_log=NULL; } // Failed
+	if (!(d3d9client_log = fopen(oapiResolvePath(file).c_str(),"w+"))) { d3d9client_log=NULL; } // Failed
 	else {
-		QueryPerformanceCounter((LARGE_INTEGER*)&qpcRef);
-		InitializeCriticalSectionAndSpinCount(&LogCrit, 256);
-		fprintf_s(d3d9client_log,"<!DOCTYPE html><html><head><title>D3D9Client Log</title></head><body bgcolor=black text=white>");
-		fprintf_s(d3d9client_log,"<center><h2>D3D9Client Log</h2><br>");
-		fprintf_s(d3d9client_log,"</center><hr><br><br>");
+		qpcRef = Ticks();
+		// InitializeCriticalSectionAndSpinCount left out: the std::recursive_mutex needs no setup
+		fprintf(d3d9client_log,"<!DOCTYPE html><html><head><title>VulkanClient Log</title></head><body bgcolor=black text=white>");
+		fprintf(d3d9client_log,"<center><h2>VulkanClient Log</h2><br>");
+		fprintf(d3d9client_log,"</center><hr><br><br>");
 	}
 }
 
@@ -177,7 +183,6 @@ void D3D9CloseLog()
 		fprintf(d3d9client_log,"</body></html>");
 		fclose(d3d9client_log);
 		d3d9client_log = NULL;
-		DeleteCriticalSection(&LogCrit);
 	}
 }
 
@@ -185,8 +190,8 @@ void D3D9CloseLog()
 //
 double D3D9GetTime()
 {
-	__int64 qpcCurrent;
-	QueryPerformanceCounter((LARGE_INTEGER*)&qpcCurrent);
+	int64_t qpcCurrent;
+	qpcCurrent = Ticks();
 	return double(qpcCurrent) * 1e6 / double(qpcFrq);
 }
 
@@ -194,23 +199,23 @@ double D3D9GetTime()
 //
 void D3D9SetTime(D3D9Time &inout, double ref)
 {
-	__int64 qpcCurrent;
-	QueryPerformanceCounter((LARGE_INTEGER*)&qpcCurrent);
+	int64_t qpcCurrent;
+	qpcCurrent = Ticks();
 	double time = double(qpcCurrent) * 1e6 / double(qpcFrq);
 	inout.time += (time - ref);
 	inout.count += 1.0;
-	inout.peak = max((time - ref), inout.peak);
+	inout.peak = std::max((time - ref), inout.peak);
 }
 
 //-------------------------------------------------------------------------------------------
 //
 char *my_ctime()
 {
-	__int64 qpcCurrent;
-	QueryPerformanceCounter((LARGE_INTEGER*)&qpcCurrent);
+	int64_t qpcCurrent;
+	qpcCurrent = Ticks();
 	double time = double(qpcCurrent-qpcRef) * 1e3 / double(qpcFrq);
 	double start = double(qpcCurrent-qpcStart) / double(qpcFrq);
-	sprintf_s(OprBuf,OPRBUF,"%d: %.1fs %05.2fms", iLine++, start, time);
+	snprintf(OprBuf,OPRBUF,"%d: %.1fs %05.2fms", iLine++, start, time);
 	qpcRef = qpcCurrent;
 	return OprBuf;
 }
@@ -224,7 +229,7 @@ void escape_ErrBuf () {
 	n += replace_all(buf, "<", "&lt;");
 	n += replace_all(buf, ">", "&gt;");
 	if (n) {
-		strcpy_s(ErrBuf, ARRAYSIZE(ErrBuf), buf.c_str());
+		snprintf(ErrBuf, sizeof(ErrBuf), "%s", buf.c_str());
 	}
 }
 
@@ -235,20 +240,20 @@ void LogTrace(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>3) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=DarkGrey> ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=DarkGrey> ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		escape_ErrBuf();
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -259,14 +264,14 @@ void LogAlw(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>0) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=Olive> ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=Olive> ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
 
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 
 		va_end(args);
 
@@ -274,7 +279,7 @@ void LogAlw(const char *format, ...)
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -285,15 +290,15 @@ void LogDbg(const char *color, const char *format, ...)
 	if (d3d9client_log == NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>2) {
-		EnterCriticalSection(&LogCrit);
+		LogCrit.lock();
 
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=%s> ", my_ctime(), th, color);
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=%s> ", my_ctime(), th, color);
 
 		va_list args;
 		va_start(args, format);
 
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 
 		va_end(args);
 
@@ -302,7 +307,7 @@ void LogDbg(const char *color, const char *format, ...)
 		fputs("</font><br>\n", d3d9client_log);
 		fflush(d3d9client_log);
 
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -313,15 +318,15 @@ void LogClr(const char *color, const char *format, ...)
 	if (d3d9client_log == NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>1) {
-		EnterCriticalSection(&LogCrit);
+		LogCrit.lock();
 
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=%s> ", my_ctime(), th, color);
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=%s> ", my_ctime(), th, color);
 
 		va_list args;
 		va_start(args, format);
 
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 
 		va_end(args);
 
@@ -330,7 +335,7 @@ void LogClr(const char *color, const char *format, ...)
 		fputs("</font><br>\n", d3d9client_log);
 		fflush(d3d9client_log);
 
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -342,13 +347,13 @@ void LogOapi(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>0) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=Olive> ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=Olive> ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		oapiWriteLogV("D3D9: %s", ErrBuf);
@@ -357,7 +362,7 @@ void LogOapi(const char *format, ...)
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -368,13 +373,13 @@ void LogErr(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>0) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%lX)</font><font color=Red> [ERROR] ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%X)</font><font color=Red> [ERROR] ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		oapiWriteLogV("D3D9ERROR: %s", ErrBuf);
@@ -383,7 +388,7 @@ void LogErr(const char *format, ...)
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -394,20 +399,20 @@ void LogBlu(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>1) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%lX)</font><font color=#1E90FF> ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%X)</font><font color=#1E90FF> ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		escape_ErrBuf();
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -418,13 +423,13 @@ void LogWrn(const char *format, ...)
 	if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>1) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%lX)</font><font color=Yellow> [WARNING] ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%X)</font><font color=Yellow> [WARNING] ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		escape_ErrBuf();
@@ -432,7 +437,7 @@ void LogWrn(const char *format, ...)
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
 		oapiWriteLogV("D3D9Info: %s", ErrBuf);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}
 }
 
@@ -444,13 +449,13 @@ void LogBreak(const char* format, ...)
 	if (iLine > LOG_MAX_LINES) return;
 	if (uEnableLog > 1) {
 
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%lX)</font><font color=Yellow> [WARNING] ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log, "<font color=Gray>(%s)(0x%X)</font><font color=Yellow> [WARNING] ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-		_vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+		vsnprintf(ErrBuf, ERRBUF, format, args);
 		va_end(args);
 
 		escape_ErrBuf();
@@ -458,9 +463,9 @@ void LogBreak(const char* format, ...)
 		fputs("</font><br>\n", d3d9client_log);
 		fflush(d3d9client_log);
 		oapiWriteLogV("D3D9Debug: %s", ErrBuf);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 
-		if (Config->DebugBreak) DebugBreak();
+		if (Config->DebugBreak) raise(SIGTRAP); // DebugBreak
 	}
 }
 
@@ -471,20 +476,20 @@ void LogOk(const char *format, ...)
 	/*if (d3d9client_log==NULL) return;
 	if (iLine>LOG_MAX_LINES) return;
 	if (uEnableLog>2) {
-		EnterCriticalSection(&LogCrit);
-		DWORD th = GetCurrentThreadId();
-		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%lX)</font><font color=#00FF00> ", my_ctime(), th);
+		LogCrit.lock();
+		DWORD th = (DWORD)gettid(); // GetCurrentThreadId
+		fprintf(d3d9client_log,"<font color=Gray>(%s)(0x%X)</font><font color=#00FF00> ", my_ctime(), th);
 
 		va_list args;
 		va_start(args, format);
-        _vsnprintf_s(ErrBuf, ERRBUF, ERRBUF, format, args);
+        vsnprintf(ErrBuf, ERRBUF, format, args);
         va_end(args);
 
 		escape_ErrBuf();
 		fputs(ErrBuf,d3d9client_log);
 		fputs("</font><br>\n",d3d9client_log);
 		fflush(d3d9client_log);
-		LeaveCriticalSection(&LogCrit);
+		LogCrit.unlock();
 	}*/
 }
 

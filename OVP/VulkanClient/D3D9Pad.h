@@ -8,10 +8,11 @@
 
 #include "OrbiterAPI.h"
 #include "D3D9Client.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+// d3d9.h/d3dx9.h left out: VkCore.h and D3DXMath.h (via D3D9Client.h)
+#include "VkShader.h"
 #include <memory>
 #include <stack>
+#include <mutex>
 #include "DrawAPI.h"
 
 using namespace oapi;
@@ -230,7 +231,7 @@ public:
 	 * \param folder shader folder (based on Orbiter's "Modules" path).
 	 *   Usually this should be set to "D3D9Client")
 	 */
-	static void D3D9TechInit(D3D9Client *gc, LPDIRECT3DDEVICE9 pDev);
+	static void D3D9TechInit(D3D9Client *gc, VkDev *pDev);
 	static void SinCos(int n, int i);
 	/**
 	 * \brief Release global parameters
@@ -473,7 +474,7 @@ public:
 	 * \brief Obsolete. Will return NULL
 	 * \return null
 	 */
-	HDC GetDC();
+	QPainter *GetDC();
 
 	bool TextW(int x, int y, const LPWSTR str, int len = -1);
 
@@ -548,7 +549,7 @@ public:
 	*  - EndDrawing() will flush all pending instructions from the draw queue.
 	*/
 	void EndDrawing();
-	void BeginDrawing(LPDIRECT3DSURFACE9 pRenderTgt, LPDIRECT3DSURFACE9 pDepthStensil = NULL);
+	void BeginDrawing(VkSurf *pRenderTgt, VkSurf *pDepthStensil = NULL);
 	void BeginDrawing();
 
 	inline void FlushAll() { Flush(NULL); }
@@ -558,12 +559,12 @@ public:
 	LPD3DXMATRIX WorldMatrix();
 	DWORD GetLineHeight(); ///< Return height of a character in the currently selected font with "internal leading"
 	const char *GetName() const { return name; }
-	LPDIRECT3DSURFACE9 GetRenderTarget() const { return pTgt; }
+	VkSurf *GetRenderTarget() const { return pTgt; }
 	bool IsStillDrawing() const { return bBeginDraw; }
 	void LoadDefaults();
 
-	void CopyRectNative(LPDIRECT3DTEXTURE9 pSrc, const LPRECT s, int tx, int ty);
-	void StretchRectNative(LPDIRECT3DTEXTURE9 pSrc, const RECT *s, const RECT *t);
+	void CopyRectNative(VkTex *pSrc, const LPRECT s, int tx, int ty);
+	void StretchRectNative(VkTex *pSrc, const RECT *s, const RECT *t);
 	
 
 private:
@@ -584,9 +585,9 @@ private:
 	void AddRectIdx(WORD aV);
 	void FillRect(int l, int t, int r, int b, const SkpColor &c);
 	void TexChange(SURFHANDLE hNew);
-	bool TexChangeNative(LPDIRECT3DTEXTURE9 hNew);
-	RECT GetFullRectNative(LPDIRECT3DTEXTURE9 hSrc);
-	void SetFontTextureNative(LPDIRECT3DTEXTURE9 hNew);
+	bool TexChangeNative(VkTex *hNew);
+	RECT GetFullRectNative(VkTex *hSrc);
+	void SetFontTextureNative(VkTex *hNew);
 	void SetupDevice(Topo tNew);
 	RECT GetFullRect(SURFHANDLE hSrc);
 	void IsLineTopologyAllowed();
@@ -635,11 +636,11 @@ private:
 	int cx, cy;
 	RECT tgt;
 
-	D3DSURFACE_DESC	   tgt_desc;
-	LPDIRECT3DSURFACE9 pTgt;
-	LPDIRECT3DSURFACE9 pDep;
-	LPDIRECT3DTEXTURE9 hTexture;
-	LPDIRECT3DTEXTURE9 hFontTex;
+	struct { UINT Width, Height; VkFormat Format; } tgt_desc; // D3DSURFACE_DESC
+	VkSurf *pTgt;
+	VkSurf *pDep;
+	VkTex *hTexture;
+	VkTex *hFontTex;
 
 
 
@@ -666,51 +667,51 @@ private:
 
 	void Log(const char *format, ...) const;
 	static FILE *log;
-	static CRITICAL_SECTION LogCrit;
+	static std::recursive_mutex LogCrit;
 	static std::map< MESHHANDLE, class SketchMesh*> MeshMap;
 	static WORD *Idx;				// List of indices
 	static SkpVtx *Vtx;		// List of vertices
 	static D3D9Client *gc;
-	static LPDIRECT3DDEVICE9 pDev;
+	static VkDev *pDev;
 	static LPD3DXVECTOR2 pSinCos[5];
-	static LPDIRECT3DTEXTURE9 pNoise;
+	static VkTex *pNoise;
 	// -------------------------------------------
 
 
 	// Rendering pipeline configuration. Applies to every instance of this class
 	//
-	static ID3DXEffect*	FX;
-	static D3DXHANDLE	eDrawMesh;
-	static D3DXHANDLE	eSketch;
-	static D3DXHANDLE	eWVP;			// Transformation matrix
-	static D3DXHANDLE	eTex0;
-	static D3DXHANDLE	eFnt0;
-	static D3DXHANDLE	eNoiseTex;
-	static D3DXHANDLE   eNoiseColor;
-	static D3DXHANDLE   eColorMatrix;
-	static D3DXHANDLE   eGamma;
-	static D3DXHANDLE   eW;
-	static D3DXHANDLE   ePen;
-	static D3DXHANDLE   eVP;
-	static D3DXHANDLE   eFov;
-	static D3DXHANDLE   eRandom;
-	static D3DXHANDLE   eTarget;
-	static D3DXHANDLE   eKey;
-	static D3DXHANDLE   eDashEn;
-	static D3DXHANDLE   eTexEn;
-	static D3DXHANDLE   eKeyEn;
-	static D3DXHANDLE   eFntEn;
-	static D3DXHANDLE   eWidth;
-	static D3DXHANDLE   eWide;
-	static D3DXHANDLE   eSize;
-	static D3DXHANDLE   eMtrl;
-	static D3DXHANDLE   eShade;
-	static D3DXHANDLE   ePos;
-	static D3DXHANDLE   ePos2;
-	static D3DXHANDLE   eCov;
-	static D3DXHANDLE   eCovEn;
-	static D3DXHANDLE   eClearEn;
-	static D3DXHANDLE   eEffectsEn;
+	static VkEffect*	FX;
+	static VkFxHandle	eDrawMesh;
+	static VkFxHandle	eSketch;
+	static VkFxHandle	eWVP;			// Transformation matrix
+	static VkFxHandle	eTex0;
+	static VkFxHandle	eFnt0;
+	static VkFxHandle	eNoiseTex;
+	static VkFxHandle   eNoiseColor;
+	static VkFxHandle   eColorMatrix;
+	static VkFxHandle   eGamma;
+	static VkFxHandle   eW;
+	static VkFxHandle   ePen;
+	static VkFxHandle   eVP;
+	static VkFxHandle   eFov;
+	static VkFxHandle   eRandom;
+	static VkFxHandle   eTarget;
+	static VkFxHandle   eKey;
+	static VkFxHandle   eDashEn;
+	static VkFxHandle   eTexEn;
+	static VkFxHandle   eKeyEn;
+	static VkFxHandle   eFntEn;
+	static VkFxHandle   eWidth;
+	static VkFxHandle   eWide;
+	static VkFxHandle   eSize;
+	static VkFxHandle   eMtrl;
+	static VkFxHandle   eShade;
+	static VkFxHandle   ePos;
+	static VkFxHandle   ePos2;
+	static VkFxHandle   eCov;
+	static VkFxHandle   eCovEn;
+	static VkFxHandle   eClearEn;
+	static VkFxHandle   eEffectsEn;
 };
 
 
@@ -731,7 +732,7 @@ class D3D9PadFont: public oapi::Font {
 
 public:
 
-	static void D3D9TechInit(LPDIRECT3DDEVICE9 pDev);
+	static void D3D9TechInit(VkDev *pDev);
 
 	/**
 	 * \brief Font constructor.
@@ -757,17 +758,17 @@ public:
 	 */
 	~D3D9PadFont ();
 
-	HFONT	GetGDIFont () const;
+	QFont *	GetGDIFont () const;
 	DWORD	GetQuality() const { return Quality; }
 	int		GetTextLength(const char *pText, int len) const;
 	int		GetIndexByPosition(const char *pText, int pos, int len) const;
 
 private:
 	D3D9TextPtr pFont;
-	HFONT hFont;
+	QFont *hFont;
 	DWORD Quality;
 	float rotation;
-	static LPDIRECT3DDEVICE9 pDev;
+	static VkDev *pDev;
 };
 
 
@@ -779,7 +780,7 @@ class D3D9PadPen: public oapi::Pen {
 	friend class GDIPad;
 
 public:
-	static void D3D9TechInit(LPDIRECT3DDEVICE9 pDev);
+	static void D3D9TechInit(VkDev *pDev);
 
 	/**
 	 * \brief Pen constructor.
@@ -800,7 +801,7 @@ private:
 	int style;
 	int width;
 	SkpColor clr;
-	HPEN hPen;
+	::QPen *hPen;
 };
 
 
@@ -812,7 +813,7 @@ class D3D9PadBrush: public oapi::Brush {
 	friend class GDIPad;
 
 public:
-	static void D3D9TechInit(LPDIRECT3DDEVICE9 pDev);
+	static void D3D9TechInit(VkDev *pDev);
 
 	/**
 	 * \brief Brush constructor.
@@ -828,7 +829,7 @@ public:
 
 private:
 	SkpColor clr;
-	HBRUSH hBrush;
+	::QBrush *hBrush;
 };
 
 
@@ -837,9 +838,9 @@ class D3D9PolyBase
 {
 	DWORD alloc_id;
 public:
-					D3D9PolyBase(int _type) : alloc_id('POLY') { type = _type; version = 1; }
+					D3D9PolyBase(int _type) : alloc_id(0x504F4C59) { type = _type; version = 1; } // 'POLY'
 	virtual			~D3D9PolyBase() { }
-	virtual	void	Draw(D3D9Pad*, LPDIRECT3DDEVICE9 pDev) = 0;
+	virtual	void	Draw(D3D9Pad*, VkDev *pDev) = 0;
 	virtual void	Release() = 0;
 
 	int version;
@@ -853,18 +854,18 @@ class D3D9PolyLine : public D3D9PolyBase
 {
 
 public:
-	D3D9PolyLine(LPDIRECT3DDEVICE9 pDev, const FVECTOR2 *pt, int npt, bool bConnect);
+	D3D9PolyLine(VkDev *pDev, const FVECTOR2 *pt, int npt, bool bConnect);
 	~D3D9PolyLine();
 
 	void Update(const FVECTOR2 *pt, int npt, bool bConnect);
-	void Draw(D3D9Pad*, LPDIRECT3DDEVICE9 pDev);
+	void Draw(D3D9Pad*, VkDev *pDev);
 	void Release();
 
 private:
 	bool bLoop;
 	WORD nVtx, nPt, nIdx, iI, vI;
-	LPDIRECT3DVERTEXBUFFER9 pVB; ///< (Local) Vertex buffer pointer
-	LPDIRECT3DINDEXBUFFER9 pIB;
+	VkBuf *pVB; ///< (Local) Vertex buffer pointer
+	VkBuf *pIB;
 };
 
 
@@ -873,17 +874,17 @@ class D3D9Triangle : public D3D9PolyBase
 {
 
 public:
-	D3D9Triangle(LPDIRECT3DDEVICE9 pDev, const gcCore::clrVtx *pt, int npt, int style);
+	D3D9Triangle(VkDev *pDev, const gcCore::clrVtx *pt, int npt, int style);
 	~D3D9Triangle();
 
 	void Update(const gcCore::clrVtx *pt, int npt);
-	void Draw(D3D9Pad*, LPDIRECT3DDEVICE9 pDev);
+	void Draw(D3D9Pad*, VkDev *pDev);
 	void Release();
 
 private:
 	int style;
 	WORD nPt;
-	LPDIRECT3DVERTEXBUFFER9 pVB;
+	VkBuf *pVB;
 };
 
 #endif

@@ -10,7 +10,11 @@
 #include "OapiExtension.h"
 #include "D3D9Config.h"
 #include "OrbiterAPI.h"
-#include <psapi.h>
+// psapi.h left out: the loaded libraries come from dl_iterate_phdr
+#include <link.h>
+#include <sys/stat.h>
+#include <climits>
+#include <cstdlib>
 
 
 // ===========================================================================
@@ -18,11 +22,11 @@
 
 DWORD OapiExtension::elevationMode = 0;
 // Orbiters default directories
-std::string OapiExtension::configDir(".\\Config\\");
-std::string OapiExtension::meshDir(".\\Meshes\\");
-std::string OapiExtension::textureDir(".\\Textures\\");
-std::string OapiExtension::hightexDir(".\\Textures2\\");
-std::string OapiExtension::scenarioDir(".\\Scenarios\\");
+std::string OapiExtension::configDir("./Config/");
+std::string OapiExtension::meshDir("./Meshes/");
+std::string OapiExtension::textureDir("./Textures/");
+std::string OapiExtension::hightexDir("./Textures2/");
+std::string OapiExtension::scenarioDir("./Scenarios/");
 
 std::string OapiExtension::startupScenario = OapiExtension::ScanCommandLine();
 
@@ -88,34 +92,29 @@ const void *OapiExtension::GetConfigParam (DWORD paramtype)
 
 // ===========================================================================
 // Logs loaded D3D9 DLLs and their versions to Orbiter.log
+// (the Vulkan loader, the ICD driver and glslang libraries here; the version is the soname's)
 //
 void OapiExtension::LogD3D9Modules(void)
 {
-	HMODULE hMods[1024];
-	HANDLE hProcess;
-	DWORD cbNeeded;
-
-	// Get a handle to the process.
-	hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, GetCurrentProcessId());
-	if (NULL == hProcess) {
-		return;
-	}
+	std::vector<std::string> mods;
 
 	// Get a list of all the modules in this process.
-	if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded))
+	dl_iterate_phdr([](struct dl_phdr_info *info, size_t, void *data) -> int {
+		if (info->dlpi_name && info->dlpi_name[0]) ((std::vector<std::string> *)data)->push_back(info->dlpi_name);
+		return 0;
+	}, &mods);
 	{
-		for (unsigned int i = 0, n = 0; i < (cbNeeded / sizeof(HMODULE)); ++i)
+		unsigned int n = 0;
+		for (auto &path : mods)
 		{
-			TCHAR szModName[MAX_PATH];
-
-			if (GetModuleBaseName(hProcess, hMods[i], szModName, ARRAYSIZE(szModName)))
+			const char *szModName = path.c_str();
 			{
-				std::string name = std::string(szModName); toUpper(name);
+				std::string name = path.substr(path.find_last_of('/') + 1); toUpper(name);
 				// Module of interest?
-				if (name == "D3D9.DLL" || 0 == name.compare(0, 6, "D3DX9_"))
+				if (0 == name.compare(0, 9, "LIBVULKAN") || name.find("VK_") != std::string::npos || 0 == name.compare(0, 10, "LIBGLSLANG") ||
+					0 == name.compare(0, 13, "LIBNVIDIA-GLC") || 0 == name.compare(0, 13, "LIBVULKAN_LVP"))
 				{
-					// Get the full path to the module's file.
-					if (GetModuleFileNameEx(hProcess, hMods[i], szModName, ARRAYSIZE(szModName)))
+					// the full path to the module's file is dlpi_name
 					{
 
 						/*DWORD crc = 0;
@@ -135,29 +134,11 @@ void OapiExtension::LogD3D9Modules(void)
 							fclose(hFile);
 						}*/
 
-						TCHAR versionString[128] = "";
-						LPDWORD pDummy = 0;
-						DWORD versionInfoSize = GetFileVersionInfoSize(szModName, pDummy);
-						if (versionInfoSize) {
-							DWORD dummy = 0;
-							char *data = new char[versionInfoSize]();
-							if (GetFileVersionInfo(szModName, dummy, versionInfoSize, data))
-							{
-								UINT size = 0;
-								VS_FIXEDFILEINFO *verInfo;
-
-								if (VerQueryValue(data, "\\", (LPVOID*)&verInfo, &size) && size)
-								{
-									sprintf_s(versionString, ARRAYSIZE(versionString),
-										" [v %d.%d.%d.%d]",
-										HIWORD( verInfo->dwProductVersionMS ),
-										LOWORD( verInfo->dwProductVersionMS ),
-										HIWORD( verInfo->dwProductVersionLS ),
-										LOWORD( verInfo->dwProductVersionLS )
-									);
-								}
-							}
-							delete[] data;
+						char versionString[128] = "";
+						char real[PATH_MAX];
+						if (realpath(szModName, real)) { // version resource → the ".so.X.Y.Z" of the file the soname points at
+							const char *v = strstr(real, ".so.");
+							if (v) snprintf(versionString, std::size(versionString), " [v %s]", v + 4);
 						}
 
 						// Print the module name.
@@ -169,8 +150,7 @@ void OapiExtension::LogD3D9Modules(void)
 		}
 	}
 
-	// Release the handle to the process.
-	CloseHandle( hProcess );
+	// CloseHandle left out: no process handle was opened
 }
 
 
@@ -198,7 +178,7 @@ bool OapiExtension::GetConfigParameter(void)
 		}
 
 		if (oapiReadItem_string(f, (char*)"ElevationMode", string)) {
-			if (1 == sscanf_s(string, "%lu", &flags)) {
+			if (1 == sscanf(string, "%u", &flags)) {
 				elevationMode = flags;
 			}
 		}
@@ -227,15 +207,17 @@ bool OapiExtension::GetConfigParameter(void)
 
 		// Log directory config
 		auto logPath = [](const char *name, const std::string &path) {
-			TCHAR buff[MAX_PATH];
-			if (GetFullPathName(path.c_str(), MAX_PATH, buff, NULL)) {
-				DWORD ftyp = GetFileAttributes(buff);
-				auto result = (ftyp == INVALID_FILE_ATTRIBUTES || !(ftyp & FILE_ATTRIBUTE_DIRECTORY) ? " [[DIR NOT FOUND!]]" : "");
-				oapiWriteLogV("%-11s: %s%s", name, buff, result);
-			}
+			std::string p = path;
+			std::replace(p.begin(), p.end(), '\\', '/');
+			char buff[PATH_MAX];
+			struct stat st;
+			bool found = realpath(p.c_str(), buff) != NULL; // GetFullPathName
+			if (!found) snprintf(buff, sizeof(buff), "%s", p.c_str());
+			auto result = (!found || stat(buff, &st) != 0 || !S_ISDIR(st.st_mode) ? " [[DIR NOT FOUND!]]" : "");
+			oapiWriteLogV("%-11s: %s%s", name, buff, result);
 		};
 		oapiWriteLog((char*)"---------------------------------------------------------------");
-		logPath("BaseDir"    , ".\\");
+		logPath("BaseDir"    , "./");
 		logPath("ConfigDir"  , configDir);
 		logPath("MeshDir"    , meshDir);
 		logPath("TextureDir" , textureDir);
@@ -251,7 +233,7 @@ bool OapiExtension::GetConfigParameter(void)
 	if (orbiterSoundModuleEnabled)  {
 		orbiterSound40 = false;
 
-		f = oapiOpenFile("Sound\\version.txt", FILE_IN_ZEROONFAIL, ROOT);
+		f = oapiOpenFile("Sound/version.txt", FILE_IN_ZEROONFAIL, ROOT);
 		while (f && oapiReadScenario_nextline(f, pLine)) {
 			if (NULL != strstr(pLine, "OrbiterSound 4.0 (3D)")) {
 				orbiterSound40 = true;
@@ -262,15 +244,7 @@ bool OapiExtension::GetConfigParameter(void)
 	}
 
 	// Check for WINE environment
-	HMODULE hntdll = GetModuleHandle("ntdll.dll");
-	if (NULL != hntdll)
-	{
-		// static const char * (CDECL *pwine_get_version)(void);
-		void *pWineGetVersion = (void *)GetProcAddress(hntdll, "wine_get_version");
-		if (NULL != pWineGetVersion) {
-			runsUnderWINE = true;
-		} // else { Not running WINE }
-	} // else { Not running on NT ?! }
+	// (left out: a native Linux build never runs under WINE, runsUnderWINE stays false)
 
 	return true;
 }
@@ -280,7 +254,13 @@ bool OapiExtension::GetConfigParameter(void)
 //
 std::string OapiExtension::ScanCommandLine (void)
 {
-	std::string commandLine(GetCommandLine());
+	std::string commandLine; // GetCommandLine: the arguments from /proc/self/cmdline, space separated
+	FILE *cl = fopen("/proc/self/cmdline", "rb");
+	if (cl) {
+		int ch;
+		while ((ch = fgetc(cl)) != EOF) commandLine += (ch ? (char)ch : ' ');
+		fclose(cl);
+	}
 
 	// Is there a "-s <scenario_name>" option at all?
 	size_t pos = rfind_ci(commandLine, "-s");

@@ -6,6 +6,7 @@
 #include "OrbiterAPI.h"
 #include "DrawAPI.h"
 #include <assert.h>
+#include <dlfcn.h> // GetModuleHandle, GetProcAddress
 
 using namespace std;
 using namespace oapi;
@@ -40,22 +41,24 @@ namespace gcGUI
 
 typedef void * HNODE;
 
+class gcGUIApp; // g++: the friend declaration below doesn't declare the name for gcGUIBase's members
+
 class gcGUIBase
 {
 	friend class gcGUIApp;
 
 public:
 
-	virtual HNODE			RegisterApplication(gcGUIApp *pApp, const char *label, HWND hDlg, DWORD docked, DWORD color) = 0;
-	virtual HNODE			RegisterSubsection(HNODE hNode, const char *label, HWND hDlg, DWORD color) = 0;
-	virtual void			UpdateStatus(HNODE hNode, const char *label, HWND hDlg, DWORD color) = 0;
+	virtual HNODE			RegisterApplication(gcGUIApp *pApp, const char *label, QWidget *hDlg, DWORD docked, DWORD color) = 0;
+	virtual HNODE			RegisterSubsection(HNODE hNode, const char *label, QWidget *hDlg, DWORD color) = 0;
+	virtual void			UpdateStatus(HNODE hNode, const char *label, QWidget *hDlg, DWORD color) = 0;
 	virtual bool			IsOpen(HNODE hNode) = 0;
 	virtual void			OpenNode(HNODE hNode, bool bOpen = true) = 0;
 	virtual void			DisplayWindow(HNODE hNode, bool bShow = true) = 0;
-	virtual HFONT			GetFont(int id) = 0;
-	virtual HNODE			GetNode(HWND hDlg) = 0;
-	virtual HWND			GetDialog(HNODE hNode) = 0;
-	virtual void			UpdateSize(HWND hDlg) = 0;
+	virtual QFont *			GetFont(int id) = 0;
+	virtual HNODE			GetNode(QWidget *hDlg) = 0;
+	virtual QWidget *		GetDialog(HNODE hNode) = 0;
+	virtual void			UpdateSize(QWidget *hDlg) = 0;
 	virtual bool			UnRegister(HNODE hNode) = 0;
 };
 
@@ -100,28 +103,29 @@ public:
 
 	inline bool Initialize()
 	{
-		typedef gcGUIBase * (__cdecl *__gcGetGUICore)();
-		HMODULE hModule = GetModuleHandle("D3D9Client.dll");
+		typedef gcGUIBase * (*__gcGetGUICore)();
+		void *hModule = dlopen("VulkanClient.so", RTLD_NOW | RTLD_NOLOAD); // GetModuleHandle: matches the client's SONAME
 		if (hModule) {
-			__gcGetGUICore pGetGUICore = (__gcGetGUICore)GetProcAddress(hModule, "gcGetGUICore");
+			__gcGetGUICore pGetGUICore = (__gcGetGUICore)dlsym(hModule, "gcGetGUICore");
+			dlclose(hModule); // RTLD_NOLOAD took a reference, GetModuleHandle doesn't
 			if (pGetGUICore) return ((pApp = pGetGUICore()) != NULL);
 		}
 		return false;
 	}
 
-	HNODE RegisterApplication(const char *label, HWND hDlg, DWORD docked, DWORD color = 0)
+	HNODE RegisterApplication(const char *label, QWidget *hDlg, DWORD docked, DWORD color = 0)
 	{
 		assert(pApp);
 		return pApp->RegisterApplication(this, label, hDlg, docked, color);
 	}
 
-	HNODE RegisterSubsection(HNODE hNode, const char *label, HWND hDlg, DWORD color = 0) 
+	HNODE RegisterSubsection(HNODE hNode, const char *label, QWidget *hDlg, DWORD color = 0) 
 	{ 
 		assert(pApp);
 		return pApp->RegisterSubsection(hNode, label, hDlg, color);
 	}
 
-	void UpdateStatus(HNODE hNode, const char *label, HWND hDlg, DWORD color = 0)
+	void UpdateStatus(HNODE hNode, const char *label, QWidget *hDlg, DWORD color = 0)
 	{
 		assert(pApp);
 		return pApp->UpdateStatus(hNode, label, hDlg, color);
@@ -145,25 +149,25 @@ public:
 		pApp->DisplayWindow(hNode, bShow);
 	}
 
-	HFONT GetFont(int id) 
+	QFont *GetFont(int id) 
 	{ 
 		assert(pApp);
 		return pApp->GetFont(id);
 	}
 
-	HNODE GetNode(HWND hDlg) 
+	HNODE GetNode(QWidget *hDlg) 
 	{ 
 		assert(pApp);
 		return pApp->GetNode(hDlg);
 	}
 
-	HWND GetDialog(HNODE hNode)
+	QWidget *GetDialog(HNODE hNode)
 	{ 
 		assert(pApp);
 		return pApp->GetDialog(hNode);
 	}
 
-	void UpdateSize(HWND hDlg) 
+	void UpdateSize(QWidget *hDlg) 
 	{ 
 		assert(pApp);
 		pApp->UpdateSize(hDlg);

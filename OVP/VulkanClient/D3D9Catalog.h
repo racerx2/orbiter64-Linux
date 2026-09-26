@@ -13,8 +13,9 @@
 #include <string>
 #include <assert.h>
 #include <mutex>
-#include <d3dx9.h>
 #include "OrbiterAPI.h"
+#include "D3D9Util.h"   // d3dx9.h; VERTEX_2TEX (g++ resolves non-dependent names at the template definition)
+#include "D3D9Config.h" // Config, for the same reason
 
 template <typename T>
 class D3D9Catalog {
@@ -127,7 +128,7 @@ public:
 	{
 		mm.lock();
 		size_t ec = 0;
-		for (auto x : Fre) for (auto y : x.second) { es += x.first * sizeof(T); }
+		for (auto x : Fre) for (auto y : x.second) { ec += x.first * sizeof(T); } // es: upstream typo, MSVC never parsed it
 		mm.unlock();
 		return ec;
 	}
@@ -144,7 +145,7 @@ class Objmgr
 {
 
 public:
-	Objmgr(LPDIRECT3DDEVICE9 pD, std::string n) : name(n), pDev(pD)	{ }
+	Objmgr(VkDev *pD, std::string n) : name(n), pDev(pD)	{ }
 	~Objmgr() {
 		Fre.clear();
 		Rsv.clear();
@@ -242,7 +243,7 @@ protected:
 	virtual T Alloc(DWORD size) { assert(false); return nullptr; };
 	virtual void Delete(T x) { assert(false); };
 	virtual size_t UnitSize(DWORD size) { assert(false); return size; }
-	LPDIRECT3DDEVICE9 pDev;
+	VkDev *pDev;
 
 private:
 	std::string name;
@@ -261,37 +262,36 @@ template <typename T>
 class Texmgr : public Objmgr<T>
 {
 public:
-	Texmgr(LPDIRECT3DDEVICE9 pD, std::string n) : Objmgr(pD, n) { }
+	Texmgr(VkDev *pD, std::string n) : Objmgr<T>(pD, n) { }
 	~Texmgr() {}
 
-	T New(DWORD size, D3DFORMAT Format)
+	T New(DWORD size, VkFormat Format)
 	{
-		DWORD fmt = 0;
-		if (Format == D3DFMT_X8B8G8R8) fmt = 1;
-		if (Format == D3DFMT_DXT1) fmt = 2;
-		if (Format == D3DFMT_DXT3) fmt = 3;
-		if (Format == D3DFMT_DXT5) fmt = 4;
+		DWORD fmt = 0; // X8B8G8R8 (1) and A8B8G8R8 (0) are both R8G8B8A8
+		if (Format == VK_FORMAT_BC1_RGBA_UNORM_BLOCK) fmt = 2;
+		if (Format == VK_FORMAT_BC2_UNORM_BLOCK) fmt = 3;
+		if (Format == VK_FORMAT_BC3_UNORM_BLOCK) fmt = 4;
 
-		return Objmgr::New(size + (fmt << 16));
+		return Objmgr<T>::New(size + (fmt << 16));
 	}
 
 protected:
 
 	T Alloc(DWORD prm)
 	{
-		LPDIRECT3DTEXTURE9 pT = nullptr;
-		D3DFORMAT Format = D3DFMT_A8B8G8R8;
+		VkTex *pT = nullptr;
+		VkFormat Format = VK_FORMAT_R8G8B8A8_UNORM;
 
 		UINT size = prm & 0xFFFF;
 		UINT frmt = prm >> 16;
 		UINT Mips = (Config->TileMipmaps == 1) ? 6 : 1;
 
-		if (frmt == 1) Format = D3DFMT_X8B8G8R8;
-		if (frmt == 2) Format = D3DFMT_DXT1;
-		if (frmt == 3) Format = D3DFMT_DXT3;
-		if (frmt == 4) Format = D3DFMT_DXT5;
+		if (frmt == 2) Format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+		if (frmt == 3) Format = VK_FORMAT_BC2_UNORM_BLOCK;
+		if (frmt == 4) Format = VK_FORMAT_BC3_UNORM_BLOCK;
 
-		if(D3DXCreateTexture(pDev, size, size, Mips, 0, Format, D3DPOOL_DEFAULT, &pT) != S_OK)
+		pT = new VkTex(this->pDev, size, size, Mips, Format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		if (pT->img == VK_NULL_HANDLE)
 		{
 			oapiWriteLog("Failed to create texture for surface tile. Likely [Out of Video Memory]");
 			abort();
@@ -300,8 +300,7 @@ protected:
 	}
 
 	void Delete(T x) {
-		UINT q = x->Release();
-		assert(q == 0);
+		delete x; // Release
 	}
 	size_t UnitSize(DWORD size) { return (size & 0xFFFF) * (size & 0xFFFF); }
 };
@@ -316,12 +315,12 @@ template <typename T>
 class Vtxmgr : public Objmgr<T>
 {
 public:
-	Vtxmgr(LPDIRECT3DDEVICE9 pD, std::string n) : Objmgr(pD, n) { }
+	Vtxmgr(VkDev *pD, std::string n) : Objmgr<T>(pD, n) { }
 protected:
 	T Alloc(DWORD size)
 	{
-		LPDIRECT3DVERTEXBUFFER9 pVB = nullptr;
-		if (pDev->CreateVertexBuffer(size * sizeof(VERTEX_2TEX), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &pVB, NULL) != S_OK)
+		VkBuf *pVB = new VkBuf(this->pDev, size * sizeof(VERTEX_2TEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true); // D3DUSAGE_DYNAMIC
+		if (pVB->buf == VK_NULL_HANDLE)
 		{
 			oapiWriteLog("Failed to create vertex buffer for surface tile. Likely [Out of Video Memory]");
 			abort();
@@ -329,8 +328,7 @@ protected:
 		return (T)pVB;
 	}
 	void Delete(T x) {
-		UINT q = x->Release();
-		assert(q == 0);
+		delete x; // Release
 	}
 	size_t UnitSize(DWORD size) { return size * sizeof(VERTEX_2TEX); }
 };
@@ -345,12 +343,12 @@ template <typename T>
 class Idxmgr : public Objmgr<T>
 {
 public:
-	Idxmgr(LPDIRECT3DDEVICE9 pD, std::string n) : Objmgr(pD, n) { }
+	Idxmgr(VkDev *pD, std::string n) : Objmgr<T>(pD, n) { }
 protected:
 	T Alloc(DWORD size)
 	{
-		LPDIRECT3DINDEXBUFFER9 pIB = nullptr;
-		if (pDev->CreateIndexBuffer(size * sizeof(WORD) * 3, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &pIB, NULL) != S_OK)
+		VkBuf *pIB = new VkBuf(this->pDev, size * sizeof(WORD) * 3, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true); // D3DUSAGE_DYNAMIC, D3DFMT_INDEX16
+		if (pIB->buf == VK_NULL_HANDLE)
 		{
 			oapiWriteLog("Failed to create index buffer for surface tile. Likely [Out of Video Memory]");
 			abort();
@@ -358,8 +356,7 @@ protected:
 		return (T)pIB;
 	}
 	void Delete(T x) {
-		UINT q = x->Release();
-		assert(q == 0);
+		delete x; // Release
 	}
 	size_t UnitSize(DWORD size) { return size * sizeof(WORD) * 3; }
 };

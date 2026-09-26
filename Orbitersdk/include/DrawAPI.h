@@ -27,7 +27,7 @@
 #include <algorithm>
 
 #ifdef D3D9CLIENT_EXPORTS
-#include "d3dx9.h"
+#include "D3DXMath.h" // d3dx9.h
 #endif
 
 /// \brief Poly object handle
@@ -184,8 +184,7 @@ namespace oapi {
 
 
 
-	// not upstream: trivial twins of FVECTOR3/FVECTOR4 (same layout) for FMATRIX4's row view,
-	// since g++ allows no members with constructors in an anonymous struct
+	// not upstream: POD twins of FVECTOR3/4 for FMATRIX4 rows (g++ bans ctor members in anonymous structs)
 	struct FVECTOR3_T { float x, y, z; };
 	union alignas(16) FVECTOR4_T {
 		float data[4];
@@ -670,11 +669,11 @@ namespace oapi {
 #ifdef D3D9CLIENT_EXPORTS
 		FMATRIX4(const D3DXMATRIX& m)
 		{
-			memcpy_s(data, sizeof(FMATRIX4), &m, sizeof(m));
+			memcpy(data, &m, sizeof(m));
 		}
 		FMATRIX4(const LPD3DXMATRIX m)
 		{
-			memcpy_s(data, sizeof(FMATRIX4), m, sizeof(FMATRIX4));
+			memcpy(data, m, sizeof(FMATRIX4));
 		}
 		inline operator LPD3DXMATRIX()
 		{

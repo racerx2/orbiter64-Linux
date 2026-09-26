@@ -264,11 +264,11 @@ add_subdirectory(Extern)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
-# not ported yet: Utils, OVP, Sound, Html
+# not ported yet: Utils, Sound, Html
 add_subdirectory(Src)
 #add_subdirectory(Utils)
 add_subdirectory(Orbitersdk)
-#add_subdirectory(OVP)
+add_subdirectory(OVP)
 #add_subdirectory(Sound)
 #add_subdirectory(Html)
 

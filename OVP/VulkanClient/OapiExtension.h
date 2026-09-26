@@ -8,7 +8,7 @@
 #ifndef __OAPIEXTENSION_H
 #define __OAPIEXTENSION_H
 
-#include <Windows.h>
+// Windows.h left out: nothing from it is used
 #include <string>
 #include "D3D9Util.h"
 

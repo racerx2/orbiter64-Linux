@@ -17,8 +17,8 @@
 // =================================================================================================================================
 
 
-#include <d3d9.h> 
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h, d3dx9.h
+#include "VkCore.h"
 
 #ifndef __D3D9TK_H
 #define __D3D9TK_H
@@ -31,8 +31,8 @@ typedef struct {
 	D3DXVECTOR4 min, max, bs, a, b, c;
 } D9BBox;
 
-float		D9NearPlane(LPDIRECT3DDEVICE9 pDev, float zmin, float zmax, float dmax, const D3DXMATRIX *pProj, bool bReduced);
-int			D9ComputeMinMaxDistance(LPDIRECT3DDEVICE9 pDev, const D9BBox *in, const D3DXMATRIX *pWV, const D3DXVECTOR4 *F, float *zmin, float *zmax, float *dmin);
+float		D9NearPlane(VkDev *pDev, float zmin, float zmax, float dmax, const D3DXMATRIX *pProj, bool bReduced);
+int			D9ComputeMinMaxDistance(VkDev *pDev, const D9BBox *in, const D3DXMATRIX *pWV, const D3DXVECTOR4 *F, float *zmin, float *zmax, float *dmin);
 void		D9AddAABB(const D9BBox *in, const D3DXMATRIX *pM, D9BBox *out, bool bReset=false);
 void		D9UpdateAABB(D9BBox *box, const D3DXMATRIX *pFisrt=NULL, const D3DXMATRIX *pSecond=NULL);
 void		D9ZeroAABB(D9BBox *box);

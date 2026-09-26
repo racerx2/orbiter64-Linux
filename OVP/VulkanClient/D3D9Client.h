@@ -9,17 +9,10 @@
 #ifndef __D3D9CLIENT_H
 #define __D3D9CLIENT_H
 
-// must be defined before windows includes to fix warnins on VS 2003+
-#if defined(_MSC_VER) && (_MSC_VER >= 1300 ) // Microsoft Visual Studio Version 2003 and higher
-//#define _CRT_SECURE_NO_DEPRECATE
-//#define _CRT_NONSTDC_NO_WARNINGS
+// the MSVC version switch and fstream.h left out
 #include <fstream>
-#else  // older MSVC++ versions
-#include <fstream.h>
-#endif
 
-#include <d3d9.h>
-#include <d3dx9.h>
+// d3d9.h/d3dx9.h left out: VkCore.h and D3DXMath.h (via D3D9Util.h)
 #include "D3D9Catalog.h"
 #include "GraphicsAPI.h"
 #include "D3D9Util.h"
@@ -31,6 +24,8 @@
 #include <vector>
 #include <stack>
 #include <list>
+#include <set>
+#include <thread>
 #include "WindowMgr.h"
 
 #define PP_DEFAULT			0x1
@@ -50,6 +45,7 @@ class Scene;
 class VideoTab;
 class SurfNative;
 class CD3DFramework9;
+struct VkDevCaps;
 class D3D9Mesh;
 class D3D9Annotation;
 class D3D9Text;
@@ -106,8 +102,8 @@ struct _D3D9Stats
 
 
 struct RenderTgtData {
-	LPDIRECT3DSURFACE9 pColor;
-	LPDIRECT3DSURFACE9 pDepthStencil;
+	VkSurf *pColor;
+	VkSurf *pDepthStencil;
 	class D3D9Pad *pSkp;
 	int code;
 };
@@ -119,17 +115,17 @@ extern bool bFreezeEnable;
 extern bool bFreezeRenderAll;
 extern DWORD			uCurrentMesh;
 extern class vObject* pCurrentVisual;
-extern set<D3D9Mesh*> MeshCatalog;
-extern set<SurfNative*>	SurfaceCatalog;
-extern IDirect3D9* g_pD3DObject;
+extern std::set<D3D9Mesh*> MeshCatalog;
+extern std::set<SurfNative*>	SurfaceCatalog;
+extern QVulkanInstance* g_pD3DObject; // IDirect3D9
 extern Memgr<float>* g_pMemgr_f;
 extern Memgr<INT16>* g_pMemgr_i;
 extern Memgr<UINT8>* g_pMemgr_u;
 extern Memgr<WORD>* g_pMemgr_w;
 extern Memgr<VERTEX_2TEX>* g_pMemgr_vtx;
-extern Texmgr<LPDIRECT3DTEXTURE9>* g_pTexmgr_tt;
-extern Vtxmgr<LPDIRECT3DVERTEXBUFFER9>* g_pVtxmgr_vb;
-extern Idxmgr<LPDIRECT3DINDEXBUFFER9>* g_pIdxmgr_ib;
+extern Texmgr<VkTex*>* g_pTexmgr_tt;
+extern Vtxmgr<VkBuf*>* g_pVtxmgr_vb;
+extern Idxmgr<VkBuf*>* g_pIdxmgr_ib;
 
 
 namespace oapi {
@@ -156,7 +152,7 @@ public:
 	 * with the Orbiter core via the oapiRegisterGraphicsClient function.
 	 * \param hInstance module instance handle (as passed to InitModule)
 	 */
-	explicit D3D9Client (HINSTANCE hInstance);
+	explicit D3D9Client (void *hInstance);
 
 	/**
 	 * \brief Destroy the graphics object.
@@ -168,7 +164,7 @@ public:
 	~D3D9Client ();
 
 
-	HBITMAP gcReadImageFromFile(const char *path);
+	QImage *gcReadImageFromFile(const char *path);
 
 	/**
 	 * \brief Perform any one-time setup tasks.
@@ -292,7 +288,7 @@ public:
 	 * \param quality quality request if the format supports it (0-1)
 	 * \return Should return true on success
 	 */
-	bool SaveSurfaceToFile (const D3DSURFACE_DESC* desc, D3DLOCKED_RECT& pRect,
+	bool SaveSurfaceToFile (UINT w, UINT h, const BYTE *pBits, UINT pitch, // D3DSURFACE_DESC, D3DLOCKED_RECT
 	                        const char* fname, ImageFileFormat fmt, float quality);
 
 	/**
@@ -301,7 +297,7 @@ public:
 	 * \param surface size and format description
 	 * \return Should return true on success
 	 */
-	bool SaveSurfaceToClipboard (const D3DSURFACE_DESC * desc);
+	bool SaveSurfaceToClipboard (UINT w, UINT h, const BYTE *pBits, UINT pitch);
 
 	/**
 	 * \brief Texture release request
@@ -541,7 +537,7 @@ public:
 	 *   messages, and passes everything else to the Orbiter core message
 	 *   handler.
 	 */
-	LRESULT RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	bool RenderWndProc (QWindow *hWnd, QEvent *event);
 
 	/**
 	 * \brief Message handler for 'video' tab in Orbiter Launchpad dialog
@@ -556,7 +552,7 @@ public:
 	 * \return The return value depends on the message type and the action taken.
 	 * \default Do nothing, return FALSE.
 	 */
-	INT_PTR LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void LaunchpadVideoWndProc (QWidget *hWnd);
 	/**
 	 * \brief Fullscreen mode flag
 	 * \return true if the client is set up for running in fullscreen
@@ -694,7 +690,7 @@ public:
 	 * \note The reference counter for the new surface is set to 1.
 	 * \sa clbkIncrSurfaceRef, clbkReleaseSurface
 	 */
-	SURFHANDLE clbkCreateSurface (HBITMAP hBmp);
+	SURFHANDLE clbkCreateSurface (QImage *hBmp);
 
 	/**
 	 * \brief Increment the reference counter of a surface.
@@ -901,7 +897,7 @@ public:
 	 * \note The source bitmap area is stretched as required to fit the area of
 	 *   the target surface.
 	 */
-	bool clbkCopyBitmap (SURFHANDLE pdds, HBITMAP hbm, int x, int y, int dx, int dy);
+	bool clbkCopyBitmap (SURFHANDLE pdds, QImage *hbm, int x, int y, int dx, int dy);
 	// @}
 
 
@@ -1005,7 +1001,7 @@ public:
 	 * \note Clients which can obtain a Windows GDI handle for a surface should
 	 *   overload this method.
 	 */
-	HDC clbkGetSurfaceDC (SURFHANDLE surf);
+	QPainter *clbkGetSurfaceDC (SURFHANDLE surf);
 
 	/**
 	 * \brief Release a Windows graphics device interface
@@ -1015,7 +1011,7 @@ public:
 	 * \note Clients which can obtain a Windows GDI handle for a surface should
 	 *   overload this method to release an existing GDI.
 	 */
-	void clbkReleaseSurfaceDC (SURFHANDLE surf, HDC hDC);
+	void clbkReleaseSurfaceDC (SURFHANDLE surf, QPainter *hDC);
 	// @}
 
 	/**
@@ -1041,26 +1037,26 @@ public:
 	void clbkImGuiShutdown() override;
 	uint64_t clbkImGuiSurfaceTexture(SURFHANDLE surf) override;
 
-	HWND				GetRenderWindow () const { return hRenderWnd; }
+	QWindow *			GetRenderWindow () const { return hRenderWnd; }
 	CD3DFramework9 *    GetFramework() const { return pFramework; }
 	Scene *             GetScene() const { return scene; }
 	MeshManager *       GetMeshMgr() const { return meshmgr; }
 	void 				WriteLog (const char *msg) const;
-    LPDIRECT3DDEVICE9   GetDevice() const { return pDevice; }
+    VkDev *             GetDevice() const { return pDevice; }
 	lpSurfNative		GetDefaultTexture() const;
 	SURFHANDLE			GetBackBufferHandle() const;
-	LPDIRECT3DTEXTURE9  GetNoiseTex() const { return pNoiseTex; }
+	VkTex *             GetNoiseTex() const { return pNoiseTex; }
 	void 				SplashScreen();
 	inline bool			IsControlPanelOpen() const { return bControlPanel; }
 	inline bool 		IsRunning() const { return bRunning; }
-	inline bool			IsLimited() const { return ((pCaps->TextureCaps&D3DPTEXTURECAPS_POW2) && (pCaps->TextureCaps&D3DPTEXTURECAPS_NONPOW2CONDITIONAL)); }
+	inline bool			IsLimited() const { return false; } // Vulkan 1.0 requires full non-power of 2 texture support
 	const LPD3DXMATRIX 	GetIdentity() const { return (const LPD3DXMATRIX)&ident; }
-	HWND 				GetWindow();
+	QWindow *			GetWindow();
 	bool 				HasVertexTextureSupport() const { return bVertexTex; }
-	const D3DCAPS9 *	GetHardwareCaps() const { return pCaps; }
+	const VkDevCaps *	GetHardwareCaps() const { return pCaps; }
 	//FileParser *		GetFileParser() const { return parser; }
-	LPDIRECT3DSURFACE9	GetBackBuffer() const { return pBackBuffer; }
-	LPDIRECT3DSURFACE9	GetDepthStencil() const { return pDepthStencil; }
+	VkSurf *			GetBackBuffer() const { return pBackBuffer; }
+	VkSurf *			GetDepthStencil() const { return pDepthStencil; }
 	const void *		GetConfigParam (DWORD paramtype) const;
 	bool				RegisterRenderProc(__gcRenderProc proc, DWORD id, void *pParam = NULL);
 	bool				RegisterGenericProc(__gcGenericProc proc, DWORD id, void *pParam = NULL);
@@ -1071,20 +1067,20 @@ public:
 	void				HackFriendlyHack();
 	void				PickTerrain(DWORD uMsg, int xpos, int ypos);
 	DEVMESHHANDLE		GetDevMesh(MESHHANDLE hMesh);
-	HANDLE				GetMainThread() const {	return hMainThread;	}
+	std::thread::id		GetMainThread() const {	return hMainThread;	}
 
 
 	// ==================================================================
 	//
-	HRESULT				BeginScene();
+	int					BeginScene();
 	void				EndScene();
 	bool				IsInScene() const { return bRendering; }
 	void				PushSketchpad(SURFHANDLE surf, D3D9Pad* pSkp) const;
-	void				PushRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 pDepthStencil = NULL, int code = 0) const;
-	void				AlterRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 pDepthStencil = NULL);
+	void				PushRenderTarget(VkSurf *pColor, VkSurf *pDepthStencil = NULL, int code = 0) const;
+	void				AlterRenderTarget(VkSurf *pColor, VkSurf *pDepthStencil = NULL);
 	void				PopRenderTargets() const;
-	LPDIRECT3DSURFACE9  GetTopDepthStencil();
-	LPDIRECT3DSURFACE9  GetTopRenderTarget();
+	VkSurf *			GetTopDepthStencil();
+	VkSurf *			GetTopRenderTarget();
 	class D3D9Pad *		GetTopInterface() const;
 
 
@@ -1117,7 +1113,7 @@ protected:
 	 * \note Derived classes should perform any required per-session
 	 *   initialisation of the 3D render environment here.
 	 */
-	HWND clbkCreateRenderWindow ();
+	QWindow *clbkCreateRenderWindow ();
 
 	/**
 	 * \brief Simulation startup finalisation
@@ -1298,23 +1294,23 @@ private:
 	D3D9Pad*				pBltSkp;
 
 
-    LPDIRECT3DDEVICE9		pDevice;
+    VkDev *					pDevice;
 	lpSurfNative			pDefaultTex;
 	lpSurfNative			pScatterTest;
-	LPDIRECT3DTEXTURE9		pNoiseTex;
-	LPDIRECT3DSURFACE9		pSplashScreen;
-	LPDIRECT3DSURFACE9		pTextScreen;
-	LPDIRECT3DSURFACE9		pBackBuffer;
-	LPDIRECT3DSURFACE9		pDepthStencil;
+	VkTex *					pNoiseTex;
+	VkSurf *				pSplashScreen;
+	VkSurf *				pTextScreen;
+	VkSurf *				pBackBuffer;
+	VkSurf *				pDepthStencil;
 	CD3DFramework9 *		pFramework;
-	const D3DCAPS9 *		pCaps;
+	const VkDevCaps *		pCaps;
 	std::string				scenarioName;
-	HANDLE					hMainThread;
+	std::thread::id			hMainThread;
 	WindowManager *			pWM;
 	const char *            pCustomSplashScreen;
 	DWORD                   pSplashTextColor;
 
-	HWND hRenderWnd;        // render window handle
+	QWindow *hRenderWnd;    // render window handle
 
 	bool bControlPanel;
 	bool bScatterUpdate;
@@ -1347,15 +1343,15 @@ private:
 	std::vector<SURFHANDLE> ImTextures;
 	mutable std::list<RenderTgtData> RenderStack;
 
-	HFONT hLblFont1;
-	HFONT hLblFont2;
+	QFont *hLblFont1;
+	QFont *hLblFont2;
 
 	char pLoadLabel[128];
 	char pLoadItem[128];
 
 	// Control Panel
 	void RenderControlPanel();
-	bool ControlPanelMsg(WPARAM wParam);
+	bool ControlPanelMsg(int wParam); // key code
 
 	Sketchpad *pItemsSkp;
 
@@ -1431,53 +1427,30 @@ class RenderState
 {
 public:
 
-	RenderState(LPDIRECT3DDEVICE9 pD) : pDev(pD)
+	RenderState(VkDev *pD) : pDev(pD)
 	{
-		bkABE = bkZEN = bkZW = bkCULL = 0;
-		bkCW = bkSE = bkFM = bkSTE = bkATE = 0;
-		bkBO = bkSB = bkDB = 0;
+		bkSE = false;
 		bCaptured = false;
 	}
 
 	void Capture()
 	{
 		bCaptured = true;
-		HR(pDev->GetScissorRect(&bkSR));
-		HR(pDev->GetRenderState(D3DRS_ALPHABLENDENABLE, &bkABE));
-		HR(pDev->GetRenderState(D3DRS_ZENABLE, &bkZEN));
-		HR(pDev->GetRenderState(D3DRS_ZWRITEENABLE, &bkZW));
-		HR(pDev->GetRenderState(D3DRS_CULLMODE, &bkCULL));
-		HR(pDev->GetRenderState(D3DRS_COLORWRITEENABLE, &bkCW));
-		HR(pDev->GetRenderState(D3DRS_SCISSORTESTENABLE, &bkSE));
-		HR(pDev->GetRenderState(D3DRS_FILLMODE, &bkFM));
-		HR(pDev->GetRenderState(D3DRS_STENCILENABLE, &bkSTE));
-		HR(pDev->GetRenderState(D3DRS_ALPHATESTENABLE, &bkATE));
-		HR(pDev->GetRenderState(D3DRS_BLENDOP, &bkBO));
-		HR(pDev->GetRenderState(D3DRS_SRCBLEND, &bkSB));
-		HR(pDev->GetRenderState(D3DRS_DESTBLEND, &bkDB));
+		bkSE = pDev->GetScissor(&bkSR);
+		bkST = pDev->GetState(); // D3DRS_ALPHABLENDENABLE ... D3DRS_DESTBLEND (alpha test is a shader discard)
 	}
 
 	void Restore()
 	{
 		assert(bCaptured);
-		HR(pDev->SetScissorRect(&bkSR));
-		HR(pDev->SetRenderState(D3DRS_ALPHABLENDENABLE, bkABE));
-		HR(pDev->SetRenderState(D3DRS_ZENABLE, bkZEN));
-		HR(pDev->SetRenderState(D3DRS_ZWRITEENABLE, bkZW));
-		HR(pDev->SetRenderState(D3DRS_CULLMODE, bkCULL));
-		HR(pDev->SetRenderState(D3DRS_COLORWRITEENABLE, bkCW));
-		HR(pDev->SetRenderState(D3DRS_SCISSORTESTENABLE, bkSE));
-		HR(pDev->SetRenderState(D3DRS_FILLMODE, bkFM));
-		HR(pDev->SetRenderState(D3DRS_STENCILENABLE, bkSTE));
-		HR(pDev->SetRenderState(D3DRS_ALPHATESTENABLE, bkATE));
-		HR(pDev->SetRenderState(D3DRS_BLENDOP, bkBO));
-		HR(pDev->SetRenderState(D3DRS_SRCBLEND, bkSB));
-		HR(pDev->SetRenderState(D3DRS_DESTBLEND, bkDB));
+		pDev->SetScissor(bkSE ? &bkSR : NULL);
+		pDev->SetState(bkST);
 	}
 
 	RECT bkSR = {};
-	DWORD bkABE, bkZEN, bkZW, bkCULL, bkCW, bkSE, bkFM, bkSTE, bkATE, bkBO, bkSB, bkDB;
-	LPDIRECT3DDEVICE9 pDev;
+	bool bkSE;
+	VkDev::State bkST;
+	VkDev *pDev;
 	bool bCaptured;
 };
 

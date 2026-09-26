@@ -7,9 +7,9 @@
 //				 2012-2016 �mile "Bibi Uncle" Gr�goire
 // ==============================================================
 
-#define STRICT
+// STRICT left out: Win32 build switch
 
-#include "D3D9util.h"
+#include "D3D9Util.h"
 #include "AABBUtil.h"
 #include "D3D9Client.h"
 #include "VectorHelpers.h"
@@ -20,6 +20,12 @@
 #include <cctype>
 #include <unordered_map>
 #include <algorithm>
+#include <sys/stat.h>
+#include <QMessageBox>
+#include "VkTexFile.h"
+#include <fstream>
+#include <cerrno>
+#include <glslang/SPIRV/disassemble.h>
 
 extern D3D9Client* g_client;
 extern unordered_map<MESHHANDLE, class SketchMesh*> MeshMap;
@@ -29,7 +35,8 @@ DWORD BuildDate()
 	const char *months[] = { "???","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
 	char month[8];
 	unsigned int day = 0, year = 0;
-	assert(sscanf_s(__DATE__, "%s %u %u", month, 8, &day, &year) == 3);
+	int n = sscanf(__DATE__, "%7s %u %u", month, &day, &year);
+	assert(n == 3); (void)n; // upstream parsed inside assert(): nothing is read in a release build
 	DWORD m = 0;
 	for (DWORD i = 1; i <= 12; i++) if (strncmp(month, months[i], 3) == 0) { m = i; break; }
 	assert(m != 0);
@@ -173,64 +180,27 @@ float OcclusionFactor(float x, float r1, float r2, bool bReverse)
 const char *_PTR(const void *p)
 {
 	static long i = 0; static char buf[8][32];	i++;
-	sprintf_s(buf[i & 0x7], 32, PTR_FMT_STRING, LONG_PTR(p));
+	snprintf(buf[i & 0x7], 32, PTR_FMT_STRING, LONG_PTR(p));
 	return buf[i & 0x7];
 }
 
-bool CopyBuffer(LPDIRECT3DRESOURCE9 _pDst, LPDIRECT3DRESOURCE9 _pSrc)
+bool CopyBuffer(VkBuf *pDst, VkBuf *pSrc)
 {
+	// vertex and index buffers alike (a VkBuf has no type); the index format travels with SetIndices
+	if (!pDst || !pSrc) return false;
+	if (pDst->size < pSrc->size) return false;
 
-	void *pSrcData = NULL;
-	void *pDstData = NULL;
-
-	if (_pSrc->GetType()==D3DRTYPE_VERTEXBUFFER && _pDst->GetType()==D3DRTYPE_VERTEXBUFFER) {
-
-		LPDIRECT3DVERTEXBUFFER9 pSrc = (LPDIRECT3DVERTEXBUFFER9)_pSrc;
-		LPDIRECT3DVERTEXBUFFER9 pDst = (LPDIRECT3DVERTEXBUFFER9)_pDst;
-
-		D3DVERTEXBUFFER_DESC src_desc, dst_desc;
-
-		HR(pSrc->GetDesc(&src_desc));
-		HR(pDst->GetDesc(&dst_desc));
-
-		if (dst_desc.Size<src_desc.Size) return false;
-
-		HR(pSrc->Lock(0, 0, &pSrcData, D3DLOCK_READONLY));
-		HR(pDst->Lock(0, 0, &pDstData, 0));
-
-		memcpy(pDstData, pSrcData, src_desc.Size);
-
-		HR(pSrc->Unlock());
-		HR(pDst->Unlock());
-
+	if (pSrc->Map() && pDst->Map()) { // Lock/memcpy/Unlock
+		memcpy(pDst->Map(), pSrc->Map(), pSrc->size);
 		return true;
 	}
 
-	if (_pSrc->GetType()==D3DRTYPE_INDEXBUFFER && _pDst->GetType()==D3DRTYPE_INDEXBUFFER) {
-
-		LPDIRECT3DINDEXBUFFER9 pSrc = (LPDIRECT3DINDEXBUFFER9)_pSrc;
-		LPDIRECT3DINDEXBUFFER9 pDst = (LPDIRECT3DINDEXBUFFER9)_pDst;
-
-		D3DINDEXBUFFER_DESC src_desc, dst_desc;
-
-		HR(pSrc->GetDesc(&src_desc));
-		HR(pDst->GetDesc(&dst_desc));
-
-		if (dst_desc.Size<src_desc.Size) return false;
-		if (dst_desc.Format!=src_desc.Format) return false;
-
-		HR(pSrc->Lock(0, 0, &pSrcData, D3DLOCK_READONLY));
-		HR(pDst->Lock(0, 0, &pDstData, 0));
-
-		memcpy(pDstData, pSrcData, src_desc.Size);
-
-		HR(pSrc->Unlock());
-		HR(pDst->Unlock());
-
-		return true;
-	}
-
-	return false;
+	VkDev *pDev = g_client->GetDevice(); // device local: a buffer copy
+	VkCommandBuffer cmd = pDev->BeginOneTime();
+	VkBufferCopy region = { 0, 0, pSrc->size };
+	vkCmdCopyBuffer(cmd, pSrc->buf, pDst->buf, 1, &region);
+	pDev->EndOneTime(cmd);
+	return true;
 }
 
 void LogMatrix(D3DXMATRIX *pM, const char *name)
@@ -494,7 +464,7 @@ int fgets2(char *buf, int cmax, FILE *file, DWORD param)  //bool bEquality, bool
 
 	if (fgets(buf, cmax, file)==NULL) return -1;
 
-	int num = lstrlen(buf);
+	int num = strlen(buf);
 
 	if (num==(cmax-1)) LogErr("Insufficient buffer size in fgets2() size=%d, string=(%s)",cmax,buf);
 
@@ -512,7 +482,7 @@ int fgets2(char *buf, int cmax, FILE *file, DWORD param)  //bool bEquality, bool
 		}
 	}
 
-	num = lstrlen(buf);
+	num = strlen(buf);
 	if (num==0) return 0;
 
 	// Remove spaces from the end of the line
@@ -525,7 +495,7 @@ int fgets2(char *buf, int cmax, FILE *file, DWORD param)  //bool bEquality, bool
 	// Remove spaces from the front of the line
 	while (buf[0]==' ') strremchr(buf,0);
 
-	num = lstrlen(buf);
+	num = strlen(buf);
 	if (num==0) return 0;
 
 	// Remove repeatitive spaces if exists. (double trible spaces and so on)
@@ -538,7 +508,7 @@ int fgets2(char *buf, int cmax, FILE *file, DWORD param)  //bool bEquality, bool
 		else i++;
 	}
 
-	num = lstrlen(buf);
+	num = strlen(buf);
 	if (num==0) return 0;
 
 	// Remove spaces from both sides of '=' if exists
@@ -551,7 +521,7 @@ int fgets2(char *buf, int cmax, FILE *file, DWORD param)  //bool bEquality, bool
 		}
 	}
 
-	if (bUpper) _strupr_s(buf, strlen(buf));
+	if (bUpper) for (char *p = buf; *p; p++) *p = (char)toupper((unsigned char)*p); // _strupr_s
 
 	// Done
 	if (bEql) return 2;
@@ -585,7 +555,7 @@ std::string &trim (std::string &s) {
 
 // uppercase complete string
 void toUpper (std::string &s) {
-	std::transform(s.begin(), s.end(), s.begin(), std::toupper);
+	std::transform(s.begin(), s.end(), s.begin(), ::toupper);
 }
 
 // lowercase complete string
@@ -762,7 +732,7 @@ void D3DMAT_CreateX_Billboard(const D3DXVECTOR3 *toCam, const D3DXVECTOR3 *pos, 
 //
 void D3DMAT_ZeroMatrix(D3DXMATRIX *mat)
 {
-	ZeroMemory(mat, sizeof (D3DXMATRIX));
+	memset(mat, 0, sizeof (D3DXMATRIX));
 }
 
 // ============================================================================
@@ -770,7 +740,7 @@ void D3DMAT_ZeroMatrix(D3DXMATRIX *mat)
 
 void D3DMAT_Identity (D3DXMATRIX *mat)
 {
-	ZeroMemory(mat, sizeof (D3DXMATRIX));
+	memset(mat, 0, sizeof (D3DXMATRIX));
 	mat->_11 = mat->_22 = mat->_33 = mat->_44 = 1.0f;
 }
 
@@ -902,7 +872,7 @@ void D3DMAT_RotationFromAxis (const D3DXVECTOR3 &axis, float angle, D3DXMATRIX *
 void D3DMAT_RotX  (D3DXMATRIX *mat, double r)
 {
 	double sinr = sin(r), cosr = cos(r);
-	ZeroMemory (mat, sizeof (D3DXMATRIX));
+	memset(mat, 0, sizeof (D3DXMATRIX));
 	mat->_22 = mat->_33 = (FLOAT)cosr;
 	mat->_23 = -(mat->_32 = (FLOAT)sinr);
 	mat->_11 = mat->_44 = 1.0f;
@@ -913,7 +883,7 @@ void D3DMAT_RotX  (D3DXMATRIX *mat, double r)
 void D3DMAT_RotY (D3DXMATRIX *mat, double r)
 {
 	double sinr = sin(r), cosr = cos(r);
-	ZeroMemory (mat, sizeof (D3DXMATRIX));
+	memset(mat, 0, sizeof (D3DXMATRIX));
 	mat->_11 = mat->_33 = (FLOAT)cosr;
 	mat->_31 = -(mat->_13 = (FLOAT)sinr);
 	mat->_22 = mat->_44 = 1.0f;
@@ -969,12 +939,12 @@ bool D3DMAT_VectorMatrixMultiply (D3DXVECTOR3 *res, const D3DXVECTOR3 *v, const 
 //       works for matrices with [0 0 0 1] for the 4th column.
 // =======================================================================
 
-HRESULT D3DMAT_MatrixInvert (D3DXMATRIX *res, D3DXMATRIX *a)
+int D3DMAT_MatrixInvert (D3DXMATRIX *res, D3DXMATRIX *a)
 {
     if( fabs(a->_44 - 1.0f) > .001f)
-        return E_INVALIDARG;
+        return -1; // E_INVALIDARG
     if( fabs(a->_14) > .001f || fabs(a->_24) > .001f || fabs(a->_34) > .001f )
-        return E_INVALIDARG;
+        return -1;
 
     FLOAT fDetInv = 1.0f / ( a->_11 * ( a->_22 * a->_33 - a->_23 * a->_32 ) -
                              a->_12 * ( a->_21 * a->_33 - a->_23 * a->_31 ) +
@@ -1000,19 +970,74 @@ HRESULT D3DMAT_MatrixInvert (D3DXMATRIX *res, D3DXMATRIX *a)
     res->_43 = -( a->_41 * res->_13 + a->_42 * res->_23 + a->_43 * res->_33 );
     res->_44 = 1.0f;
 
-    return S_OK;
+    return 0;
+}
+
+// not upstream: a shader cache file holds the SPIR-V and the constant table (D3D9 bytecode carried its own table)
+static bool ReadShaderCache(const char *cache, const char *file, std::vector<uint32_t> &spv, VkConstTable *table)
+{
+	struct stat cs, fs;
+	if (stat(cache, &cs) != 0 || stat(file, &fs) != 0) return false;
+	if (cs.st_mtim.tv_sec < fs.st_mtim.tv_sec || (cs.st_mtim.tv_sec == fs.st_mtim.tv_sec && cs.st_mtim.tv_nsec <= fs.st_mtim.tv_nsec)) return false; // CompareFileTime(cache, main) == 1
+	FILE *f = fopen(cache, "rb");
+	if (!f) return false;
+	bool ok = false;
+	DWORD n = 0, nb = 0, ne = 0;
+	if (fread(&n, 4, 1, f) == 1 && n < (1u << 24)) {
+		spv.resize(n);
+		ok = fread(spv.data(), 4, n, f) == n && fread(&nb, 4, 1, f) == 1;
+		for (DWORD i = 0; i < nb && ok; i++) {
+			int b = 0; UINT s = 0;
+			ok = fread(&b, 4, 1, f) == 1 && fread(&s, 4, 1, f) == 1;
+			if (ok) table->blocks[b] = s;
+		}
+		ok = ok && fread(&ne, 4, 1, f) == 1;
+		for (DWORD i = 0; i < ne && ok; i++) {
+			VkConstEntry e;
+			DWORD len = 0; int sv = 0, vt = 0;
+			ok = fread(&len, 4, 1, f) == 1 && len < 256;
+			if (ok) { e.name.resize(len); ok = fread(&e.name[0], 1, len, f) == len; }
+			ok = ok && fread(&e.binding, 4, 1, f) == 1 && fread(&e.offset, 4, 1, f) == 1 && fread(&e.size, 4, 1, f) == 1 && fread(&sv, 4, 1, f) == 1 && fread(&vt, 4, 1, f) == 1;
+			e.sampler = (sv != 0);
+			e.view = (VkImageViewType)vt;
+			if (ok) table->entries.push_back(e);
+		}
+	}
+	fclose(f);
+	return ok;
+}
+
+static bool WriteShaderCache(const char *cache, const std::vector<uint32_t> &spv, const VkConstTable *table)
+{
+	FILE *f = fopen(cache, "wb");
+	if (!f) return false;
+	DWORD n = (DWORD)spv.size();
+	fwrite(&n, 4, 1, f);
+	fwrite(spv.data(), 4, n, f);
+	n = (DWORD)table->blocks.size();
+	fwrite(&n, 4, 1, f);
+	for (auto &b : table->blocks) { fwrite(&b.first, 4, 1, f); fwrite(&b.second, 4, 1, f); }
+	n = (DWORD)table->entries.size();
+	fwrite(&n, 4, 1, f);
+	for (auto &e : table->entries) {
+		DWORD len = (DWORD)e.name.size(); int sv = e.sampler, vt = (int)e.view;
+		fwrite(&len, 4, 1, f); fwrite(e.name.data(), 1, len, f);
+		fwrite(&e.binding, 4, 1, f); fwrite(&e.offset, 4, 1, f); fwrite(&e.size, 4, 1, f); fwrite(&sv, 4, 1, f); fwrite(&vt, 4, 1, f);
+	}
+	fclose(f);
+	return true;
 }
 
 // ============================================================================
 //
-LPDIRECT3DPIXELSHADER9 CompilePixelShader(LPDIRECT3DDEVICE9 pDev, const char *file, const char *function, const char *name, const char* options, LPD3DXCONSTANTTABLE *pConst)
+VkShaderEXT CompilePixelShader(VkDev *pDev, const char *file, const char *function, const char *name, const char* options, VkConstTable **pConst)
 {
-	ID3DXBuffer* pErrors = NULL;
-	ID3DXBuffer* pCode = NULL;
-	LPDIRECT3DPIXELSHADER9 pShader = NULL;
-	DWORD flags = 0;
+	std::vector<uint32_t> pCode;
+	VkShaderEXT pShader = VK_NULL_HANDLE;
 	char *str = NULL;
 	char *tok = NULL;
+
+	*pConst = new VkConstTable;
 
 	WORD crc = 0;
 	if (options) crc = crc16(options, strlen(options));
@@ -1021,84 +1046,55 @@ LPDIRECT3DPIXELSHADER9 CompilePixelShader(LPDIRECT3DDEVICE9 pDev, const char *fi
 	char filename[MAX_PATH];
 
 	string last = path.substr(path.find_last_of("\\/") + 1);
-	sprintf_s(filename, MAX_PATH, "Cache/D3D9Client/Shaders/%s_%s_%hX_%s.bin", name, function, crc, last.c_str());
+	snprintf(filename, MAX_PATH, "Cache/VulkanClient/Shaders/%s_%s_%hX_%s.bin", name, function, crc, last.c_str());
 
 	if (Config->ShaderCacheUse)
 	{
 		// Browse Shader Cache --------------------
 		//
-		HANDLE hCacheRead = CreateFile(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-		if (hCacheRead != INVALID_HANDLE_VALUE) {
-			FILETIME cacheWrite, mainWrite;
-			if (GetFileTime(hCacheRead, NULL, NULL, &cacheWrite))
-			{
-				HANDLE hRead = CreateFile(file, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-				if (hRead != INVALID_HANDLE_VALUE)
-				{
-					if (GetFileTime(hRead, NULL, NULL, &mainWrite))
-					{
-						if (CompareFileTime(&cacheWrite, &mainWrite) == 1)
-						{
-							DWORD size = GetFileSize(hCacheRead, NULL);
-							DWORD* buffer = new DWORD[(size >> 2) + 1];
-							DWORD bytesRead;
-							if (ReadFile(hCacheRead, buffer, size, &bytesRead, NULL)) {
-								HR(pDev->CreatePixelShader(buffer, &pShader));
-								HR(D3DXGetShaderConstantTable(buffer, pConst));
-							}
-							delete[] buffer;
-						}
-					}
-					CloseHandle(hRead);
-				}
-			}
-			CloseHandle(hCacheRead);
-
+		if (ReadShaderCache(filename, file, pCode, *pConst)) {
+			pShader = VkCreateShaderObject(pDev, pCode, VK_SHADER_STAGE_FRAGMENT_BIT);
 			if (pShader) {
 				//LogOapi("Shader Created From Cache: %s", filename);
 				return pShader;
 			}
 		}
+		(*pConst)->entries.clear();
+		(*pConst)->blocks.clear();
 	}
 
 
 
 	// Invalid Cache data, Recompile the shader --------------------
 	//
-	D3DXMACRO macro[16];
-	memset(&macro, 0, 16*sizeof(D3DXMACRO));
+	VkMacros macro; // D3DXMACRO[16]
 	bool bDisassemble = false;
 
 	LogAlw("Compiling a Shader [%s] function [%s] name [%s]...", file, function, name);
 
 	if (options) {
 		int m = 0;
-		int l = lstrlen(options) + 1;
+		int l = strlen(options) + 1;
 		str = new char[l];
-		strcpy_s(str, l, options);
+		strcpy(str, options);
 		tok = strtok(str,";, ");
 		while (tok!=NULL && m<16) {
-			if (strcmp(tok, "PARTIAL") == 0) flags |= D3DXSHADER_PARTIALPRECISION;
+			// PARTIAL (D3DXSHADER_PARTIALPRECISION): GLSL keeps full precision
 			if (strcmp(tok, "DISASM") == 0) bDisassemble = true;
-			else macro[m++].Name = tok;
+			else { macro.push_back({ tok, "" }); m++; }
 			tok = strtok(NULL, ";, ");
-			LogAlw("Macro (%s)", tok);
+			LogAlw("Macro (%s)", tok ? tok : "");
 		}
 	}
 
-	HR(D3DXCompileShaderFromFileA(file, macro, NULL, function, "ps_3_0", flags, &pCode, &pErrors, pConst));
+	std::string src;
+	bool bOK = VkLoadShaderSource(file, src) && VkCompileGLSL(file, src, function, VK_SHADER_STAGE_FRAGMENT_BIT, macro, pCode, *pConst);
 
-	if (pErrors) {
-		LogErr("Compiling a Shader [%s] function [%s] Failed:\n %s", file, function, (char*)pErrors->GetBufferPointer());
-		MessageBoxA(0, (char*)pErrors->GetBufferPointer(), "Failed to compile a shader", 0);
-		FatalAppExitA(0, "Failed to compile shader code. Exiting...");
-	}
-
-	if (!pCode) {
-		LogErr("Failed to compile a shader [%s] [%s]", file, function);
-		SAFE_DELETEA(str);
-		return NULL;
+	if (!bOK) { // the compiler's messages are in the log
+		LogErr("Compiling a Shader [%s] function [%s] Failed", file, function);
+		QMessageBox::critical(NULL, "Failed to compile a shader", QString("Failed to compile a shader [%1] function [%2]. See the log.").arg(file).arg(function));
+		LogErr("Failed to compile shader code. Exiting..."); // FatalAppExitA
+		exit(1);
 	}
 
 
@@ -1106,40 +1102,23 @@ LPDIRECT3DPIXELSHADER9 CompilePixelShader(LPDIRECT3DDEVICE9 pDev, const char *fi
 	//
 	if (Config->ShaderCacheUse)
 	{
-		HANDLE hCache = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-		if (hCache != INVALID_HANDLE_VALUE) {
-			DWORD bytesWritten;
-			if (!WriteFile(hCache, pCode->GetBufferPointer(), pCode->GetBufferSize(), &bytesWritten, NULL))
-			{
-				LogErr("CreateShaderCache: WriteFile Error: 0x%X", GetLastError());
-			}
-			CloseHandle(hCache);
-		}
-		else {
-			LogErr("CreateShaderCache: CreateFile Error: 0x%X", GetLastError());
+		if (!WriteShaderCache(filename, pCode, *pConst))
+		{
+			LogErr("CreateShaderCache: CreateFile Error: %s", strerror(errno));
 			LogErr("Path=[%s]", filename);
 		}
 	}
 
 
-	if (bDisassemble && pCode) {
-		LPD3DXBUFFER pBuffer = NULL;
-		if (D3DXDisassembleShader((DWORD*)pCode->GetBufferPointer(), true, NULL, &pBuffer) == S_OK) {
-			FILE *fp = NULL;
-			char name[256];
-			sprintf_s(name, 256, "%s_%s_asm.html", RemovePath(file), function);
-			if (!fopen_s(&fp, name, "w")) {
-				fwrite(pBuffer->GetBufferPointer(), 1, pBuffer->GetBufferSize(), fp);
-				fclose(fp);
-			}
-			pBuffer->Release();
-		}
+	if (bDisassemble && pCode.size()) {
+		char asmname[256];
+		snprintf(asmname, 256, "%s_%s_asm.txt", RemovePath(file), function);
+		std::ofstream fp(asmname);
+		if (fp) spv::Disassemble(fp, pCode); // D3DXDisassembleShader
 	}
 
-	HR(pDev->CreatePixelShader((DWORD*)pCode->GetBufferPointer(), &pShader));
+	pShader = VkCreateShaderObject(pDev, pCode, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	SAFE_RELEASE(pCode);
-	SAFE_RELEASE(pErrors);
 	SAFE_DELETEA(str);
 
 	return pShader;
@@ -1147,12 +1126,12 @@ LPDIRECT3DPIXELSHADER9 CompilePixelShader(LPDIRECT3DDEVICE9 pDev, const char *fi
 
 // ============================================================================
 //
-LPDIRECT3DVERTEXSHADER9 CompileVertexShader(LPDIRECT3DDEVICE9 pDev, const char *file, const char *function, const char* name, const char *options, LPD3DXCONSTANTTABLE *pConst)
+VkShaderEXT CompileVertexShader(VkDev *pDev, const char *file, const char *function, const char* name, const char *options, VkConstTable **pConst)
 {
-	ID3DXBuffer* pErrors = NULL;
-	ID3DXBuffer* pCode = NULL;
-	LPDIRECT3DVERTEXSHADER9 pShader = NULL;
-	DWORD flags = 0;
+	std::vector<uint32_t> pCode;
+	VkShaderEXT pShader = VK_NULL_HANDLE;
+
+	*pConst = new VkConstTable;
 
 	WORD crc = 0;
 	if (options) crc = crc16(options, strlen(options));
@@ -1161,79 +1140,50 @@ LPDIRECT3DVERTEXSHADER9 CompileVertexShader(LPDIRECT3DDEVICE9 pDev, const char *
 	char filename[MAX_PATH];
 
 	string last = path.substr(path.find_last_of("\\/") + 1);
-	sprintf_s(filename, MAX_PATH, "Cache/D3D9Client/Shaders/%s_%s_%hX_%s.bin", name, function, crc, last.c_str());
+	snprintf(filename, MAX_PATH, "Cache/VulkanClient/Shaders/%s_%s_%hX_%s.bin", name, function, crc, last.c_str());
 
 	if (Config->ShaderCacheUse)
 	{
 		// Browse Shader Cache --------------------
 		//
-		HANDLE hCacheRead = CreateFile(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-		if (hCacheRead != INVALID_HANDLE_VALUE) {
-			FILETIME cacheWrite, mainWrite;
-			if (GetFileTime(hCacheRead, NULL, NULL, &cacheWrite))
-			{
-				HANDLE hRead = CreateFile(file, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-				if (hRead != INVALID_HANDLE_VALUE)
-				{
-					if (GetFileTime(hRead, NULL, NULL, &mainWrite))
-					{
-						if (CompareFileTime(&cacheWrite, &mainWrite) == 1)
-						{
-							DWORD size = GetFileSize(hCacheRead, NULL);
-							DWORD* buffer = new DWORD[(size >> 2) + 1];
-							DWORD bytesRead;
-							if (ReadFile(hCacheRead, buffer, size, &bytesRead, NULL)) {
-								HR(pDev->CreateVertexShader(buffer, &pShader));
-								HR(D3DXGetShaderConstantTable(buffer, pConst));
-							}
-							delete[] buffer;
-						}
-					}
-					CloseHandle(hRead);
-				}
-			}
-			CloseHandle(hCacheRead);
-
+		if (ReadShaderCache(filename, file, pCode, *pConst)) {
+			pShader = VkCreateShaderObject(pDev, pCode, VK_SHADER_STAGE_VERTEX_BIT);
 			if (pShader) {
 				//LogOapi("Shader Created From Cache: %s", filename);
 				return pShader;
 			}
 		}
+		(*pConst)->entries.clear();
+		(*pConst)->blocks.clear();
 	}
 
 	char *str = NULL;
 	char *tok = NULL;
 
-	D3DXMACRO macro[32];
-	memset(&macro, 0, 32*sizeof(D3DXMACRO));
+	VkMacros macro; // D3DXMACRO[32]
 
 	if (options) {
 		int m = 0;
-		int l = lstrlen(options) + 1;
+		int l = strlen(options) + 1;
 		str = new char[l];
-		strcpy_s(str, l, options);
+		strcpy(str, options);
 		tok = strtok(str,";, ");
 		while (tok!=NULL && m<16) {
-			macro[m++].Name = tok;
+			macro.push_back({ tok, "" }); m++;
 			tok = strtok(NULL, ";, ");
 		}
 	}
 
 	LogAlw("Compiling a Shader [%s] function [%s]...", file, function);
 
-	HR(D3DXCompileShaderFromFileA(file, macro, NULL, function, "vs_3_0", flags, &pCode, &pErrors, pConst));
+	std::string src;
+	bool bOK = VkLoadShaderSource(file, src) && VkCompileGLSL(file, src, function, VK_SHADER_STAGE_VERTEX_BIT, macro, pCode, *pConst);
 
-	if (pErrors) {
-		LogErr("Compiling a Shader [%s] function [%s] Failed:\n %s", file, function, (char*)pErrors->GetBufferPointer());
-		MessageBoxA(0, (char*)pErrors->GetBufferPointer(), "Failed to compile a shader", 0);
-		FatalAppExitA(0, "Failed to compile shader code. Exiting...");
-	}
-
-	if (!pCode) {
-		LogErr("Failed to compile a shader [%s] [%s]", file, function);
-		SAFE_DELETEA(str);
-		return NULL;
+	if (!bOK) { // the compiler's messages are in the log
+		LogErr("Compiling a Shader [%s] function [%s] Failed", file, function);
+		QMessageBox::critical(NULL, "Failed to compile a shader", QString("Failed to compile a shader [%1] function [%2]. See the log.").arg(file).arg(function));
+		LogErr("Failed to compile shader code. Exiting..."); // FatalAppExitA
+		exit(1);
 	}
 
 
@@ -1241,26 +1191,15 @@ LPDIRECT3DVERTEXSHADER9 CompileVertexShader(LPDIRECT3DDEVICE9 pDev, const char *
 	//
 	if (Config->ShaderCacheUse)
 	{
-		HANDLE hCache = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-
-		if (hCache != INVALID_HANDLE_VALUE) {
-			DWORD bytesWritten;
-			if (!WriteFile(hCache, pCode->GetBufferPointer(), pCode->GetBufferSize(), &bytesWritten, NULL))
-			{
-				LogErr("CreateShaderCache: WriteFile Error: 0x%X", GetLastError());
-			}
-			CloseHandle(hCache);
-		}
-		else {
-			LogErr("CreateShaderCache: CreateFile Error: 0x%X", GetLastError());
+		if (!WriteShaderCache(filename, pCode, *pConst))
+		{
+			LogErr("CreateShaderCache: CreateFile Error: %s", strerror(errno));
 			LogErr("Path=[%s]", filename);
 		}
 	}
 
-	HR(pDev->CreateVertexShader((DWORD*)pCode->GetBufferPointer(), &pShader));
+	pShader = VkCreateShaderObject(pDev, pCode, VK_SHADER_STAGE_VERTEX_BIT);
 
-	SAFE_RELEASE(pCode);
-	SAFE_RELEASE(pErrors);
 	SAFE_DELETEA(str);
 
 	return pShader;
@@ -1270,7 +1209,7 @@ LPDIRECT3DVERTEXSHADER9 CompileVertexShader(LPDIRECT3DDEVICE9 pDev, const char *
 //
 const char *RemovePath(const char *in)
 {
-	int len = lstrlen(in);
+	int len = strlen(in);
 	const char *cptr = in;
 	for (int i=0;i<len;i++) if (in[i]=='\\' || in[i]=='/') cptr = &in[i+1];
 	return cptr;
@@ -1278,64 +1217,41 @@ const char *RemovePath(const char *in)
 
 // ============================================================================
 //
-bool CreateVolumeTexture(LPDIRECT3DDEVICE9 pDevice, int count, LPDIRECT3DTEXTURE9 *pIn, LPDIRECT3DVOLUMETEXTURE9 *pOut)
+bool CreateVolumeTexture(VkDev *pDevice, int count, VkTex **pIn, VkTex **pOut)
 {
 	if (count==0 || pDevice==NULL || pIn==NULL || pOut==NULL) return false;
 	if (pIn[0]==NULL) return false;
 
-	LPDIRECT3DVOLUMETEXTURE9 pTemp = NULL;
+	VkPixels vol; // system memory volume (D3DPOOL_SYSTEMMEM), filled slice by slice
 
-	D3DSURFACE_DESC desc;
-	D3DVOLUME_DESC vd;
-	D3DLOCKED_BOX  box;
-	D3DLOCKED_RECT rect;
+	DWORD height = pIn[0]->h;
+	DWORD mips = 1; // VkTex volumes have one level: the top level only (upstream copied count slices into every level)
 
-	pIn[0]->GetLevelDesc(0, &desc);
-	DWORD mips = pIn[0]->GetLevelCount();
+	vol.w = pIn[0]->w; vol.h = height; vol.depth = count; vol.levels = mips; vol.layers = 1;
+	vol.fmt = pIn[0]->fmt;
+	vol.data.assign(1, std::vector<BYTE>());
 
-	if (D3DXCreateVolumeTexture(pDevice, desc.Width, desc.Height, count, mips, 0, desc.Format, D3DPOOL_SYSTEMMEM, &pTemp)==S_OK) {
-
-		DWORD height = desc.Height;
-
-		for (DWORD m=0; m < mips; m++) {
-			pTemp->GetLevelDesc(m, &vd);
-			if (pTemp->LockBox(m, &box, NULL, 0)==S_OK) {
-				char *pDst = (char*)box.pBits;
-				for (int i=0; i < count; i++) {
-					pIn[i]->GetLevelDesc(m, &desc);
-					if (pIn[i]->LockRect(m, &rect, NULL, D3DLOCK_READONLY)==S_OK) {
-						if ((box.RowPitch == rect.Pitch) && (box.SlicePitch == rect.Pitch*height)) {
-							memcpy(pDst, rect.pBits, box.SlicePitch);
-							pDst += box.SlicePitch;
-							pIn[i]->UnlockRect(m);
-							continue;
-						}
-						LogErr("CreateVolumeTexture: Pitch miss-match");
-						pIn[i]->UnlockRect(m);
-						pTemp->UnlockBox(m);
-						return false;
-					}
-					else {
-						LogErr("CreateVolumeTexture: Failed to lock a rect");
-						return false;
-					}
+	for (DWORD m=0; m < mips; m++) {
+		for (int i=0; i < count; i++) {
+			VkPixels px;
+			if (pIn[i] && VkReadPixels(pDevice, pIn[i], px, 1)) { // LockRect(READONLY)
+				if (px.w == vol.w && px.h == height && px.fmt == vol.fmt) {
+					vol.data[0].insert(vol.data[0].end(), px.Level(0).begin(), px.Level(0).end());
+					continue;
 				}
-			}
-			else {
-				LogErr("CreateVolumeTexture: Failed to lock a box");
+				LogErr("CreateVolumeTexture: Pitch miss-match");
 				return false;
 			}
-			height>>=1;
-			pTemp->UnlockBox(m);
+			else {
+				LogErr("CreateVolumeTexture: Failed to lock a rect");
+				return false;
+			}
 		}
+		height>>=1;
+	}
 
-		if (D3DXCreateVolumeTexture(pDevice, desc.Width, desc.Height, count, mips, 0, desc.Format, D3DPOOL_DEFAULT, pOut)==S_OK) {
-			HR(pDevice->UpdateTexture(pTemp, (*pOut)));
-			(*pOut)->GenerateMipSubLevels();
-			pTemp->Release();
-			return true;
-		}
-		return false;
+	if ((*pOut = VkCreateTexture(pDevice, vol, VK_IMAGE_USAGE_SAMPLED_BIT))) { // D3DXCreateVolumeTexture, UpdateTexture
+		return true;
 	}
 	return false;
 }
@@ -1499,7 +1415,7 @@ void D3D9Light::UpdateLight(const LightEmitter *_le, const class vObject *vo)
 
 // Planet Texture Loader ------------------------------------------------------------------------------
 //
-#include <ddraw.h>
+// ddraw.h left out: the DDSURFACEDESC2 fields as they are laid out in a .dds file (4-byte lpSurface, as the x64 twin below)
 #pragma pack(push, 1)
 typedef struct _DDDESC2_x64
 {
@@ -1511,41 +1427,39 @@ typedef struct _DDDESC2_x64
 	{
 		LONG            lPitch;                 // distance to start of next line (return value only)
 		DWORD           dwLinearSize;           // Formless late-allocated optimized surface size
-	} DUMMYUNIONNAMEN(1);
+	};
 	union
 	{
 		DWORD           dwBackBufferCount;      // number of back buffers requested
 		DWORD           dwDepth;                // the depth if this is a volume texture 
-	} DUMMYUNIONNAMEN(5);
+	};
 	union
 	{
 		DWORD           dwMipMapCount;          // number of mip-map levels requestde
 												// dwZBufferBitDepth removed, use ddpfPixelFormat one instead
 		DWORD           dwRefreshRate;          // refresh rate (used when display mode is described)
 		DWORD           dwSrcVBHandle;          // The source used in VB::Optimize
-	} DUMMYUNIONNAMEN(2);
+	};
 	DWORD               dwAlphaBitDepth;        // depth of alpha buffer requested
 	DWORD               dwReserved;             // reserved
 	DWORD               lpSurface;              // pointer to the associated surface memory
-	union
-	{
-		DDCOLORKEY      ddckCKDestOverlay;      // color key for destination overlay use
-		DWORD           dwEmptyFaceColor;       // Physical color for empty cubemap faces
-	} DUMMYUNIONNAMEN(3);
-	DDCOLORKEY          ddckCKDestBlt;          // color key for destination blt use
-	DDCOLORKEY          ddckCKSrcOverlay;       // color key for source overlay use
-	DDCOLORKEY          ddckCKSrcBlt;           // color key for source blt use
-	union
-	{
-		DDPIXELFORMAT   ddpfPixelFormat;        // pixel format description of the surface
-		DWORD           dwFVF;                  // vertex format description of vertex buffers
-	} DUMMYUNIONNAMEN(4);
-	DDSCAPS2            ddsCaps;                // direct draw surface capabilities
+	DWORD               ddckCKDestOverlay[2];   // color key for destination overlay use (DDCOLORKEY)
+	DWORD               ddckCKDestBlt[2];       // color key for destination blt use
+	DWORD               ddckCKSrcOverlay[2];    // color key for source overlay use
+	DWORD               ddckCKSrcBlt[2];        // color key for source blt use
+	struct {                                    // pixel format description of the surface (DDPIXELFORMAT)
+		DWORD dwSize, dwFlags, dwFourCC, dwRGBBitCount, dwRBitMask, dwGBitMask, dwBBitMask, dwRGBAlphaBitMask;
+	} ddpfPixelFormat;
+	DWORD               ddsCaps[4];             // direct draw surface capabilities (DDSCAPS2)
 	DWORD               dwTextureStage;         // stage in multitexture cascade
 } DDSURFACEDESC2_x64;
 #pragma pack(pop)
 
-int LoadPlanetTextures(const char* fname, LPDIRECT3DTEXTURE9* ppdds, DWORD flags, int amount)
+#define DDSD_PITCH      0x00000008l
+#define DDSD_LINEARSIZE 0x00080000l
+#define MAKEFOURCC(a, b, c, d) ((DWORD)(BYTE)(a) | ((DWORD)(BYTE)(b) << 8) | ((DWORD)(BYTE)(c) << 16) | ((DWORD)(BYTE)(d) << 24))
+
+int LoadPlanetTextures(const char* fname, VkTex** ppdds, DWORD flags, int amount)
 {
 	_TRACE;
 
@@ -1555,7 +1469,7 @@ int LoadPlanetTextures(const char* fname, LPDIRECT3DTEXTURE9* ppdds, DWORD flags
 
 		FILE* f;
 
-		if (fopen_s(&f, path, "rb")) return 0;
+		if (!(f = fopen(path, "rb"))) return 0;
 
 		int ntex = 0;
 		char* buffer, * location;
@@ -1564,7 +1478,7 @@ int LoadPlanetTextures(const char* fname, LPDIRECT3DTEXTURE9* ppdds, DWORD flags
 		long BytesLeft = size;
 		buffer = new char[size + 1];
 		rewind(f);
-		fread(buffer, 1, size, f);
+		size_t nr = fread(buffer, 1, size, f); (void)nr;
 		fclose(f);
 
 		location = buffer;
@@ -1573,7 +1487,7 @@ int LoadPlanetTextures(const char* fname, LPDIRECT3DTEXTURE9* ppdds, DWORD flags
 			DWORD Magic = *(DWORD*)location;
 			if (Magic != MAKEFOURCC('D', 'D', 'S', ' ')) break;
 
-			DDSURFACEDESC2* header = (DDSURFACEDESC2*)(location + sizeof(Magic));
+			DDSURFACEDESC2_x64* header = (DDSURFACEDESC2_x64*)(location + sizeof(Magic)); // file layout (upstream read the native x64 struct, whose pixel format sits 4 bytes later)
 
 			if ((header->dwFlags & DDSD_LINEARSIZE) == 0 && (header->dwFlags & DDSD_PITCH) == 0) {
 				header->dwFlags |= DDSD_LINEARSIZE;
@@ -1587,11 +1501,12 @@ int LoadPlanetTextures(const char* fname, LPDIRECT3DTEXTURE9* ppdds, DWORD flags
 
 			bytes += sizeof(Magic) + sizeof(DDSURFACEDESC2_x64);
 
-			D3DXIMAGE_INFO Info;
-			LPDIRECT3DTEXTURE9 pTex = NULL;
+			VkPixels px, cv;
+			VkTex *pTex = NULL;
 
-			if (D3DXCreateTextureFromFileInMemoryEx(g_client->GetDevice(), location, bytes, 0, 0, 1, 0, D3DFMT_FROM_FILE,
-				D3DPOOL_DEFAULT, D3DX_DEFAULT, D3DX_DEFAULT, 0, &Info, NULL, &pTex) == S_OK) {
+			// D3DXCreateTextureFromFileInMemoryEx: one level, format from file
+			if (VkLoadPixelsFromMemory((const BYTE *)location, bytes, px) && VkConvertPixels(px, cv, VK_FORMAT_UNDEFINED, SWZ_NONE, 0, 0, 1) &&
+				(pTex = VkCreateTexture(g_client->GetDevice(), cv, VK_IMAGE_USAGE_SAMPLED_BIT))) {
 				ppdds[ntex] = pTex;
 				//LogAlw("Loaded a texture from %s, 0x%X (%u x %u)", fname, pTex, Info.Width, Info.Height);
 			}
@@ -1640,7 +1555,7 @@ SketchMesh* GetSketchMesh(const MESHHANDLE hMesh)
 }
 
 
-SketchMesh::SketchMesh(LPDIRECT3DDEVICE9 _pDev) :
+SketchMesh::SketchMesh(VkDev *_pDev) :
 	MaxVert(0), MaxIdx(0),
 	nGrp(0), nMtrl(0), nTex(0),
 	pDev(_pDev),
@@ -1660,8 +1575,8 @@ SketchMesh::~SketchMesh()
 	SAFE_DELETEA(Mtrl);
 	SAFE_DELETEA(Tex);
 	SAFE_DELETEA(Grp);
-	SAFE_RELEASE(pVB);
-	SAFE_RELEASE(pIB);
+	SAFE_DELETE(pVB);
+	SAFE_DELETE(pIB);
 }
 
 
@@ -1736,20 +1651,13 @@ bool SketchMesh::LoadMeshFromHandle(MESHHANDLE hMesh)
 
 	// -----------------------------------------------------------------------
 
-	HR(pDev->CreateVertexBuffer(MaxVert * sizeof(NTVERTEX), 0, 0, D3DPOOL_DEFAULT, &pVB, NULL));
-	HR(pDev->CreateIndexBuffer(MaxIdx * sizeof(WORD), 0, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &pIB, NULL));
-
-	NTVERTEX* pVert = NULL;
-	WORD* pIndex = NULL;
+	pVB = new VkBuf(pDev, MaxVert * sizeof(NTVERTEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DPOOL_DEFAULT
+	pIB = new VkBuf(pDev, MaxIdx * sizeof(WORD), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false);        // D3DFMT_INDEX16
 
 	for (DWORD i = 0; i < nGrp; i++) {
 		MESHGROUPEX* pEx = oapiMeshGroupEx(hMesh, i);
-		HR(pIB->Lock(Grp[i].IdxOff * sizeof(WORD), Grp[i].nIdx * sizeof(WORD), (LPVOID*)&pIndex, 0));
-		HR(pVB->Lock(Grp[i].VertOff * sizeof(NTVERTEX), Grp[i].nVert * sizeof(NTVERTEX), (LPVOID*)&pVert, 0));
-		memcpy(pIndex, pEx->Idx, sizeof(WORD) * pEx->nIdx);
-		memcpy(pVert, pEx->Vtx, sizeof(NTVERTEX) * pEx->nVtx);
-		HR(pIB->Unlock());
-		HR(pVB->Unlock());
+		pIB->Upload(pEx->Idx, sizeof(WORD) * pEx->nIdx, Grp[i].IdxOff * sizeof(WORD)); // Lock/memcpy/Unlock
+		pVB->Upload(pEx->Vtx, sizeof(NTVERTEX) * pEx->nVtx, Grp[i].VertOff * sizeof(NTVERTEX));
 	}
 
 	return true;
@@ -1760,7 +1668,7 @@ bool SketchMesh::LoadMeshFromHandle(MESHHANDLE hMesh)
 //
 void SketchMesh::Init()
 {
-	pDev->SetVertexDeclaration(pNTVertexDecl);
+	pDev->SetVertexDecl(pNTVertexDecl);
 	pDev->SetStreamSource(0, pVB, 0, sizeof(NTVERTEX));
 	pDev->SetIndices(pIB);
 }
@@ -1771,7 +1679,7 @@ void SketchMesh::Init()
 void SketchMesh::RenderGroup(DWORD idx)
 {
 	if (!pVB) return;
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[idx].VertOff, 0, Grp[idx].nVert, Grp[idx].IdxOff, Grp[idx].nIdx / 3);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[idx].VertOff, Grp[idx].IdxOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[idx].nIdx / 3));
 }
 
 
@@ -1798,44 +1706,53 @@ D3DXCOLOR SketchMesh::GetMaterial(DWORD idx)
 
 
 
-ShaderClass::ShaderClass(LPDIRECT3DDEVICE9 pDev, const char* file, const char* vs, const char* ps, const char *name, const char* options) :
-	pPS(), pVS(), pPSCB(NULL), pVSCB(NULL), pDev(pDev), fn(file), psn(ps), vsn(vs), sn(name)
+ShaderClass::ShaderClass(VkDev *pDev, const char* file, const char* vs, const char* ps, const char *name, const char* options) :
+	pPSCB(NULL), pVSCB(NULL), pCB(NULL), pPS(), pVS(), pDev(pDev), fn(file), psn(ps), vsn(vs), sn(name)
 {
-	for (int i = 0; i < ARRAYSIZE(pTextures); i++) pTextures[i] = {0};
+	for (int i = 0; i < (int)std::size(pTextures); i++) pTextures[i] = {};
 	pPS = CompilePixelShader(pDev, file, ps, name, options, &pPSCB);
 	pVS = CompileVertexShader(pDev, file, vs, name, options, &pVSCB);
+	pCB = new VkConstBuffer(pDev);
+	pCB->SetTable(pPSCB);
+	pCB->SetTable(pVSCB);
+	for (VkConstTable *t : { pPSCB, pVSCB }) // the sampler bindings the pair reads
+		for (auto &e : t->entries) {
+			if (!e.sampler) continue;
+			bool have = false;
+			for (auto &s : smpSlots) if (s.binding == e.binding) have = true;
+			if (!have) smpSlots.push_back({ e.binding, e.view });
+		}
 }
 
 
 
 ShaderClass::~ShaderClass()
 {
-	SAFE_RELEASE(pPS);
-	SAFE_RELEASE(pVS);
-	SAFE_RELEASE(pPSCB);
-	SAFE_RELEASE(pVSCB);
+	if (pDev->GetConstantSource() == pCB) pDev->SetConstantSource(NULL, NULL);
+	VkDevice d = pDev->dev;
+	VkShaderEXT ps = pPS, vs = pVS;
+	pDev->Defer([d, ps, vs]() { if (ps) vkx.DestroyShaderEXT(d, ps, NULL); if (vs) vkx.DestroyShaderEXT(d, vs, NULL); });
+	SAFE_DELETE(pPSCB);
+	SAFE_DELETE(pVSCB);
+	SAFE_DELETE(pCB);
 }
 
 
 void ShaderClass::ClearTextures()
 {
-	for (int idx = 0; idx < ARRAYSIZE(pTextures); idx++)
+	for (int idx = 0; idx < (int)std::size(pTextures); idx++)
 	{
 		pTextures[idx].pAssigned = NULL;
 		pTextures[idx].pTex = NULL;
 		pTextures[idx].bSamplerSet = false;
 	}
+	pCB->ClearTextures();
 }
 
 void ShaderClass::DetachTextures()
 {
 	ClearTextures();
-	for (int i = 0; i < 16; i++) HR(pDev->SetTexture(i, NULL));
-
-	HR(pDev->SetTexture(D3DVERTEXTEXTURESAMPLER0, NULL));
-	HR(pDev->SetTexture(D3DVERTEXTEXTURESAMPLER1, NULL));
-	HR(pDev->SetTexture(D3DVERTEXTEXTURESAMPLER2, NULL));
-	HR(pDev->SetTexture(D3DVERTEXTEXTURESAMPLER3, NULL));
+	// SetTexture(i, NULL) for the 16 pixel and 4 vertex samplers: ClearTextures emptied this shader's stages
 }
 
 
@@ -1843,9 +1760,9 @@ void ShaderClass::UpdateTextures()
 {
 	// Set textures and samplers -----------------------------------------------
 	//
-	for (int idx = 0; idx < ARRAYSIZE(pTextures); idx++)
+	for (int idx = 0; idx < (int)std::size(pTextures); idx++)
 	{
-		int sid = idx > 15 ? idx - 16 + D3DVERTEXTEXTURESAMPLER0 : idx;
+		int sid = idx + VkDev::NUBOS; // sampler binding
 
 		if (pTextures[idx].pTex == NULL) continue;
 
@@ -1854,142 +1771,140 @@ void ShaderClass::UpdateTextures()
 		if (!pTextures[idx].bSamplerSet)
 		{
 			pTextures[idx].bSamplerSet = true;
+			pTextures[idx].pAssigned = NULL; // the sampler goes with the texture here
 			DWORD flags = pTextures[idx].Flags;
+			VkSamplerDesc &sd = pTextures[idx].desc;
 
-			if (flags & IPF_CLAMP_U)		pDev->SetSamplerState(sid, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-			else if (flags & IPF_MIRROR_U)	pDev->SetSamplerState(sid, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-			else							pDev->SetSamplerState(sid, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+			if (flags & IPF_CLAMP_U)		sd.u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			else if (flags & IPF_MIRROR_U)	sd.u = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+			else							sd.u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-			if (flags & IPF_CLAMP_V)		pDev->SetSamplerState(sid, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-			else if (flags & IPF_MIRROR_V)	pDev->SetSamplerState(sid, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
-			else							pDev->SetSamplerState(sid, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+			if (flags & IPF_CLAMP_V)		sd.v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			else if (flags & IPF_MIRROR_V)	sd.v = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+			else							sd.v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-			if (flags & IPF_CLAMP_W)		pDev->SetSamplerState(sid, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP);
-			else if (flags & IPF_MIRROR_W)	pDev->SetSamplerState(sid, D3DSAMP_ADDRESSW, D3DTADDRESS_MIRROR);
-			else							pDev->SetSamplerState(sid, D3DSAMP_ADDRESSW, D3DTADDRESS_WRAP);
+			if (flags & IPF_CLAMP_W)		sd.w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			else if (flags & IPF_MIRROR_W)	sd.w = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+			else							sd.w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-			DWORD filter = D3DTEXF_POINT;
+			VkFilter filter = VK_FILTER_NEAREST;
+			bool aniso = false;
 
-			if (flags & IPF_LINEAR) filter = D3DTEXF_LINEAR;
-			if (flags & IPF_PYRAMIDAL) filter = D3DTEXF_PYRAMIDALQUAD;
-			if (flags & IPF_GAUSSIAN) filter = D3DTEXF_GAUSSIANQUAD;
-			if (flags & IPF_ANISOTROPIC) filter = D3DTEXF_ANISOTROPIC;
+			if (flags & IPF_LINEAR) filter = VK_FILTER_LINEAR;
+			if (flags & IPF_PYRAMIDAL) filter = VK_FILTER_LINEAR; // D3DTEXF_PYRAMIDALQUAD, D3DTEXF_GAUSSIANQUAD: no Vulkan filter, linear
+			if (flags & IPF_GAUSSIAN) filter = VK_FILTER_LINEAR;
+			if (flags & IPF_ANISOTROPIC) { filter = VK_FILTER_LINEAR; aniso = true; }
 
-			HR(pDev->SetSamplerState(sid, D3DSAMP_SRGBTEXTURE, false));
-			HR(pDev->SetSamplerState(sid, D3DSAMP_MAXANISOTROPY, pTextures[idx].AnisoLvl));
-			HR(pDev->SetSamplerState(sid, D3DSAMP_MAGFILTER, filter));
-			HR(pDev->SetSamplerState(sid, D3DSAMP_MINFILTER, filter));
-			if (idx <= 15) { HR(pDev->SetSamplerState(sid, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR)); }
-			else { HR(pDev->SetSamplerState(sid, D3DSAMP_MIPFILTER, D3DTEXF_POINT)); }
+			// D3DSAMP_SRGBTEXTURE false: the views are UNORM
+			sd.aniso = aniso ? float(std::max(1u, pTextures[idx].AnisoLvl)) : 0.0f;
+			sd.mag = filter;
+			sd.min = filter;
+			sd.mipBias = 0.0f;
+			sd.noMip = false;
+			if (!(flags & IPF_VERTEXTEX)) { sd.mip = VK_SAMPLER_MIPMAP_MODE_LINEAR; }
+			else { sd.mip = VK_SAMPLER_MIPMAP_MODE_NEAREST; }
 		}
 
 		// If texture has changed then assign it
 		if (pTextures[idx].pTex != pTextures[idx].pAssigned)
 		{
 			pTextures[idx].pAssigned = pTextures[idx].pTex;
-			HR(pDev->SetTexture(sid, pTextures[idx].pTex));
+			pCB->SetTexture(sid, pTextures[idx].pTex, pTextures[idx].desc);
 		}
 	}
 }
 
 
-void ShaderClass::Setup(LPDIRECT3DVERTEXDECLARATION9 pDecl, bool bZ, int blend)
+void ShaderClass::Setup(const VkVertexDecl *pDecl, bool bZ, int blend)
 {
-	D3DSURFACE_DESC desc;
-	LPDIRECT3DSURFACE9 pTgt = NULL;
+	VkSurf *pTgt = pDev->GetRenderTarget(); // GetRenderTarget(0)
 
-	HR(pDev->GetRenderTarget(0, &pTgt));
-
-	if (pTgt) pTgt->GetDesc(&desc);
-	else {
+	if (!pTgt) {
 		LogErr("ShaderClass::Setup No render target is set");
 		return;
 	}
 
-	SAFE_RELEASE(pTgt);
+	pDev->SetViewport(0.0f, 0.0f, (float)pTgt->w, (float)pTgt->h, 0.0f, 1.0f);
 
-	D3DVIEWPORT9 VP;
-	VP.X = 0;
-	VP.Y = 0;
-	VP.Width = desc.Width;
-	VP.Height = desc.Height;
-	VP.MinZ = 0.0f;
-	VP.MaxZ = 1.0f;
+	pDev->BindShaders(pVS, pPS); // SetVertexShader, SetPixelShader
+	pDev->SetConstantSource(pCB, &smpSlots);
 
-	HR(pDev->SetViewport(&VP));
+	if (pDecl) pDev->SetVertexDecl(pDecl);
 
-	HR(pDev->SetVertexShader(pVS));
-	HR(pDev->SetPixelShader(pPS));
+	// D3DRS_POINTSPRITEENABLE, D3DRS_ALPHATESTENABLE false: points have no sprite mode here, alpha tests are shader discards
+	VkDev::State s = pDev->GetState();
+	s.stencil = false;
+	s.writeMask = 0xF;
 
-	if (pDecl) HR(pDev->SetVertexDeclaration(pDecl));
+	s.depthTest = bZ;
+	s.depthWrite = bZ;
 
-	HR(pDev->SetRenderState(D3DRS_POINTSPRITEENABLE, false));
-	HR(pDev->SetRenderState(D3DRS_ALPHATESTENABLE, false));
-	HR(pDev->SetRenderState(D3DRS_STENCILENABLE, false));
-	HR(pDev->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
-
-	HR(pDev->SetRenderState(D3DRS_ZENABLE, bZ));
-	HR(pDev->SetRenderState(D3DRS_ZWRITEENABLE, bZ));
-
-	HR(pDev->SetRenderState(D3DRS_ALPHABLENDENABLE, (blend != 0)));
+	s.blend = (blend != 0);
 
 	if (blend == 1) {
-		HR(pDev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD));
-		HR(pDev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
-		HR(pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
+		s.blendEq.colorBlendOp = VK_BLEND_OP_ADD;
+		s.blendEq.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		s.blendEq.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	}
 
 	if (blend == 2) {
-		HR(pDev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD));
-		HR(pDev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE));
-		HR(pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
+		s.blendEq.colorBlendOp = VK_BLEND_OP_ADD;
+		s.blendEq.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		s.blendEq.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	}
 
 	if (blend == 3) {
-		HR(pDev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX));
-		HR(pDev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE));
-		HR(pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE));
+		s.blendEq.colorBlendOp = VK_BLEND_OP_MAX;
+		s.blendEq.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		s.blendEq.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 	}
 
 	if (blend == 4) {
-		HR(pDev->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD));
-		HR(pDev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
-		HR(pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE));
+		s.blendEq.colorBlendOp = VK_BLEND_OP_ADD;
+		s.blendEq.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		s.blendEq.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 	}
+
+	if (!s.blendSeparate) { // D3DRS_SEPARATEALPHABLENDENABLE off: alpha blends like colour
+		s.blendEq.alphaBlendOp = s.blendEq.colorBlendOp;
+		s.blendEq.srcAlphaBlendFactor = s.blendEq.srcColorBlendFactor;
+		s.blendEq.dstAlphaBlendFactor = s.blendEq.dstColorBlendFactor;
+	}
+	pDev->SetState(s);
 }
 
 
-HANDLE ShaderClass::GetPSHandle(const char* name)
+VkConstHandle ShaderClass::GetPSHandle(const char* name)
 {
-	D3DXHANDLE hVar = pPSCB->GetConstantByName(NULL, name);
-	return HANDLE(hVar);
+	VkConstHandle hVar = pPSCB->GetConstantByName(name);
+	return hVar;
 }
 
 
-HANDLE ShaderClass::GetVSHandle(const char* name)
+VkConstHandle ShaderClass::GetVSHandle(const char* name)
 {
-	D3DXHANDLE hVar = pVSCB->GetConstantByName(NULL, name);
-	return HANDLE(hVar);
+	VkConstHandle hVar = pVSCB->GetConstantByName(name);
+	return hVar;
 }
 
 
 
-void ShaderClass::SetTexture(const char* name, LPDIRECT3DTEXTURE9 pTex, UINT flags, UINT aniso)
+void ShaderClass::SetTexture(const char* name, VkTex *pTex, UINT flags, UINT aniso)
 {
-	D3DXHANDLE hVar = pPSCB->GetConstantByName(NULL, name);
-	SetTexture((HANDLE)hVar, pTex, flags, aniso);
+	VkConstHandle hVar = pPSCB->GetConstantByName(name);
+	SetTexture(hVar, pTex, flags, aniso);
 }
 
 
-void ShaderClass::SetTextureVS(const char* name, LPDIRECT3DTEXTURE9 pTex, UINT flags, UINT aniso)
+void ShaderClass::SetTextureVS(const char* name, VkTex *pTex, UINT flags, UINT aniso)
 {
-	D3DXHANDLE hVar = pVSCB->GetConstantByName(NULL, name);
-	SetTextureVS((HANDLE)hVar, pTex, flags, aniso);
+	VkConstHandle hVar = pVSCB->GetConstantByName(name);
+	SetTextureVS(hVar, pTex, flags, aniso);
 }
 
 void ShaderClass::SetPSConstants(const char* name, void* data, UINT bytes)
 {
-	D3DXHANDLE hVar = pPSCB->GetConstantByName(NULL, name);
+	VkConstHandle hVar = pPSCB->GetConstantByName(name);
 #ifdef SHDCLSDBG
 	if (!hVar) {
 		LogErr("Shader::SetPSConstants() Invalid variable name [%s]. File[%s], Entrypoint[%s], Shader[%s]", name, fn.c_str(), psn.c_str(), sn.c_str());
@@ -1997,14 +1912,12 @@ void ShaderClass::SetPSConstants(const char* name, void* data, UINT bytes)
 	}
 #endif
 	if (!hVar) return;
-	if (pPSCB->SetValue(pDev, hVar, data, bytes) != S_OK) {
-		LogErr("Shader::SetPSConstants() Failed. Variable[%s], File[%s], Entrypoint[%s]", name, fn.c_str(), psn.c_str());
-	}
+	pCB->SetValue(hVar, data, bytes); // SetValue into the constant registers
 }
 
 void ShaderClass::SetVSConstants(const char* name, void* data, UINT bytes)
 {
-	D3DXHANDLE hVar = pVSCB->GetConstantByName(NULL, name);
+	VkConstHandle hVar = pVSCB->GetConstantByName(name);
 #ifdef SHDCLSDBG
 	if (!hVar) {
 		LogErr("Shader::SetVSConstants() Invalid variable name [%s]. File[%s], Entrypoint[%s], Shader[%s]", name, fn.c_str(), psn.c_str(), sn.c_str());
@@ -2012,14 +1925,12 @@ void ShaderClass::SetVSConstants(const char* name, void* data, UINT bytes)
 	}
 #endif
 	if (!hVar) return;
-	if (pVSCB->SetValue(pDev, hVar, data, bytes) != S_OK) {
-		LogErr("Shader::SetVSConstants() Failed. Variable[%s], File[%s], Entrypoint[%s]", name, fn.c_str(), vsn.c_str());
-	}
+	pCB->SetValue(hVar, data, bytes);
 }
 	
 
 
-void ShaderClass::SetTexture(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags, UINT aniso)
+void ShaderClass::SetTexture(VkConstHandle hVar, VkTex *pTex, UINT flags, UINT aniso)
 {
 #ifdef SHDCLSDBG
 	if (!hVar) {
@@ -2027,8 +1938,8 @@ void ShaderClass::SetTexture(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags, U
 		assert(false);
 	}
 #endif
-	if (!hVar) return;
-	DWORD idx = pPSCB->GetSamplerIndex(D3DXHANDLE(hVar));
+	if (!hVar || !hVar->sampler) return;
+	DWORD idx = hVar->binding - VkDev::NUBOS; // GetSamplerIndex
 
 	if (!pTex) {
 		pTextures[idx].pTex = NULL;
@@ -2044,7 +1955,7 @@ void ShaderClass::SetTexture(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags, U
 }
 
 
-void ShaderClass::SetTextureVS(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags, UINT aniso)
+void ShaderClass::SetTextureVS(VkConstHandle hVar, VkTex *pTex, UINT flags, UINT aniso)
 {
 #ifdef SHDCLSDBG
 	if (!hVar) {
@@ -2052,9 +1963,9 @@ void ShaderClass::SetTextureVS(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags,
 		assert(false);
 	}
 #endif
-	if (!hVar) return;
-	DWORD idx = pVSCB->GetSamplerIndex(D3DXHANDLE(hVar)) + 16;
-	assert(idx < 20);
+	if (!hVar || !hVar->sampler) return;
+	DWORD idx = hVar->binding - VkDev::NUBOS; // GetSamplerIndex + 16: vertex samplers share the bindings
+	assert(idx < std::size(pTextures));
 
 	if (!pTex) {
 		pTextures[idx].pTex = NULL;
@@ -2070,7 +1981,7 @@ void ShaderClass::SetTextureVS(HANDLE hVar, LPDIRECT3DTEXTURE9 pTex, UINT flags,
 }
 
 
-void ShaderClass::SetPSConstants(HANDLE hVar, void* data, UINT bytes)
+void ShaderClass::SetPSConstants(VkConstHandle hVar, void* data, UINT bytes)
 {
 #ifdef SHDCLSDBG
 	if (!hVar) {
@@ -2079,13 +1990,11 @@ void ShaderClass::SetPSConstants(HANDLE hVar, void* data, UINT bytes)
 	}
 #endif
 	if (!hVar) return;
-	if (pVSCB->SetValue(pDev, D3DXHANDLE(hVar), data, bytes) != S_OK) {
-		LogErr("Shader::SetPSConstants() Failed. File[%s], Entrypoint[%s]", fn.c_str(), vsn.c_str());
-	}
+	pCB->SetValue(hVar, data, bytes); // (upstream went through pVSCB here; the handle's block is what counts)
 }
 
 
-void ShaderClass::SetVSConstants(HANDLE hVar, void* data, UINT bytes)
+void ShaderClass::SetVSConstants(VkConstHandle hVar, void* data, UINT bytes)
 {
 #ifdef SHDCLSDBG
 	if (!hVar) {
@@ -2094,9 +2003,7 @@ void ShaderClass::SetVSConstants(HANDLE hVar, void* data, UINT bytes)
 	}
 #endif
 	if (!hVar) return;
-	if (pVSCB->SetValue(pDev, D3DXHANDLE(hVar), data, bytes) != S_OK) {
-		LogErr("Shader::SetVSConstants() Failed. File[%s], Entrypoint[%s]", fn.c_str(), vsn.c_str());
-	}
+	pCB->SetValue(hVar, data, bytes);
 }
 
 

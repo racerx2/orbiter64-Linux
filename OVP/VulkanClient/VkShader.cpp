@@ -216,7 +216,7 @@ VkShaderEXT VkCreateShaderObject (VkDev *dev, const std::vector<uint32_t> &spirv
 static const VkSamplerDesc defSampler = { VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR,
 	VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, 0.0f, 0.0f, false };
 
-VkConstBuffer::VkConstBuffer (VkDev *_dev) : dev(_dev)
+VkConstBuffer::VkConstBuffer (VkDev *_dev) : dev(_dev), dirty(true)
 {
 }
 
@@ -236,6 +236,7 @@ void VkConstBuffer::SetValue (VkConstHandle h, const void *p, UINT bytes)
 	UINT n = std::min (bytes, h->size);
 	if (h->offset + n > it->second.size()) return;
 	memcpy (it->second.data() + h->offset, p, n);
+	dirty = true;
 }
 
 void VkConstBuffer::GetValue (VkConstHandle h, void *p, UINT bytes) const
@@ -251,6 +252,7 @@ void VkConstBuffer::GetValue (VkConstHandle h, void *p, UINT bytes) const
 void VkConstBuffer::SetTexture (int binding, VkTex *t, const VkSamplerDesc &s)
 {
 	tex[binding] = { t, s };
+	dirty = true;
 }
 
 VkTex *VkConstBuffer::GetTexture (int binding) const
@@ -262,11 +264,13 @@ VkTex *VkConstBuffer::GetTexture (int binding) const
 void VkConstBuffer::ClearTextures ()
 {
 	tex.clear ();
+	dirty = true;
 }
 
 void VkConstBuffer::Push (const std::vector<VkSamplerSlot> &samplers)
 {
 	if (!dev->IsRecording ()) return;
+	dirty = false;
 	VkWriteDescriptorSet w[VkDev::MAXBINDINGS];
 	VkDescriptorBufferInfo bi[VkDev::NUBOS];
 	VkDescriptorImageInfo ii[VkDev::MAXBINDINGS];
@@ -749,6 +753,7 @@ int VkEffect::BeginPass (UINT i)
 	if (p.failed) return -1;
 	ApplyStates (p);
 	dev->BindShaders (p.vsObj, p.psObj);
+	dev->SetConstantSource (&cb, &p.samplers);
 	curPass = (int)i;
 	return CommitChanges ();
 }
@@ -756,7 +761,7 @@ int VkEffect::BeginPass (UINT i)
 int VkEffect::CommitChanges ()
 {
 	if (!cur || curPass < 0) return -1;
-	cb.Push (cur->pass[curPass].samplers);
+	cb.Invalidate (); // pushed with the next draw
 	return 0;
 }
 

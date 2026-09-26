@@ -13,6 +13,7 @@
 #include "DrawAPI.h"
 #include "D3DXMath.h" // d3d9.h/d3dx9.h: the data types and math functions
 #include "VkCore.h"
+#include "VkShader.h"
 #include <string>
 #include <unistd.h>
 #include "gcCore.h"
@@ -399,9 +400,12 @@ private:
 		UINT Flags;
 		UINT AnisoLvl;
 		bool bSamplerSet;
-	} pTextures[20];
+		VkSamplerDesc desc;
+	} pTextures[VkDev::MAXBINDINGS - VkDev::NUBOS];   // [sampler binding - NUBOS]; vertex samplers share the bindings
 
 	VkConstTable *pPSCB, *pVSCB;   // LPD3DXCONSTANTTABLE: reflected uniforms of each stage
+	VkConstBuffer *pCB;            // the constant registers and texture stages the tables set (device state in D3D9)
+	std::vector<VkSamplerSlot> smpSlots;
 	VkShaderEXT pPS;
 	VkShaderEXT pVS;
 	VkDev *pDev;

@@ -45,7 +45,7 @@ set(SourceFiles
 #	D3D9Pad3.cpp
 	D3D9Surface.cpp
 	D3D9TextMgr.cpp
-#	D3D9Util.cpp
+	D3D9Util.cpp
 #	DebugControls.cpp
 #	gcCore.cpp
 #	gcConst.cpp

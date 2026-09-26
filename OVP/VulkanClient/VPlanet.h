@@ -18,6 +18,13 @@
 class D3D9Mesh;
 class SurfTile;
 class CloudTile;
+class vBase;                                // g++: friend declarations don't introduce these names
+class SurfaceManager;
+template<class T> class TileManager2;
+class CloudManager;
+class HazeManager;
+class HazeManager2;
+class RingManager;
 
 bool FilterElevationPhysics(OBJHANDLE hPlanet, int lvl, int ilat, int ilng, double elev_res, INT16* elev);
 
@@ -42,7 +49,7 @@ bool FilterElevationPhysics(OBJHANDLE hPlanet, int lvl, int ilat, int ilng, doub
 class PlanetShader : public ShaderClass
 {
 public:
-	PlanetShader(LPDIRECT3DDEVICE9 pDev, const char* file, const char* vs, const char* ps, const char* name, const char* options);
+	PlanetShader(VkDev *pDev, const char* file, const char* vs, const char* ps, const char* name, const char* options);
 	~PlanetShader();
 	
 	bool bLocals;
@@ -55,17 +62,17 @@ public:
 	bool bCloudShd;
 	bool bNightlights;
 
-	HANDLE tCloud;
-	HANDLE tCloud2;
-	HANDLE tMask;
-	HANDLE tDiff;
-	HANDLE tShadowMap;
-	HANDLE PrmVS;
-	HANDLE Prm;
-	HANDLE FlowVS;
-	HANDLE Flow;
-	HANDLE Lights;
-	HANDLE Spotlight;
+	VkConstHandle tCloud;
+	VkConstHandle tCloud2;
+	VkConstHandle tMask;
+	VkConstHandle tDiff;
+	VkConstHandle tShadowMap;
+	VkConstHandle PrmVS;
+	VkConstHandle Prm;
+	VkConstHandle FlowVS;
+	VkConstHandle Flow;
+	VkConstHandle Lights;
+	VkConstHandle Spotlight;
 };
 
 
@@ -216,7 +223,7 @@ class vPlanet: public vObject {
 public:
 
 	struct sOverlay {
-		LPDIRECT3DTEXTURE9 pSurf[4];
+		VkTex *pSurf[4];
 		D3DXVECTOR4 Blend[4];
 		VECTOR4 lnglat;
 	};
@@ -242,9 +249,9 @@ public:
 	bool			Update (bool bMainScene);
 	void			CheckResolution ();
 	void			RenderZRange (double *nplane, double *fplane);
-	bool			Render(LPDIRECT3DDEVICE9 dev);
-	void			RenderBeacons(LPDIRECT3DDEVICE9 dev);
-	void            RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad* pSkp);
+	bool			Render(VkDev *dev);
+	void			RenderBeacons(VkDev *dev);
+	void            RenderVectors (VkDev *dev, D3D9Pad* pSkp);
 	bool			CameraInAtmosphere() const;
 	double			CameraAltitude() const { return cdist - size; }
 	double			GetHorizonAlt() const;
@@ -256,12 +263,12 @@ public:
 	VECTOR3			CameraPos() const;
 	void			GetLngLat(VECTOR3 &loc, double *lng, double *lat) const;
 	VECTOR3			ReferencePoint();
-	void			SetMicroTexture(LPDIRECT3DTEXTURE9 pSrc, int slot);
+	void			SetMicroTexture(VkTex *pSrc, int slot);
 	int				GetElevation(double lng, double lat, double *elv, FVECTOR3 *nrm = NULL) const;
 	SurfTile *		FindTile(double lng, double lat, int maxres);
 	void 			PickSurface(D3DXVECTOR3 &vRay, TILEPICK *pPick);
 	DWORD			GetPhysicsPatchRes() const { return physics_patchres; }
-	sOverlay *		AddOverlaySurface(VECTOR4 lnglat, gcCore::OlayType type, LPDIRECT3DTEXTURE9 pSrf = NULL, sOverlay *pOld = NULL, const FVECTOR4* pB = NULL);
+	sOverlay *		AddOverlaySurface(VECTOR4 lnglat, gcCore::OlayType type, VkTex *pSrf = NULL, sOverlay *pOld = NULL, const FVECTOR4* pB = NULL);
 	sOverlay *		IntersectOverlay(VECTOR4 bounds, FVECTOR4* texcoord) const;
 	
 
@@ -280,7 +287,7 @@ public:
 	char*			Label(const char* x);
 	bool			HasAtmosphere() const { return prm.bAtm; }
 	bool			HasRipples() const { return bRipple; }
-	LPDIRECT3DTEXTURE9 GetScatterTable(int i);
+	VkTex *GetScatterTable(int i);
 	ConstParams*	GetScatterConst();
 	PlanetShader*	GetShader(int id = PLT_CONFIG);
 	int				GetShaderID();
@@ -311,11 +318,11 @@ public:
 	bool			SphericalShadow();
 	void			SetupEclipse();
 	void			InitEclipse(ShaderClass* pShader);
-	LPDIRECT3DTEXTURE9 GetEclipse() { return ptEclipse; }
+	VkTex *GetEclipse() { return ptEclipse; }
 
 	// v2 Labels interface ----------------------------------------------------
 	void            ActivateLabels(bool activate);
-	void            RenderLabels(LPDIRECT3DDEVICE9 dev, D3D9Pad *skp, oapi::Font **labelfont, int *fontidx);
+	void            RenderLabels(VkDev *dev, D3D9Pad *skp, oapi::Font **labelfont, int *fontidx);
 
 	struct RenderPrm { //< misc. parameters for rendering the planet
 		// persistent options
@@ -367,20 +374,20 @@ public:
 	static void ParseMicroTexturesFile(); ///< Parse MicroTex.cfg file (once)
 
 protected:
-	void RenderSphere (LPDIRECT3DDEVICE9 dev);
-	void RenderCloudLayer (LPDIRECT3DDEVICE9 dev, DWORD cullmode);
-	void RenderBaseSurfaces (LPDIRECT3DDEVICE9 dev);
-	void RenderBaseStructures (LPDIRECT3DDEVICE9 dev);
-	void RenderBaseShadows (LPDIRECT3DDEVICE9 dev, float depth);
-	void RenderCloudShadows (LPDIRECT3DDEVICE9 dev);
+	void RenderSphere (VkDev *dev);
+	void RenderCloudLayer (VkDev *dev, DWORD cullmode);
+	void RenderBaseSurfaces (VkDev *dev);
+	void RenderBaseStructures (VkDev *dev);
+	void RenderBaseShadows (VkDev *dev, float depth);
+	void RenderCloudShadows (VkDev *dev);
 	bool ModLighting (DWORD &ambient);
 
 	bool ParseMicroTextures();            ///< Read micro-texture config for this planet
-	static void LoadMicroTextures(LPDIRECT3DDEVICE9 pDev);
+	static void LoadMicroTextures(VkDev *pDev);
 
 private:
 
-	LPDIRECT3DTEXTURE9 pSunColor, pRaySkyView, pMieSkyView, pLandViewRay, pLandViewMie, pAmbientSky, pLandViewAtn;
+	VkTex *pSunColor, *pRaySkyView, *pMieSkyView, *pLandViewRay, *pLandViewMie, *pAmbientSky, *pLandViewAtn;
 
 	ConstParams cp;
 	ShaderParams sp;
@@ -389,8 +396,8 @@ private:
 
 	static ImageProcessing* pIP;
 	static PlanetShader* pRender[8];
-	static LPDIRECT3DDEVICE9 pDev;
-	static LPDIRECT3DTEXTURE9 ptEclipse;
+	static VkDev *pDev;
+	static VkTex *ptEclipse;
 	static int Qc, Wc, Nc;
 
 	float dist_scale;         // planet rescaling factor
@@ -454,7 +461,7 @@ public:
 		double	reso;			// Resolution px/m
 		double	size;			// Texture size in meters;
 		double	px;				// Size in pixels
-		LPDIRECT3DTEXTURE9 pTex;
+		VkTex *pTex;
 	};
 
 	struct _MicroCfg {

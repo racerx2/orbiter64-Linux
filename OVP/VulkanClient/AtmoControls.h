@@ -69,8 +69,8 @@ struct sValue {
 };
 
 struct sSlider {
-	HWND hWnd;
-	HWND hwndTip;	// ToolTip
+	QWidget *hWnd;
+	// hwndTip left out: the tooltip is hWnd's QWidget::toolTip
 	int res;		// Slider resource id
 	int dsp;		// Slider display resource id
 	int lbl;		// Slider label resource id 
@@ -101,7 +101,7 @@ namespace AtmoControls {
 	void		UpdateSliders();
 	bool		Visualize();
 
-	INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void		WndProc(QWidget *hWnd, void *context); // DLGINIT: connects the dialog's controls
 };
 
 #endif // !__ATMOCONTROLS_H

@@ -2,6 +2,7 @@
 
 #define VMA_IMPLEMENTATION
 #include "VkCore.h"
+#include "VkShader.h"
 #include "Log.h"
 #include <QVulkanInstance>
 #include <cstring>
@@ -481,6 +482,9 @@ VkDev::VkDev (QVulkanInstance *inst, VkPhysicalDevice _phys)
 	timelineValue = 0;
 	memset (frame, 0, sizeof(frame));
 	defTex[0] = defTex[1] = defTex[2] = NULL;
+	curVS = curFS = VK_NULL_HANDLE;
+	cbActive = NULL;
+	cbSlots = NULL;
 
 	st.depthTest = true;       // D3DRS_ZENABLE defaults to TRUE with an automatic depth buffer
 	st.depthWrite = true;
@@ -974,6 +978,8 @@ void VkDev::ReplayState ()
 	vkx.CmdSetColorWriteMaskEXT (cmd, 0, 1, &st.writeMask);
 	if (st.decl) SetVertexDecl (st.decl);
 	else vkx.CmdSetVertexInputEXT (cmd, 0, NULL, 0, NULL);
+	if (curVS || curFS) BindShaders (curVS, curFS);
+	if (cbActive) cbActive->Invalidate (); // push descriptors don't carry over to a new command buffer
 }
 
 void VkDev::SetDepthTest (bool enable)
@@ -1134,14 +1140,29 @@ VkSampler VkDev::Sampler (const VkSamplerDesc &d)
 
 void VkDev::BindShaders (VkShaderEXT vs, VkShaderEXT fs)
 {
+	curVS = vs;
+	curFS = fs;
 	if (!recording) return;
 	VkShaderStageFlagBits stages[2] = { VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT };
 	VkShaderEXT sh[2] = { vs, fs };
 	vkx.CmdBindShadersEXT (Cmd(), 2, stages, sh);
 }
 
+void VkDev::SetConstantSource (VkConstBuffer *cb, const std::vector<VkSamplerSlot> *smpSlots)
+{
+	cbActive = cb;
+	cbSlots = smpSlots;
+	if (cb) cb->Invalidate ();
+}
+
+void VkDev::PreDraw ()
+{
+	if (cbActive && cbSlots && cbActive->IsDirty ()) cbActive->Push (*cbSlots); // may end rendering to change a texture's layout
+}
+
 void VkDev::DrawPrimitive (VkPrimitiveTopology t, UINT startVertex, UINT vertexCount)
 {
+	PreDraw ();
 	BeginRendering ();
 	if (!rendering || !vertexCount) return;
 	SetTopology (t);
@@ -1150,6 +1171,7 @@ void VkDev::DrawPrimitive (VkPrimitiveTopology t, UINT startVertex, UINT vertexC
 
 void VkDev::DrawIndexedPrimitive (VkPrimitiveTopology t, int baseVertex, UINT startIndex, UINT indexCount)
 {
+	PreDraw ();
 	BeginRendering ();
 	if (!rendering || !indexCount) return;
 	SetTopology (t);

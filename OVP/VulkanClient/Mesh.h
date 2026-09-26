@@ -20,8 +20,7 @@
 #include "D3D9Client.h"
 #include "D3D9Effect.h"
 #include "AABBUtil.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 #include <vector>
 
 const DWORD SPEC_DEFAULT = (DWORD)(-1); // "default" material/texture flag
@@ -90,8 +89,8 @@ public:
 	} ps_bools;
 
 
-	MeshShader(LPDIRECT3DDEVICE9 pDev, const char *file, const char *vs, const char *ps, const char *opt = NULL) :
-		ShaderClass(pDev, "Modules/D3D9Client/NewMesh.hlsl", vs, ps, "MeshShader", opt)
+	MeshShader(VkDev *pDev, const char *file, const char *vs, const char *ps, const char *opt = NULL) :
+		ShaderClass(pDev, "Modules/VulkanClient/NewMesh.glsl", vs, ps, "MeshShader", opt)
 	{
 		memset(hPST, 0, sizeof(hPST));
 		hVSC  = GetVSHandle("vs_const");
@@ -105,7 +104,7 @@ public:
 
 	}
 
-	HANDLE hPSB, hVSC, hPSC, hPST[16];
+	VkConstHandle hPSB, hVSC, hPSC, hPST[16];
 };
 
 
@@ -118,14 +117,14 @@ public:
 	MeshBuffer(DWORD nVtx, DWORD nIdx, const class D3D9Mesh *_pRoot);
 	~MeshBuffer();
 
-	void Map(LPDIRECT3DDEVICE9 pDev);
+	void Map(VkDev *pDev);
 	bool IsLocalTo(const class D3D9Mesh *_pRoot) const { return (_pRoot == pRoot); }
 	void MustRemap(DWORD mode);
 
-	LPDIRECT3DVERTEXBUFFER9 pVB;
-	LPDIRECT3DVERTEXBUFFER9 pGB;
-	LPDIRECT3DINDEXBUFFER9  pIB;
-	LPDIRECT3DVERTEXBUFFER9 pSB;
+	VkBuf *pVB;
+	VkBuf *pGB;
+	VkBuf *pIB;
+	VkBuf *pSB;
 
 	NMVERTEX				*pVBSys;
 	D3DXVECTOR4				*pGBSys;
@@ -289,15 +288,15 @@ public:
 	void			RenderGroup(int idx);
 	void			RenderBaseTile(const LPD3DXMATRIX pW);
 	void			RenderBoundingBox(const LPD3DXMATRIX pW);
-	void			Render(const LPD3DXMATRIX pW, int iTech=RENDER_VESSEL, LPDIRECT3DCUBETEXTURE9 *pEnv=NULL, int nEnv=0);
+	void			Render(const LPD3DXMATRIX pW, int iTech=RENDER_VESSEL, VkTex **pEnv=NULL, int nEnv=0);
 	void			RenderFast(const LPD3DXMATRIX pW, int iTech);
 	void			RenderShadowMap(const LPD3DXMATRIX pW, const LPD3DXMATRIX pVP, int flags);
 	void			RenderStencilShadows(float alpha, const LPD3DXMATRIX pP, const LPD3DXMATRIX pW, bool bShadowMap = false, const D3DXVECTOR4 *elev = NULL);
 	void			RenderShadowsEx(float alpha, const LPD3DXMATRIX pP, const LPD3DXMATRIX pW, const D3DXVECTOR4 *light, const D3DXVECTOR4 *param);
-	void			RenderRings(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex);
-	void			RenderRings2(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex, float irad, float orad);
+	void			RenderRings(const LPD3DXMATRIX pW, VkTex *pTex);
+	void			RenderRings2(const LPD3DXMATRIX pW, VkTex *pTex, float irad, float orad);
 	void			RenderAxisVector(LPD3DXMATRIX pW, const D3DXCOLOR *pColor, float len);
-	void			RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *pEnv = NULL, int nEnv = 0, bool bSP = false);
+	void			RenderSimplified(const LPD3DXMATRIX pW, VkTex **pEnv = NULL, int nEnv = 0, bool bSP = false);
 	void			CheckMeshStatus();
 	void			ResetTransformations();
 	void			TransformGroup(DWORD n, const D3DXMATRIX *m);
@@ -327,7 +326,7 @@ public:
 	 */
 	inline void		EnableMatAlpha (bool enable) { bModulateMatAlpha = enable; }
 
-	static void		GlobalInit(LPDIRECT3DDEVICE9 pDev);
+	static void		GlobalInit(VkDev *pDev);
 	static void		GlobalExit();
 
 private:

@@ -55,8 +55,8 @@ class D3D9Pad;
 #define RENDERPASS_MAINOVERLAY	0x0007
 #define RENDERPASS_NORMAL_DEPTH	0x0008
 
-#define RESTORE ((LPDIRECT3DSURFACE9)(-1))
-#define CURRENT ((LPDIRECT3DSURFACE9)(-2))
+#define RESTORE ((VkSurf*)(-1))
+#define CURRENT ((VkSurf*)(-2))
 
 #define RENDERTURN_ENVCAM		0
 #define RENDERTURN_CUSTOMCAM	1
@@ -168,7 +168,7 @@ public:
 	};
 
 	struct SHADOWMAPPARAM {
-		LPDIRECT3DTEXTURE9 pShadowMap;
+		VkTex *pShadowMap;
 		D3DXMATRIX	mProj, mView, mViewProj;
 		D3DXVECTOR3	pos;
 		D3DXVECTOR3	ld;
@@ -179,7 +179,7 @@ public:
 		int			size;
 	} smap;
 
-	static void D3D9TechInit(LPDIRECT3DDEVICE9 pDev, const char *folder);
+	static void D3D9TechInit(VkDev *pDev, const char *folder);
 
 	/**
 	 * \brief Release global parameters
@@ -258,15 +258,15 @@ public:
 	void RenderSecondaryScene(std::set<class vVessel*> &RndList, std::set<class vVessel*> &AdditionalLightsList, DWORD flags = 0xFF);
 	int RenderShadowMap(D3DXVECTOR3 &pos, D3DXVECTOR3 &ld, float rad, bool bInternal = false, bool bListExists = false);
 
-	bool IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRECT3DTEXTURE9 pOut);
-	bool RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc);
+	bool IntegrateIrradiance(vVessel *vV, VkTex *pSrc, VkTex *pOut);
+	bool RenderBlurredMap(VkDev *pDev, VkTex *pSrc);
 	void RenderMesh(DEVMESHHANDLE hMesh, const oapi::FMATRIX4 *pWorld);
 
-	LPDIRECT3DSURFACE9 GetIrradianceDepthStencil() const { return pIrradDS; }
-	LPDIRECT3DSURFACE9 GetEnvDepthStencil() const { return pEnvDS; }
-	LPDIRECT3DSURFACE9 GetBuffer(int id) const { return psgBuffer[id]; }
-	LPDIRECT3DTEXTURE9 GetSunTexture() const { return pSunTex; }
-	LPDIRECT3DTEXTURE9 GetSunGlareAtm() const { return pSunGlareAtm; }
+	VkSurf *GetIrradianceDepthStencil() const { return pIrradDS; }
+	VkSurf *GetEnvDepthStencil() const { return pEnvDS; }
+	VkSurf *GetBuffer(int id) const { return psgBuffer[id]; }
+	VkTex *GetSunTexture() const { return pSunTex; }
+	VkTex *GetSunGlareAtm() const { return pSunGlareAtm; }
 
 	/**
 	 * \brief Render any shadows cast by vessels on planet surfaces
@@ -424,7 +424,7 @@ private:
 	void		ComputeLocalLightsVisibility();
 	DWORD		GetActiveParticleEffectCount();
 	float		ComputeNearClipPlane();
-	void		VisualizeCubeMap(LPDIRECT3DCUBETEXTURE9 pCube, int mip);
+	void		VisualizeCubeMap(VkTex *pCube, int mip);
 	VOBJREC *	FindVisual (OBJHANDLE hObj) const;
 	void		RenderVesselMarker(vVessel *vV, D3D9Pad *pSketch);
 
@@ -454,7 +454,7 @@ private:
 	// Scene variables ================================================================
 	//
 	oapi::D3D9Client* gc;
-	LPDIRECT3DDEVICE9 pDevice; // render device
+	VkDev *pDevice; // render device
 	DWORD viewW, viewH;        // render viewport size
 	DWORD stencilDepth;        // stencil buffer bit depth
 	D3D9CelestialSphere* m_celSphere; // celestial sphere background
@@ -515,37 +515,37 @@ private:
 
 	FVECTOR2 DepthSampleKernel[57];
 
-	LPDIRECT3DTEXTURE9 pSunTex, pLightGlare, pSunGlare, pSunGlareAtm;
-	LPDIRECT3DTEXTURE9 pLocalResults;
-	LPDIRECT3DSURFACE9 pLocalResultsSL;
+	VkTex *pSunTex, *pLightGlare, *pSunGlare, *pSunGlareAtm;
+	VkTex *pLocalResults;
+	VkSurf *pLocalResultsSL;
 
 	// Blur Sampling Kernel ==============================================================
-	LPDIRECT3DCUBETEXTURE9 pBlrTemp[5];
-	LPDIRECT3DCUBETEXTURE9 pIrradTemp;
-	LPDIRECT3DTEXTURE9 pIrradTemp2, pIrradTemp3;
+	VkTex *pBlrTemp[5];
+	VkTex *pIrradTemp;
+	VkTex *pIrradTemp2, *pIrradTemp3;
 
 	// Deferred Experiment ===============================================================
 	//
-	LPDIRECT3DSURFACE9 psgBuffer[GBUF_COUNT];
-	LPDIRECT3DTEXTURE9 ptgBuffer[GBUF_COUNT];
-	LPDIRECT3DSURFACE9 pOffscreenTarget;
-	LPDIRECT3DTEXTURE9 pTextures[TEX_COUNT];
+	VkSurf *psgBuffer[GBUF_COUNT];
+	VkTex *ptgBuffer[GBUF_COUNT];
+	VkSurf *pOffscreenTarget;
+	VkTex *pTextures[TEX_COUNT];
 
-	LPDIRECT3DSURFACE9 pEnvDS, pIrradDS, pDepthNormalDS;
-	LPDIRECT3DSURFACE9 psShmDS[SHM_LOD_COUNT];
-	LPDIRECT3DSURFACE9 psShmRT[SHM_LOD_COUNT];
-	LPDIRECT3DTEXTURE9 ptShmRT[SHM_LOD_COUNT];
+	VkSurf *pEnvDS, *pIrradDS, *pDepthNormalDS;
+	VkSurf *psShmDS[SHM_LOD_COUNT];
+	VkSurf *psShmRT[SHM_LOD_COUNT];
+	VkTex *ptShmRT[SHM_LOD_COUNT];
 
 	LocalLightsCompute LLCBuf[MAX_SCENE_LIGHTS + 1];
 
 	// Rendering Technique related parameters ============================================
 	//
-	static ID3DXEffect	*FX;
-	static D3DXHANDLE	eLine;
-	static D3DXHANDLE	eStar;
-	static D3DXHANDLE	eWVP;
-	static D3DXHANDLE	eColor;
-	static D3DXHANDLE	eTex0;
+	static VkEffect *FX;
+	static VkFxHandle	eLine;
+	static VkFxHandle	eStar;
+	static VkFxHandle	eWVP;
+	static VkFxHandle	eColor;
+	static VkFxHandle	eTex0;
 
 };
 

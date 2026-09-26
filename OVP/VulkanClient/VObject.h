@@ -13,8 +13,7 @@
 #include "GraphicsAPI.h"
 #include "Scene.h"
 #include "AABBUtil.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 #include <vector>
 
 extern class D3D9Config *Config;
@@ -105,7 +104,7 @@ public:
 
 	inline Scene * GetScene() const { return scn; }
 	inline oapi::D3D9Client * GetClient() const { return gc; }
-	inline LPDIRECT3DDEVICE9 GetDevice() const { return gc->GetDevice(); }
+	inline VkDev * GetDevice() const { return gc->GetDevice(); }
 
 	/**
 	 * \brief Returns the handle of the associated logical object
@@ -206,31 +205,31 @@ public:
 	 * \return \e true if render operation was performed, \e false if skipped.
 	 * \default None, returns \e false.
 	 */
-	virtual bool Render(LPDIRECT3DDEVICE9 dev) { return false; }
+	virtual bool Render(VkDev *dev) { return false; }
 
 	/**
 	 * \brief Render the vessel's active light beacons
 	 * \param dev render device
 	 * \default None.
 	 */
-	virtual void RenderBeacons (LPDIRECT3DDEVICE9 dev) {}
+	virtual void RenderBeacons (VkDev *dev) {}
 
 	 /**
      * \brief Render the vessel's grapple points when switched on (see oapiGetShowGrapplePoints)
      * \param dev render device
      * \default None.
      */
-    virtual void RenderGrapplePoints (LPDIRECT3DDEVICE9 dev) {}
+    virtual void RenderGrapplePoints (VkDev *dev) {}
 
 	/**
 	 * \brief Render the objects coordinate axes
 	 * \param dev render device
 	 * \param pSkp The 2-D drawing context
 	 */
-	virtual void RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad* pSkp);
+	virtual void RenderVectors (VkDev *dev, D3D9Pad* pSkp);
 
 
-	void RenderDot(LPDIRECT3DDEVICE9 dev);
+	void RenderDot(VkDev *dev);
 
 
 
@@ -240,7 +239,7 @@ public:
 
 protected:
 
-	void RenderSpot(LPDIRECT3DDEVICE9 dev, const VECTOR3 *ofs, float size, const VECTOR3 &col, bool lighting, int shape);
+	void RenderSpot(VkDev *dev, const VECTOR3 *ofs, float size, const VECTOR3 &col, bool lighting, int shape);
 	void RenderAxisVector(D3D9Pad *pSkp, const D3DXCOLOR *pColor, VECTOR3 vector, float lscale, float size, bool bLog=false);
 	void RenderAxisLabel(D3D9Pad *pSkp, const D3DXCOLOR *clr, VECTOR3 vector, float lscale, float size, const char *label, bool bLog=false);
 

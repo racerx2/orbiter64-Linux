@@ -59,8 +59,11 @@ public:
 	void ClearTextures ();
 	void Push (const std::vector<VkSamplerSlot> &samplers); // pushes the blocks and the listed sampler bindings
 	VkTex *GetTexture (int binding) const;
+	void Invalidate () { dirty = true; }
+	bool IsDirty () const { return dirty; }
 private:
 	VkDev *dev;
+	bool dirty;
 	std::map<int, std::vector<BYTE>> data;             // block binding → contents
 	struct Tex { VkTex *tex; VkSamplerDesc s; };
 	std::map<int, Tex> tex;

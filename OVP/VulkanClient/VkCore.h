@@ -14,6 +14,8 @@
 class QVulkanInstance;
 class VkDev;
 class VkTex;
+class VkConstBuffer;                                 // VkShader.h
+struct VkSamplerSlot;
 class VkConstTable;                                  // LPD3DXCONSTANTTABLE counterpart (VkShader.h)
 struct VkConstEntry;
 typedef const VkConstEntry *VkConstHandle;           // D3DXHANDLE of a shader constant
@@ -195,7 +197,9 @@ public:
 	void SetIndices (const VkBuf *ib, VkIndexType type = VK_INDEX_TYPE_UINT16) { SetIndices (ib ? ib->buf : VK_NULL_HANDLE, 0, type); }
 
 	// shaders and draws (SetVertexShader/SetPixelShader, Draw*Primitive*); counts are vertices/indices, not primitives
-	void BindShaders (VkShaderEXT vs, VkShaderEXT fs);
+	void BindShaders (VkShaderEXT vs, VkShaderEXT fs); // kept across frames, as SetVertexShader/SetPixelShader
+	void SetConstantSource (VkConstBuffer *cb, const std::vector<VkSamplerSlot> *smpSlots); // pushed before a draw when changed
+	VkConstBuffer *GetConstantSource () const { return cbActive; }
 	void DrawPrimitive (VkPrimitiveTopology t, UINT startVertex, UINT vertexCount);
 	void DrawIndexedPrimitive (VkPrimitiveTopology t, int baseVertex, UINT startIndex, UINT indexCount);
 	void DrawPrimitiveUP (VkPrimitiveTopology t, UINT vertexCount, const void *vtx, UINT stride);
@@ -276,11 +280,28 @@ private:
 
 	State st;
 
+	void PreDraw ();
+
+	VkShaderEXT curVS, curFS;
+	VkConstBuffer *cbActive;
+	const std::vector<VkSamplerSlot> *cbSlots;
 	std::vector<std::pair<VkSamplerDesc, VkSampler>> samplers;
 	VkTex *defTex[3];                    // 2D, cube, 3D
 	VkDescriptorSetLayout setLayout;
 	VkPipelineLayout pipeLayout;
 };
+
+// D3DPRIMITIVETYPE primitive count → the vertex or index count a Vk draw takes
+inline UINT VkPrimVerts (VkPrimitiveTopology t, UINT prims)
+{
+	switch (t) {
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: return prims * 3;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP: case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN: return prims ? prims + 2 : 0;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST: return prims * 2;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP: return prims ? prims + 1 : 0;
+	default: return prims;
+	}
+}
 
 #define VKCHECK(x) { VkResult _r = (x); if (_r < 0) LogErr("%s Line:%d VkResult:%d %s", __FILE__, __LINE__, (int)_r, #x); }
 

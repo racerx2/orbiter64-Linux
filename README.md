@@ -1,6 +1,6 @@
 ![Orbiter logo](./Src/Orbiter/Bitmaps/banner.png)
 
-# Orbiter Space Flight Simulator
+# Orbiter Space Flight Simulator — native Linux port
 
 Orbiter is a spaceflight simulator based on Newtonian mechanics. Its playground
 is our solar system with many of its major bodies – the sun, planets and moons.
@@ -15,12 +15,17 @@ get hooked, others get bored. Finding out for yourself is easy – simply give i
 a try. Orbiter is free, so you don’t need to invest more than a bit of your
 spare time.
 
+This tree is a line-by-line port of [orbitersim/orbiter](https://github.com/orbitersim/orbiter)
+(commit in `UPSTREAM`) to native Linux: no Wine, no DXVK, graphics on Vulkan 1.4,
+windows and dialogs on Qt 6, sound on PipeWire. Each ported file is changed in place, so
+`git diff upstream/main` shows the port. See `port-plan.md` for status.
+
 ## License
 
 Orbiter is now published as an Open Source project under the MIT License (see
 [LICENSE](./LICENSE) file for details).
 
-D3D9Client graphics engine is licensed under LGPL, see [LGPL](./OVP/D3D9Client/LGPL.txt)
+The graphics engine (OVP/VulkanClient, ported from D3D9Client) is licensed under LGPL.
 
 ## Installation
 Hardware requirements needed by Orbiter:
@@ -28,45 +33,15 @@ Hardware requirements needed by Orbiter:
 | ---- | ---- | ---- |
 | RAM: | 500 MB | 2 GB |
 | CPU: | Dual Core |  |
-| GPU: | 50 GFlops | 100 GFlops |
+| GPU: | Vulkan 1.4 | Vulkan 1.4 |
 | Disk: | 5 GB of free space | 10 GB of free space (80 GB if you want hi-res textures) |
 
-Get the Orbiter source repository from github
+Get the port repository from github
 ```bash
-git clone --recursive git@github.com:orbitersim/orbiter.git
-```
-or
-```bash
-git clone --recursive https://github.com/orbitersim/orbiter.git
+git clone https://github.com/racerx2/orbiter64-Linux.git
 ```
 
-To configure and generate the makefiles, you need a recent
-[CMake](https://cmake.org/download/).
-
-To compile Orbiter from its sources, you need
-[Microsoft Visual Studio](https://visualstudio.microsoft.com/downloads/).
-Orbiter has been successfully built with VS Community 2019, but other versions should
-also work. Note that VS2019 comes with built-in CMake support, so you don't
-need a separate CMake installation.
-
-Some configuration caveats:
-- If you are using the [Ninja](https://cmake.org/cmake/help/latest/generator/Ninja.html)
-generator (default for the VS built-in CMake), you may also need
-[vspkg](https://github.com/microsoft/vcpkg) to configure the VS toolset.
-- If you are using the VS2019 generator, you may need to set up Visual Studio to use
-only a single thread for the build. This is because some of the build tools (especially
-those for generating the Orbiter documentation) are not threadsafe, and the VS2019
-generator doesn't understand the CMake JOB_POOL directive.
-
-Orbiter is a 32-bit application. Be sure to configure vspkg and CMake accordingly.
-
-If you want to build the documentation, you need a few additional tools:
-- a filter to convert ODT and DOC sources to PDF, such as
-  [LibreOffice](https://www.libreoffice.org/download/download/).
-- a LaTeX compiler suite such as [MiKTeX](https://miktex.org/download).
-- [Doxygen](https://www.doxygen.nl/index.html) for building the source-level
-  documentation for developers.
-
+To configure and build you need CMake 3.26 or later, Ninja and GCC with C++20.
 See [COMPILE.md](./COMPILE.md) for details on building Orbiter.
 
 ## Planet textures
@@ -81,8 +56,8 @@ repository.
 
 To configure Orbiter to use the texture installation, set the
 ORBITER_PLANET_TEXTURE_INSTALL_DIR entry in CMake. For example, if Orbiter
-was installed in `C:\Orbiter`, the CMake option should be set to
-`C:/Orbiter/Textures`.
+was installed in `~/Orbiter`, the CMake option should be set to
+`~/Orbiter/Textures`.
 
 This path can also be set using ORBITER_PLANET_TEXTURE_INSTALL_DIR environment variable
 

@@ -1,11 +1,14 @@
 Include(FetchContent)
 
+# v3.0.0-preview3 sizes a static array with MINSIGSTKSZ, which glibc 2.34+ turned into a sysconf() call
 FetchContent_Declare(
   Catch2
   GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG        v3.0.0-preview3
+  GIT_TAG        v3.8.1
 )
 
+# static Catch2: tracy.cmake turns BUILD_SHARED_LIBS on for everything after it
+set(BUILD_SHARED_LIBS OFF)
 FetchContent_MakeAvailable(Catch2)
 
 # Utility function
@@ -42,8 +45,35 @@ function(add_test_file test_name)
 	set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
 endfunction()
 
+# not upstream: unit tests for ported code that runs without the Orbiter exe; extra args are the port sources under test
+function(add_unit_test test_name)
+	add_executable(${test_name} "${test_name}.cpp" ${ARGN})
+
+	set_target_properties( ${test_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${ORBITER_BINARY_ROOT_DIR}/Tests" )
+
+	target_include_directories(${test_name}
+		PRIVATE ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
+		PRIVATE ${ORBITER_SOURCE_DIR}
+	)
+
+	target_link_libraries(${test_name}
+		Catch2::Catch2WithMain
+	)
+
+	add_test(
+		NAME ${test_name}
+		COMMAND $<TARGET_FILE:${test_name}>
+		WORKING_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
+	)
+	set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
+endfunction()
+
 # Register unit tests
-add_test_file(Lua.Interpreter)
+# Lua.Interpreter waits for LuaInterpreter and the Orbiter exe (Phase 7)
+#add_test_file(Lua.Interpreter)
+
+# not upstream: proves the Catch2/ctest harness builds and runs
+add_unit_test(Port.Harness)
 
 if (BUILD_ORBITER_SERVER)
 

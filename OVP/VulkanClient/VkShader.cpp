@@ -133,7 +133,8 @@ static void BuildTable (glslang::TProgram &prog, VkConstTable *t)
 		if (u.index < 0 || u.offset < 0) continue;
 		std::string top = u.name.substr (0, u.name.find_first_of (".["));
 		UINT cnt = u.size > 1 ? u.size : 1;
-		UINT end = u.offset + (cnt - 1) * u.arrayStride + GLTypeBytes (u.glDefineType);
+		UINT tcnt = (u.name.find ('.') != std::string::npos && u.topLevelArraySize > 1) ? u.topLevelArraySize : 1; // arrays of structs reflect element 0's members
+		UINT end = u.offset + (cnt - 1) * u.arrayStride + (tcnt - 1) * u.topLevelArrayStride + GLTypeBytes (u.glDefineType);
 		int bind = prog.getUniformBlock (u.index).getBinding ();
 		VkConstEntry *e = NULL;
 		for (auto &x : t->entries) if (!x.sampler && x.name == top) { e = &x; break; }

@@ -54,7 +54,7 @@ set(SourceFiles
 #	IProcess.cpp
 	Log.cpp
 #	MaterialMgr.cpp
-#	Mesh.cpp
+	Mesh.cpp
 #	MeshMgr.cpp
 	OapiExtension.cpp
 #	Particle.cpp
@@ -156,7 +156,7 @@ set(ShaderFiles
 	${ShaderDir}/LensFlare.hlsl
 	${ShaderDir}/LightBlur.glsl
     ${ShaderDir}/CelSphere.hlsl
-    ${ShaderDir}/NewMesh.hlsl
+    ${ShaderDir}/NewMesh.glsl
     ${ShaderDir}/NewPlanet.hlsl
     ${ShaderDir}/Scatter.hlsl
     ${ShaderDir}/Glare.hlsl

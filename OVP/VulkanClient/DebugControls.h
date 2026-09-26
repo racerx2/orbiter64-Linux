@@ -127,8 +127,8 @@ namespace DebugControls {
 	void		Append(const char *format, ...);
 	void		Refresh();
 
-	INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	INT_PTR CALLBACK ViewProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void		WndProc(QWidget *hWnd, void *context);  // DLGINIT: connects the dialog's controls
+	void		ViewProc(QWidget *hWnd, void *context); // DLGINIT of the view window
 };
 
 #endif // !__DEBUGCONTROLS_H

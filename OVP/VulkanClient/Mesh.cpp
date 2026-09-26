@@ -16,11 +16,9 @@
 #include "D3D9Config.h"
 #include "DebugControls.h"
 #include "VectorHelpers.h"
+#include <QMessageBox>
 
-#pragma warning(push)
-#pragma warning(disable : 4838)
-#include <xnamath.h>
-#pragma warning(pop)
+// xnamath.h left out (Windows only): its vector operations below are written out on D3DXVECTOR3/4
 
 using namespace oapi;
 
@@ -100,10 +98,10 @@ MeshBuffer::~MeshBuffer()
 	SAFE_DELETEA(pIBSys);
 	SAFE_DELETEA(pVBSys);
 	SAFE_DELETEA(pSBSys);
-	SAFE_RELEASE(pIB);
-	SAFE_RELEASE(pVB);
-	SAFE_RELEASE(pGB);
-	SAFE_RELEASE(pSB);
+	SAFE_DELETE(pIB);
+	SAFE_DELETE(pVB);
+	SAFE_DELETE(pGB);
+	SAFE_DELETE(pSB);
 }
 
 void MeshBuffer::MustRemap(DWORD mode)
@@ -111,58 +109,54 @@ void MeshBuffer::MustRemap(DWORD mode)
 	if (mode == MAPMODE_CURRENT) mode = mapMode;
 
 	if (mode != mapMode) {
-		SAFE_RELEASE(pIB);
-		SAFE_RELEASE(pVB);
-		SAFE_RELEASE(pGB);
-		SAFE_RELEASE(pSB);
+		SAFE_DELETE(pIB);
+		SAFE_DELETE(pVB);
+		SAFE_DELETE(pGB);
+		SAFE_DELETE(pSB);
 		mapMode = mode;
 	}
 
 	bMustRemap = true;
 }
 
-void MeshBuffer::Map(LPDIRECT3DDEVICE9 pDev)
+void MeshBuffer::Map(VkDev *pDev)
 {
 
 	if (!bMustRemap) return;
 
 	bMustRemap = false;
 
-	DWORD Usage = 0;
-	DWORD Lock = 0;
+	bool bHost = false; // Usage = 0
 
-	if (mapMode == MAPMODE_DYNAMIC) Usage = D3DUSAGE_DYNAMIC, Lock = D3DLOCK_DISCARD;
+	if (mapMode == MAPMODE_DYNAMIC) bHost = true; // D3DUSAGE_DYNAMIC: host visible
+
+	// Lock (D3DLOCK_DISCARD too) of a buffer the open frame may still read: new buffers, the old ones go when the GPU is done
+	SAFE_DELETE(pSB);
+	SAFE_DELETE(pVB);
+	SAFE_DELETE(pGB);
+	SAFE_DELETE(pIB);
 
 	if (!pSB) {
-		HR(pDev->CreateVertexBuffer(nVtx * sizeof(SMVERTEX), Usage, 0, D3DPOOL_DEFAULT, &pSB, NULL));
+		pSB = new VkBuf(pDev, nVtx * sizeof(SMVERTEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bHost); // D3DPOOL_DEFAULT
 	}
 	if (!pVB) {
-		HR(pDev->CreateVertexBuffer(nVtx * sizeof(NMVERTEX), Usage, 0, D3DPOOL_DEFAULT, &pVB, NULL));
+		pVB = new VkBuf(pDev, nVtx * sizeof(NMVERTEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bHost);
 	}
 	if (!pGB) {
-		HR(pDev->CreateVertexBuffer(nVtx * sizeof(D3DXVECTOR4), Usage, 0, D3DPOOL_DEFAULT, &pGB, NULL));
+		pGB = new VkBuf(pDev, nVtx * sizeof(D3DXVECTOR4), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bHost);
 	}
 	if (!pIB) {
-		HR(pDev->CreateIndexBuffer(nIdx * sizeof(WORD), Usage, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &pIB, NULL));
+		pIB = new VkBuf(pDev, nIdx * sizeof(WORD), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, bHost); // D3DFMT_INDEX16
 	}
 
-	LPVOID pTgt;
+	// Lock, memcpy, Unlock
+	pSB->Upload(pSBSys, nVtx * sizeof(SMVERTEX));
 
-	HR(pSB->Lock(0, 0, (LPVOID*)&pTgt, Lock));
-	memcpy(pTgt, pSBSys, nVtx * sizeof(SMVERTEX));
-	HR(pSB->Unlock());
+	pVB->Upload(pVBSys, nVtx * sizeof(NMVERTEX));
 
-	HR(pVB->Lock(0, 0, (LPVOID*)&pTgt, Lock));
-	memcpy(pTgt, pVBSys, nVtx * sizeof(NMVERTEX));
-	HR(pVB->Unlock());
+	pGB->Upload(pGBSys, nVtx * sizeof(D3DXVECTOR4));
 
-	HR(pGB->Lock(0, 0, (LPVOID*)&pTgt, Lock));
-	memcpy(pTgt, pGBSys, nVtx * sizeof(D3DXVECTOR4));
-	HR(pGB->Unlock());
-
-	HR(pIB->Lock(0, 0, (LPVOID*)&pTgt, Lock));
-	memcpy(pTgt, pIBSys, nIdx * sizeof(WORD));
-	HR(pIB->Unlock());
+	pIB->Upload(pIBSys, nIdx * sizeof(WORD));
 }
 
 
@@ -206,7 +200,7 @@ void D3D9Mesh::Null(const char *meshName /* = NULL */)
 
 	memset(Locals, 0, sizeof(LightStruct) * Config->MaxLights());
 	memset(LightList, 0, sizeof(LightList));
-	strcpy_s(this->name, ARRAYSIZE(this->name), meshName ? meshName : "???");
+	snprintf(this->name, std::size(this->name), "%s", meshName ? meshName : "???");
 }
 
 // ===========================================================================================
@@ -327,7 +321,7 @@ D3D9Mesh::D3D9Mesh(MESHHANDLE hMesh, const D3D9Mesh &hTemp)
 
 	if (nGrp == 0) return;
 
-	strcpy_s(name, ARRAYSIZE(name), hTemp.name);
+	snprintf(name, std::size(name), "%s", hTemp.name);
 
 	// Use Template's Vertex Data directly, no need for a local copy unless locally modified. 
 	pBuf = hTemp.pBuf;
@@ -403,7 +397,7 @@ void D3D9Mesh::Release()
 void D3D9Mesh::ReLoadMeshFromHandle(MESHHANDLE hMesh)
 {
 	const char* meshn = oapiGetMeshFilename(hMesh);
-	strcpy_s(name, 128, meshn ? meshn : "???");
+	snprintf(name, 128, "%s", meshn ? meshn : "???");
 
 	// Relese buffers, Tex, Mtrl and Grp counts may have changed.
 	SAFE_DELETEA(Tex);
@@ -465,7 +459,7 @@ void D3D9Mesh::ReLoadMeshFromHandle(MESHHANDLE hMesh)
 void D3D9Mesh::LoadMeshFromHandle(MESHHANDLE hMesh, D3DXVECTOR3 *reorig, float *scale)
 {
 	const char* meshn = oapiGetMeshFilename(hMesh);
-	strcpy_s(name, 128, meshn ? meshn : "???");
+	snprintf(name, 128, "%s", meshn ? meshn : "???");
 
 	nGrp = oapiMeshGroupCount(hMesh);
 
@@ -514,14 +508,14 @@ void D3D9Mesh::ReloadTextures()
 //
 void D3D9Mesh::SetName(const char *name_)
 {
-	if (name_) strcpy_s(this->name, ARRAYSIZE(this->name), name_);
+	if (name_) snprintf(this->name, std::size(this->name), "%s", name_);
 }
 
 // ===========================================================================================
 //
 void D3D9Mesh::SetName(UINT idx)
 {
-	if ((strncmp(name, "???", 3) == 0) || (name[0] == 0)) sprintf_s(name, ARRAYSIZE(name), "MeshIdx-%u", idx);
+	if ((strncmp(name, "???", 3) == 0) || (name[0] == 0)) snprintf(name, std::size(name), "MeshIdx-%u", idx);
 }
 
 // ===========================================================================================
@@ -587,7 +581,7 @@ void D3D9Mesh::ProcessInherit()
 			}
 		}
 	}
-	if (bPopUp) MessageBoxA(NULL, "Invalid Mesh Detected", "D3D9Client Error:",MB_OK);
+	if (bPopUp) QMessageBox::warning(NULL, "D3D9Client Error:", "Invalid Mesh Detected");
 }
 
 
@@ -629,8 +623,8 @@ void D3D9Mesh::UpdateTangentSpace(NMVERTEX *pVrt, WORD *pIdx, DWORD nVtx, DWORD 
 
 	if (bTextured) {
 
-		XMVECTOR *ta = (XMVECTOR*)_aligned_malloc(sizeof(__m128)*(nVtx+1), 16);
-		XMVECTOR zero = XMVectorSet(0, 0, 0, 0);
+		D3DXVECTOR3 *ta = new D3DXVECTOR3[nVtx+1]; // XMVECTOR, _aligned_malloc
+		D3DXVECTOR3 zero = D3DXVECTOR3(0, 0, 0);
 		for (DWORD i = 0; i < nVtx; i++) ta[i] = zero;
 
 		for (DWORD i=0;i<nFace;i++) {
@@ -639,9 +633,9 @@ void D3D9Mesh::UpdateTangentSpace(NMVERTEX *pVrt, WORD *pIdx, DWORD nVtx, DWORD 
 			DWORD i1 = pIdx[i*3+1];
 			DWORD i2 = pIdx[i*3+2];
 
-			XMVECTOR r0 = XMLoadFloat3((XMFLOAT3*)&pVrt[i0].x);
-			XMVECTOR r1 = XMLoadFloat3((XMFLOAT3*)&pVrt[i1].x);
-			XMVECTOR r2 = XMLoadFloat3((XMFLOAT3*)&pVrt[i2].x);
+			D3DXVECTOR3 r0 = D3DXVECTOR3(&pVrt[i0].x);
+			D3DXVECTOR3 r1 = D3DXVECTOR3(&pVrt[i1].x);
+			D3DXVECTOR3 r2 = D3DXVECTOR3(&pVrt[i2].x);
 			D3DXVECTOR2 t0 = D3DXVECTOR2(pVrt[i0].u, pVrt[i0].v);
 			D3DXVECTOR2 t1 = D3DXVECTOR2(pVrt[i1].u, pVrt[i1].v);
 			D3DXVECTOR2 t2 = D3DXVECTOR2(pVrt[i2].u, pVrt[i2].v);
@@ -651,25 +645,26 @@ void D3D9Mesh::UpdateTangentSpace(NMVERTEX *pVrt, WORD *pIdx, DWORD nVtx, DWORD 
 			float u1 = t2.x - t0.x;
 			float v1 = t2.y - t0.y;
 
-			XMVECTOR k0 = r1 - r0;
-			XMVECTOR k1 = r2 - r0;
+			D3DXVECTOR3 k0 = r1 - r0;
+			D3DXVECTOR3 k1 = r2 - r0;
 
 			float q = (u0*v1-u1*v0);
 			if (q==0) q = 1.0f;
 			else q = 1.0f / q;
 
-			XMVECTOR t = ((k0*v1 - k1*v0) * q);
+			D3DXVECTOR3 t = ((k0*v1 - k1*v0) * q);
 			ta[i0]+=t; ta[i1]+=t; ta[i2]+=t;
 			pVrt[i0].w = pVrt[i1].w = pVrt[i2].w = (q<0.0f ? 1.0f : -1.0f);
 		}
 
 		for (DWORD i=0;i<nVtx; i++) {
-			XMVECTOR n = XMVector3Normalize(XMLoadFloat3((XMFLOAT3*)&pVrt[i].nx));
-			XMVECTOR t = XMVector3Normalize((ta[i] - n * XMVector3Dot(ta[i], n)));
-			XMStoreFloat3((XMFLOAT3*)&pVrt[i].tx, t);
+			D3DXVECTOR3 n, t;
+			D3DXVec3Normalize(&n, ptr(D3DXVECTOR3(&pVrt[i].nx)));
+			D3DXVec3Normalize(&t, ptr(ta[i] - n * D3DXVec3Dot(&ta[i], &n)));
+			pVrt[i].tx = t.x; pVrt[i].ty = t.y; pVrt[i].tz = t.z; // XMStoreFloat3
 		}
 
-		_aligned_free(ta);
+		delete[] ta;
 	}
 	else {
 		for (DWORD i=0;i<nVtx; i++) {
@@ -1333,10 +1328,10 @@ void D3D9Mesh::RenderGroup(const GROUPREC *grp)
 
 	pBuf->Map(pDev);
 
-	pDev->SetVertexDeclaration(pMeshVertexDecl);
+	pDev->SetVertexDecl(pMeshVertexDecl);
 	pDev->SetStreamSource(0, pBuf->pVB, 0, sizeof(NMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, grp->VertOff, 0, grp->nVert, grp->IdexOff, grp->nFace);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, grp->VertOff, grp->IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, grp->nFace));
 	D3D9Stats.Mesh.Vertices += grp->nVert;
 	D3D9Stats.Mesh.MeshGrps++;
 }
@@ -1433,7 +1428,7 @@ void D3D9Mesh::ConfigureAtmo()
 // ================================================================================================
 // This is a rendering routine for a Exterior Mesh, non-spherical moons/asteroids
 //
-void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *pEnv, int nEnv)
+void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, VkTex **pEnv, int nEnv)
 {
 
 	_TRACE;
@@ -1531,11 +1526,11 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 	D3D9MatExt *mat, *old_mat = NULL;
 	SURFHANDLE old_tex = NULL;
 
-	pDev->SetVertexDeclaration(pMeshVertexDecl);
+	pDev->SetVertexDecl(pMeshVertexDecl);
 	pDev->SetStreamSource(0, pBuf->pVB, 0, sizeof(NMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
 
-	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetCullMode(VK_CULL_MODE_NONE);
 
 	FX->SetTechnique(eVesselTech);
 	FX->SetBool(eFresnel, false);
@@ -1601,7 +1596,7 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 
 	WORD CurrentShader = SHADER_NULL;
 
@@ -1641,7 +1636,7 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 			if (CurrentShader != SHADER_NULL) { HR(FX->EndPass()); }
 			HR(FX->BeginPass(Grp[g].Shader));
 			CurrentShader = Grp[g].Shader;
-			if (iTech == RENDER_BASEBS) pDev->SetRenderState(D3DRS_ZENABLE, 0);	// Must be here because BeginPass() sets it enabled
+			if (iTech == RENDER_BASEBS) pDev->SetDepthTest(false);	// Must be here because BeginPass() sets it enabled
 		}
 
 
@@ -1708,15 +1703,15 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 						FX->SetValue(eTune, &pTune[ti], sizeof(D3D9Tune));
 					}
 
-					LPDIRECT3DTEXTURE9 pTransl = NULL;
-					LPDIRECT3DTEXTURE9 pTransm = NULL;
-					LPDIRECT3DTEXTURE9 pMetl = NULL;
-					LPDIRECT3DTEXTURE9 pRefl = Tex[ti]->GetMap(MAP_REFLECTION);
-					LPDIRECT3DTEXTURE9 pNorm = Tex[ti]->GetMap(MAP_NORMAL);
-					LPDIRECT3DTEXTURE9 pRghn = Tex[ti]->GetMap(MAP_ROUGHNESS);
-					LPDIRECT3DTEXTURE9 pEmis = Tex[ti]->GetMap(MAP_EMISSION);
-					LPDIRECT3DTEXTURE9 pHeat = Tex[ti]->GetMap(MAP_HEAT);
-					LPDIRECT3DTEXTURE9 pSpec = Tex[ti]->GetMap(MAP_SPECULAR);
+					VkTex *pTransl = NULL;
+					VkTex *pTransm = NULL;
+					VkTex *pMetl = NULL;
+					VkTex *pRefl = Tex[ti]->GetMap(MAP_REFLECTION);
+					VkTex *pNorm = Tex[ti]->GetMap(MAP_NORMAL);
+					VkTex *pRghn = Tex[ti]->GetMap(MAP_ROUGHNESS);
+					VkTex *pEmis = Tex[ti]->GetMap(MAP_EMISSION);
+					VkTex *pHeat = Tex[ti]->GetMap(MAP_HEAT);
+					VkTex *pSpec = Tex[ti]->GetMap(MAP_SPECULAR);
 
 					if (tni && Grp[g].TexMixEx[0] < 0.5f) tni = 0;
 					if (!pEmis && tni && Tex[tni]) pEmis = Tex[tni]->GetTexture();
@@ -1916,39 +1911,30 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 		// Start rendering -------------------------------------------------------------------------------------------
 		//
 		if (bHUD) {
-			pDev->SetRenderState(D3DRS_ZENABLE, 0);
-			pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+			pDev->SetDepthTest(false);
+			pDev->SetDestBlend(VK_BLEND_FACTOR_ONE);
 		}
 
 		if (Grp[g].bDualSided) {
-			pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
-			pDev->SetRenderState(D3DRS_ZWRITEENABLE, 0);
-			pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
-			pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+			pDev->SetCullMode(VK_CULL_MODE_FRONT_BIT);
+			pDev->SetDepthWrite(false);
+			pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
+			pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		}
 
-		DWORD dwMSAA;
+		// D3DRS_MULTISAMPLEANTIALIAS off for bOIT groups left out: Vulkan can't draw single-sampled into a multisampled target
 
-		if (bOIT) {
-			pDev->GetRenderState(D3DRS_MULTISAMPLEANTIALIAS, &dwMSAA);
-			pDev->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, 0);
-		}
-
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff,  0, Grp[g].nVert,  Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 
 		Grp[g].bRendered = true;
 
-		if (bOIT && dwMSAA) {
-			pDev->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, dwMSAA);
-		}
-
 		if (Grp[g].bDualSided) {
-			pDev->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+			pDev->SetDepthWrite(true);
 		}
 
 		if (bHUD) {
-			pDev->SetRenderState(D3DRS_ZENABLE, 1);
-			pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+			pDev->SetDepthTest(true);
+			pDev->SetDestBlend(VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
 		}
 
 		D3D9Stats.Mesh.Vertices += Grp[g].nVert;
@@ -1964,7 +1950,7 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 
 	if (flags&(DBG_FLAGS_BOXES|DBG_FLAGS_SPHERES)) RenderBoundingBox(pW);
 	FX->SetVector(eColor, ptr(D3DXVECTOR4(0, 0, 0, 0)));
-	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 }
 
 
@@ -1972,7 +1958,7 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, LPDIRECT3DCUBETEXTURE9 *
 // ================================================================================================
 // Render without animations 
 //
-void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *pEnv, int nEnv, bool bSP)
+void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, VkTex **pEnv, int nEnv, bool bSP)
 {
 	if (!IsOK()) return;
 
@@ -2000,7 +1986,7 @@ void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *p
 	SURFHANDLE old_tex = NULL;
 	TexFlow FC;	reset(FC);
 
-	pDev->SetVertexDeclaration(pMeshVertexDecl);
+	pDev->SetVertexDecl(pMeshVertexDecl);
 	pDev->SetStreamSource(0, pBuf->pVB, 0, sizeof(NMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
 
@@ -2061,7 +2047,7 @@ void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *p
 	WORD CurrentShader = 0xFFFF;
 	UINT numPasses = 0;
 
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 
 
 	// Render MeshGroups ----------------------------------------------------
@@ -2105,14 +2091,14 @@ void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *p
 				FX->SetTexture(eTex0, Tex[ti]->GetTexture());
 				bUpdateFlow = true;	// Fix this later
 
-				LPDIRECT3DTEXTURE9 pTransl = NULL;
-				LPDIRECT3DTEXTURE9 pTransm = NULL;
-				LPDIRECT3DTEXTURE9 pSpec = Tex[ti]->GetMap(MAP_SPECULAR);
-				LPDIRECT3DTEXTURE9 pNorm = Tex[ti]->GetMap(MAP_NORMAL);
-				LPDIRECT3DTEXTURE9 pRefl = Tex[ti]->GetMap(MAP_REFLECTION);
-				LPDIRECT3DTEXTURE9 pRghn = Tex[ti]->GetMap(MAP_ROUGHNESS);
-				LPDIRECT3DTEXTURE9 pMetl = Tex[ti]->GetMap(MAP_METALNESS);
-				LPDIRECT3DTEXTURE9 pEmis = Tex[ti]->GetMap(MAP_EMISSION);
+				VkTex *pTransl = NULL;
+				VkTex *pTransm = NULL;
+				VkTex *pSpec = Tex[ti]->GetMap(MAP_SPECULAR);
+				VkTex *pNorm = Tex[ti]->GetMap(MAP_NORMAL);
+				VkTex *pRefl = Tex[ti]->GetMap(MAP_REFLECTION);
+				VkTex *pRghn = Tex[ti]->GetMap(MAP_ROUGHNESS);
+				VkTex *pMetl = Tex[ti]->GetMap(MAP_METALNESS);
+				VkTex *pEmis = Tex[ti]->GetMap(MAP_EMISSION);
 
 				if (pNorm) FX->SetTexture(eTex3, pNorm);
 				if (pRghn) FX->SetTexture(eRghnMap, pRghn);
@@ -2201,19 +2187,10 @@ void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, LPDIRECT3DCUBETEXTURE9 *p
 		//
 		FX->CommitChanges();
 
-		DWORD dwMSAA = 0;
+		// D3DRS_MULTISAMPLEANTIALIAS off for bOIT groups left out (as in Render)
 
-		if (bOIT) {
-			pDev->GetRenderState(D3DRS_MULTISAMPLEANTIALIAS, &dwMSAA);
-			pDev->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, 0);
-		}
-
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 		Grp[g].bRendered = true;
-
-		if (bOIT && dwMSAA) {
-			pDev->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, dwMSAA);		
-		}
 	}
 
 	if (CurrentShader != 0xFFFF) HR(FX->EndPass());
@@ -2304,13 +2281,13 @@ void D3D9Mesh::RenderFast(const LPD3DXMATRIX pW, int iTech)
 
 	D3D9MatExt *mat, *old_mat = NULL;
 	SURFHANDLE old_tex = NULL;
-	LPDIRECT3DTEXTURE9 pEmis_old = NULL;
+	VkTex *pEmis_old = NULL;
 
-	pDev->SetVertexDeclaration(pMeshVertexDecl);
+	pDev->SetVertexDecl(pMeshVertexDecl);
 	pDev->SetStreamSource(0, pBuf->pVB, 0, sizeof(NMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
 
-	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetCullMode(VK_CULL_MODE_NONE);
 
 
 	FX->SetTechnique(eVesselTech);
@@ -2365,13 +2342,13 @@ void D3D9Mesh::RenderFast(const LPD3DXMATRIX pW, int iTech)
 	FX->SetValue(eLights, Locals, sizeof(LightStruct) * Config->MaxLights());
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 
 	// Begin rendering of a specified pass ------------------------------
 	//
 	HR(FX->BeginPass(2));
 
-	if (iTech == RENDER_BASEBS) pDev->SetRenderState(D3DRS_ZENABLE, 0);	// Must be here because BeginPass() sets it enabled
+	if (iTech == RENDER_BASEBS) pDev->SetDepthTest(false);	// Must be here because BeginPass() sets it enabled
 
 	for (DWORD g = 0; g<nGrp; g++) {
 
@@ -2433,7 +2410,7 @@ void D3D9Mesh::RenderFast(const LPD3DXMATRIX pW, int iTech)
 				old_tex = Tex[ti];
 				FX->SetTexture(eTex0, Tex[ti]->GetTexture());
 
-				LPDIRECT3DTEXTURE9 pEmis = Tex[ti]->GetMap(MAP_EMISSION);
+				VkTex *pEmis = Tex[ti]->GetMap(MAP_EMISSION);
 
 				if (tni && Grp[g].TexMixEx[0]<0.5f) tni = 0;
 				if (!pEmis && tni && Tex[tni]) pEmis = Tex[tni]->GetTexture();
@@ -2521,28 +2498,28 @@ void D3D9Mesh::RenderFast(const LPD3DXMATRIX pW, int iTech)
 		FX->CommitChanges();
 
 		if (bHUD) {
-			pDev->SetRenderState(D3DRS_ZENABLE, 0);
-			pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+			pDev->SetDepthTest(false);
+			pDev->SetDestBlend(VK_BLEND_FACTOR_ONE);
 		}
 
 		if (Grp[g].bDualSided) {
-			pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
-			pDev->SetRenderState(D3DRS_ZWRITEENABLE, 0);
-			pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
-			pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+			pDev->SetCullMode(VK_CULL_MODE_FRONT_BIT);
+			pDev->SetDepthWrite(false);
+			pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
+			pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		}
 
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 
 		Grp[g].bRendered = true;
 
 		if (Grp[g].bDualSided) {
-			pDev->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+			pDev->SetDepthWrite(true);
 		}
 
 		if (bHUD) {
-			pDev->SetRenderState(D3DRS_ZENABLE, 1);
-			pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+			pDev->SetDepthTest(true);
+			pDev->SetDestBlend(VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
 		}
 
 		D3D9Stats.Mesh.Vertices += Grp[g].nVert;
@@ -2554,7 +2531,7 @@ void D3D9Mesh::RenderFast(const LPD3DXMATRIX pW, int iTech)
 
 	if (flags&(DBG_FLAGS_BOXES | DBG_FLAGS_SPHERES)) RenderBoundingBox(pW);
 	FX->SetVector(eColor, ptr(D3DXVECTOR4(0, 0, 0, 0)));
-	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	if (flags&DBG_FLAGS_DUALSIDED) pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 }
 
 
@@ -2624,9 +2601,9 @@ void D3D9Mesh::RenderBaseTile(const LPD3DXMATRIX pW)
 
 	D3D9MatExt *mat, *old_mat = NULL;
 	SURFHANDLE old_tex = NULL;
-	LPDIRECT3DTEXTURE9  pNorm = NULL;
+	VkTex *pNorm = NULL;
 
-	pDev->SetVertexDeclaration(pMeshVertexDecl);
+	pDev->SetVertexDecl(pMeshVertexDecl);
 	pDev->SetStreamSource(0, pBuf->pVB, 0, sizeof(NMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
 
@@ -2639,7 +2616,7 @@ void D3D9Mesh::RenderBaseTile(const LPD3DXMATRIX pW)
 	ConfigureAtmo();
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 
 	for (DWORD pass=0;pass<numPasses;pass++) {
 
@@ -2717,7 +2694,7 @@ void D3D9Mesh::RenderBaseTile(const LPD3DXMATRIX pW)
 
 			FX->CommitChanges();
 
-			pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+			pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 
 			D3D9Stats.Mesh.Vertices += Grp[g].nVert;
 			D3D9Stats.Mesh.MeshGrps++;
@@ -2804,7 +2781,7 @@ void D3D9Mesh::RenderShadowMap(const LPD3DXMATRIX pW, const LPD3DXMATRIX pVP, in
 		if (pShader->hPSB) pShader->SetPSConstants(pShader->hPSB, &MeshShader::ps_bools, sizeof(MeshShader::ps_bools));
 		pShader->UpdateTextures();
 
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 	}
 }
 
@@ -2822,7 +2799,7 @@ void D3D9Mesh::RenderStencilShadows(float alpha, const LPD3DXMATRIX pP, const LP
 	else mWorldMesh = *pW;
 
 	pDev->SetIndices(pBuf->pIB);
-	pDev->SetVertexDeclaration(pPosTexDecl);
+	pDev->SetVertexDecl(pPosTexDecl);
 	pDev->SetStreamSource(0, pBuf->pSB, 0, sizeof(SMVERTEX));
 	FX->SetTechnique(eShadowTech);
 	
@@ -2830,7 +2807,7 @@ void D3D9Mesh::RenderStencilShadows(float alpha, const LPD3DXMATRIX pP, const LP
 	else FX->SetVector(eInScatter, ptr(D3DXVECTOR4(0,1,0,0)));
 
 	FX->SetFloat(eMix, alpha);
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 
 	FX->BeginPass(Pass);
 	
@@ -2871,7 +2848,7 @@ void D3D9Mesh::RenderStencilShadows(float alpha, const LPD3DXMATRIX pP, const LP
 		}
 
 		FX->CommitChanges();
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 	}
 
 	FX->EndPass();
@@ -2887,7 +2864,7 @@ void D3D9Mesh::RenderShadowsEx(float alpha, const LPD3DXMATRIX pP, const LPD3DXM
 
 	D3D9Stats.Mesh.Meshes++;
 
-	pDev->SetVertexDeclaration(pPosTexDecl);
+	pDev->SetVertexDecl(pPosTexDecl);
 	pDev->SetStreamSource(0, pBuf->pSB, 0, sizeof(SMVERTEX));
 	pDev->SetIndices(pBuf->pIB);
 
@@ -2901,7 +2878,7 @@ void D3D9Mesh::RenderShadowsEx(float alpha, const LPD3DXMATRIX pP, const LPD3DXM
 
 
 	UINT numPasses = 0;
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(1);
 
 	for (DWORD g = 0; g<nGrp; g++) {
@@ -2925,7 +2902,7 @@ void D3D9Mesh::RenderShadowsEx(float alpha, const LPD3DXMATRIX pP, const LPD3DXM
 		FX->SetBool(eOITEnable, bOIT);
 		FX->CommitChanges();
 
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, Grp[g].VertOff, 0, Grp[g].nVert, Grp[g].IdexOff, Grp[g].nFace);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 
 		D3D9Stats.Mesh.Vertices += Grp[g].nVert;
 		D3D9Stats.Mesh.MeshGrps++;
@@ -2985,7 +2962,7 @@ void D3D9Mesh::RenderBoundingBox(const LPD3DXMATRIX pW)
 
 	if (flags&DBG_FLAGS_BOXES) {
 
-		pDev->SetVertexDeclaration(pPositionDecl);
+		pDev->SetVertexDecl(pPositionDecl);
 
 		// ----------------------------------------------------------------
 		FX->SetMatrix(eW, pW);
@@ -2994,7 +2971,7 @@ void D3D9Mesh::RenderBoundingBox(const LPD3DXMATRIX pW)
 		// ----------------------------------------------------------------
 
 		UINT numPasses = 0;
-		FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+		FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 		FX->BeginPass(0);
 
 		for (DWORD g=0; g<nGrp; g++) {
@@ -3018,8 +2995,8 @@ void D3D9Mesh::RenderBoundingBox(const LPD3DXMATRIX pW)
 			//
 			FX->CommitChanges();
 
-			pDev->DrawPrimitiveUP(D3DPT_LINESTRIP, 9, &poly, sizeof(D3DVECTOR));
-			pDev->DrawPrimitiveUP(D3DPT_LINELIST, 3, &list, sizeof(D3DVECTOR));
+			pDev->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 9), &poly, sizeof(D3DVECTOR));
+			pDev->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 3), &list, sizeof(D3DVECTOR));
 		}
 
 		FX->EndPass();
@@ -3043,15 +3020,15 @@ void D3D9Mesh::RenderBoundingBox(const LPD3DXMATRIX pW)
 
 void D3D9Mesh::BoundingBox(const NMVERTEX *vtx, DWORD n, D9BBox *box)
 {
-	XMVECTOR mi, mx;
-	mi = mx = XMLoadFloat3((XMFLOAT3 *)&vtx[0].x);
+	D3DXVECTOR3 mi, mx;
+	mi = mx = D3DXVECTOR3(&vtx[0].x);
 	for (DWORD i = 1; i < n; i++) {
-		XMVECTOR x = XMLoadFloat3((XMFLOAT3 *)&vtx[i].x);
-		mi = XMVectorMin(mi, x);
-		mx = XMVectorMax(mx, x);
+		D3DXVECTOR3 x = D3DXVECTOR3(&vtx[i].x);
+		mi = D3DXVECTOR3(std::min(mi.x, x.x), std::min(mi.y, x.y), std::min(mi.z, x.z)); // XMVectorMin
+		mx = D3DXVECTOR3(std::max(mx.x, x.x), std::max(mx.y, x.y), std::max(mx.z, x.z)); // XMVectorMax
 	}
-	XMStoreFloat4((XMFLOAT4 *)&box->min.x, XMVectorSetW(mi, 0));
-	XMStoreFloat4((XMFLOAT4 *)&box->max.x, XMVectorSetW(mx, 0));
+	box->min = D3DXVECTOR4(mi.x, mi.y, mi.z, 0);
+	box->max = D3DXVECTOR4(mx.x, mx.y, mx.z, 0);
 }
 
 // ===========================================================================================
@@ -3351,18 +3328,18 @@ void D3D9Mesh::RenderAxisVector(LPD3DXMATRIX pW, const D3DXCOLOR *pColor, float 
 	HR(FX->SetFloat(eMix, len));
 	HR(FX->SetValue(eColor, pColor, sizeof(D3DXCOLOR)));
 	HR(FX->SetMatrix(eW, pW));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
+	pDev->SetCullMode(VK_CULL_MODE_FRONT_BIT);
 	RenderGroup(0);
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 	HR(FX->EndPass());
 	HR(FX->End());
 }
 
 // Used only by ring manager --------------------------------------------------------------------
 //
-void D3D9Mesh::RenderRings(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex)
+void D3D9Mesh::RenderRings(const LPD3DXMATRIX pW, VkTex *pTex)
 {
 	_TRACE;
 	if (!IsOK()) return;
@@ -3377,7 +3354,7 @@ void D3D9Mesh::RenderRings(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex)
 	HR(FX->SetTexture(eTex0, pTex));
 	FX->SetValue(eSun, &sunLight, sizeof(D3D9Sun));
 	HR(FX->SetValue(eMtrl, &defmat, sizeof(D3D9MatExt)-4));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 	RenderGroup(0);
 	HR(FX->EndPass());
@@ -3386,7 +3363,7 @@ void D3D9Mesh::RenderRings(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex)
 
 // Used only by ring manager --------------------------------------------------------------------
 //
-void D3D9Mesh::RenderRings2(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex, float irad, float orad)
+void D3D9Mesh::RenderRings2(const LPD3DXMATRIX pW, VkTex *pTex, float irad, float orad)
 {
 	_TRACE;
 	if (!IsOK()) return;
@@ -3402,7 +3379,7 @@ void D3D9Mesh::RenderRings2(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex, floa
 	FX->SetValue(eSun, &sunLight, sizeof(D3D9Sun));
 	HR(FX->SetValue(eMtrl, &defmat, sizeof(D3D9MatExt)-4));
 	HR(FX->SetVector(eTexOff, ptr(D3DXVECTOR4(irad, orad, 0, 0))));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 	RenderGroup(0);
 	HR(FX->EndPass());
@@ -3412,13 +3389,13 @@ void D3D9Mesh::RenderRings2(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex, floa
 
 // ===========================================================================================
 //
-void D3D9Mesh::GlobalInit(LPDIRECT3DDEVICE9 pDev)
+void D3D9Mesh::GlobalInit(VkDev *pDev)
 {
 	memset(s_pShader, 0, sizeof(s_pShader));
 
-	s_pShader[SHADER_SHADOWMAP] = new MeshShader(pDev, "Modules/D3D9Client/NewMesh.hlsl", "ShdMapVS", "ShdMapPS");
-	s_pShader[SHADER_SHADOWMAP_OIT] = new MeshShader(pDev, "Modules/D3D9Client/NewMesh.hlsl", "ShdMapOIT_VS", "ShdMapOIT_PS");
-	s_pShader[SHADER_NORMAL_DEPTH] = new MeshShader(pDev, "Modules/D3D9Client/NewMesh.hlsl", "NormalDepth_VS", "NormalDepth_PS");
+	s_pShader[SHADER_SHADOWMAP] = new MeshShader(pDev, "Modules/VulkanClient/NewMesh.glsl", "ShdMapVS", "ShdMapPS");
+	s_pShader[SHADER_SHADOWMAP_OIT] = new MeshShader(pDev, "Modules/VulkanClient/NewMesh.glsl", "ShdMapOIT_VS", "ShdMapOIT_PS");
+	s_pShader[SHADER_NORMAL_DEPTH] = new MeshShader(pDev, "Modules/VulkanClient/NewMesh.glsl", "NormalDepth_VS", "NormalDepth_PS");
 }
 
 

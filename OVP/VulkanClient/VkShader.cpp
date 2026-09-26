@@ -160,6 +160,7 @@ bool VkCompileGLSL (const char *file, const std::string &src, const char *entry,
 	std::string pre = "#version 460\n"
 		"#extension GL_GOOGLE_cpp_style_line_directive : require\n"
 		"#extension GL_EXT_scalar_block_layout : require\n";
+	pre += (lang == EShLangVertex) ? "#define STAGE_VS 1\n" : "#define STAGE_PS 1\n"; // guards fragment-only code in shared functions
 	if (entry && entry[0]) pre += std::string ("#define ") + (lang == EShLangVertex ? "VS_" : "PS_") + entry + " 1\n";
 	for (auto &m : macros) pre += "#define " + m.first + " " + m.second + "\n";
 	const char *strs[2] = { pre.c_str(), src.c_str() };

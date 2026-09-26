@@ -12,10 +12,11 @@
 #include "D3D9Config.h"
 #include "Mesh.h"
 #include "VectorHelpers.h"
+#include <QMessageBox>
 
 D3D9Client  * D3D9Effect::gc = 0;
-ID3DXEffect * D3D9Effect::FX = 0;
-LPDIRECT3DVERTEXBUFFER9 D3D9Effect::VB = 0;
+VkEffect *D3D9Effect::FX = 0;
+VkBuf *D3D9Effect::VB = 0;
 D3DXVECTOR4 D3D9Effect::atm_color;			// Earth glow color
 
 D3D9MatExt D3D9Effect::mfdmat;
@@ -24,118 +25,118 @@ D3D9MatExt D3D9Effect::night_mat;
 D3D9MatExt D3D9Effect::emissive_mat;
 
 // Some general rendering techniques
-D3DXHANDLE D3D9Effect::ePanelTech = 0;		// Used to draw a new style 2D panel
-D3DXHANDLE D3D9Effect::ePanelTechB = 0;		// Used to draw a new style 2D panel
-D3DXHANDLE D3D9Effect::eVesselTech = 0;		// Vessel exterior, surface bases.
-D3DXHANDLE D3D9Effect::eBBTech = 0;			// Bounding Box Tech
-D3DXHANDLE D3D9Effect::eTBBTech = 0;
-D3DXHANDLE D3D9Effect::eBSTech = 0;			// Bounding Sphere Tech
-D3DXHANDLE D3D9Effect::eSimple = 0;
-D3DXHANDLE D3D9Effect::eBaseShadowTech = 0;	// Used to draw transparent surface without texture 
-D3DXHANDLE D3D9Effect::eBeaconArrayTech = 0;
-D3DXHANDLE D3D9Effect::eExhaust = 0;	// Render engine exhaust texture
-D3DXHANDLE D3D9Effect::eSpotTech = 0;	// Vessel beacons
-D3DXHANDLE D3D9Effect::eBaseTile = 0;
-D3DXHANDLE D3D9Effect::eRingTech = 0;	// Planet rings technique
-D3DXHANDLE D3D9Effect::eRingTech2 = 0;	// Planet rings technique
-D3DXHANDLE D3D9Effect::eShadowTech = 0; // Vessel ground shadows
-D3DXHANDLE D3D9Effect::eArrowTech = 0;  // (Grapple point) arrows
-D3DXHANDLE D3D9Effect::eAxisTech = 0;
-D3DXHANDLE D3D9Effect::eSimpMesh = 0;
-D3DXHANDLE D3D9Effect::eGeometry = 0;
+VkFxHandle D3D9Effect::ePanelTech = 0;		// Used to draw a new style 2D panel
+VkFxHandle D3D9Effect::ePanelTechB = 0;		// Used to draw a new style 2D panel
+VkFxHandle D3D9Effect::eVesselTech = 0;		// Vessel exterior, surface bases.
+VkFxHandle D3D9Effect::eBBTech = 0;			// Bounding Box Tech
+VkFxHandle D3D9Effect::eTBBTech = 0;
+VkFxHandle D3D9Effect::eBSTech = 0;			// Bounding Sphere Tech
+VkFxHandle D3D9Effect::eSimple = 0;
+VkFxHandle D3D9Effect::eBaseShadowTech = 0;	// Used to draw transparent surface without texture 
+VkFxHandle D3D9Effect::eBeaconArrayTech = 0;
+VkFxHandle D3D9Effect::eExhaust = 0;	// Render engine exhaust texture
+VkFxHandle D3D9Effect::eSpotTech = 0;	// Vessel beacons
+VkFxHandle D3D9Effect::eBaseTile = 0;
+VkFxHandle D3D9Effect::eRingTech = 0;	// Planet rings technique
+VkFxHandle D3D9Effect::eRingTech2 = 0;	// Planet rings technique
+VkFxHandle D3D9Effect::eShadowTech = 0; // Vessel ground shadows
+VkFxHandle D3D9Effect::eArrowTech = 0;  // (Grapple point) arrows
+VkFxHandle D3D9Effect::eAxisTech = 0;
+VkFxHandle D3D9Effect::eSimpMesh = 0;
+VkFxHandle D3D9Effect::eGeometry = 0;
 
 // Planet Rendering techniques
-D3DXHANDLE D3D9Effect::ePlanetTile = 0;
-D3DXHANDLE D3D9Effect::eCloudTech = 0;
-D3DXHANDLE D3D9Effect::eCloudShadow = 0;
-D3DXHANDLE D3D9Effect::eSkyDomeTech = 0;	
-D3DXHANDLE D3D9Effect::eHazeTech = 0;
+VkFxHandle D3D9Effect::ePlanetTile = 0;
+VkFxHandle D3D9Effect::eCloudTech = 0;
+VkFxHandle D3D9Effect::eCloudShadow = 0;
+VkFxHandle D3D9Effect::eSkyDomeTech = 0;	
+VkFxHandle D3D9Effect::eHazeTech = 0;
 
 // Particle effect texhniques
-D3DXHANDLE D3D9Effect::eDiffuseTech = 0;
-D3DXHANDLE D3D9Effect::eEmissiveTech = 0;
+VkFxHandle D3D9Effect::eDiffuseTech = 0;
+VkFxHandle D3D9Effect::eEmissiveTech = 0;
 
 
 
-D3DXHANDLE D3D9Effect::eVP = 0;			// Combined View & Projection Matrix
-D3DXHANDLE D3D9Effect::eW = 0;			// World matrix
-D3DXHANDLE D3D9Effect::eLVP = 0;		// Light view projection
-D3DXHANDLE D3D9Effect::eGT = 0;			// Mesh group transformation matrix
-D3DXHANDLE D3D9Effect::eMat = 0;		// Material
-D3DXHANDLE D3D9Effect::eWater = 0;		// Water
-D3DXHANDLE D3D9Effect::eMtrl = 0;
-D3DXHANDLE D3D9Effect::eTune = 0;
-D3DXHANDLE D3D9Effect::eSun = 0;
-D3DXHANDLE D3D9Effect::eNight = 0;
-D3DXHANDLE D3D9Effect::eLights = 0;		// Additional light sources
+VkFxHandle D3D9Effect::eVP = 0;			// Combined View & Projection Matrix
+VkFxHandle D3D9Effect::eW = 0;			// World matrix
+VkFxHandle D3D9Effect::eLVP = 0;		// Light view projection
+VkFxHandle D3D9Effect::eGT = 0;			// Mesh group transformation matrix
+VkFxHandle D3D9Effect::eMat = 0;		// Material
+VkFxHandle D3D9Effect::eWater = 0;		// Water
+VkFxHandle D3D9Effect::eMtrl = 0;
+VkFxHandle D3D9Effect::eTune = 0;
+VkFxHandle D3D9Effect::eSun = 0;
+VkFxHandle D3D9Effect::eNight = 0;
+VkFxHandle D3D9Effect::eLights = 0;		// Additional light sources
 
-D3DXHANDLE D3D9Effect::eTex0 = 0;		// Primary texture
-D3DXHANDLE D3D9Effect::eTex1 = 0;		// Secondary texture
-D3DXHANDLE D3D9Effect::eTex3 = 0;		// Tertiary texture
-D3DXHANDLE D3D9Effect::eSpecMap = 0;
-D3DXHANDLE D3D9Effect::eEmisMap = 0;
-D3DXHANDLE D3D9Effect::eEnvMapA = 0;
-D3DXHANDLE D3D9Effect::eEnvMapB = 0;
-D3DXHANDLE D3D9Effect::eReflMap = 0;
-D3DXHANDLE D3D9Effect::eRghnMap = 0;
-D3DXHANDLE D3D9Effect::eMetlMap = 0;
-D3DXHANDLE D3D9Effect::eHeatMap = 0;
-D3DXHANDLE D3D9Effect::eShadowMap = 0;
-D3DXHANDLE D3D9Effect::eTranslMap = 0;
-D3DXHANDLE D3D9Effect::eTransmMap = 0;
-D3DXHANDLE D3D9Effect::eIrradMap = 0;
+VkFxHandle D3D9Effect::eTex0 = 0;		// Primary texture
+VkFxHandle D3D9Effect::eTex1 = 0;		// Secondary texture
+VkFxHandle D3D9Effect::eTex3 = 0;		// Tertiary texture
+VkFxHandle D3D9Effect::eSpecMap = 0;
+VkFxHandle D3D9Effect::eEmisMap = 0;
+VkFxHandle D3D9Effect::eEnvMapA = 0;
+VkFxHandle D3D9Effect::eEnvMapB = 0;
+VkFxHandle D3D9Effect::eReflMap = 0;
+VkFxHandle D3D9Effect::eRghnMap = 0;
+VkFxHandle D3D9Effect::eMetlMap = 0;
+VkFxHandle D3D9Effect::eHeatMap = 0;
+VkFxHandle D3D9Effect::eShadowMap = 0;
+VkFxHandle D3D9Effect::eTranslMap = 0;
+VkFxHandle D3D9Effect::eTransmMap = 0;
+VkFxHandle D3D9Effect::eIrradMap = 0;
 
-D3DXHANDLE D3D9Effect::eSpecularMode = 0;
-D3DXHANDLE D3D9Effect::eHazeMode = 0;
-D3DXHANDLE D3D9Effect::eColor = 0;		// Auxiliary color input
-D3DXHANDLE D3D9Effect::eFogColor = 0;	// Fog color input
-D3DXHANDLE D3D9Effect::eTexOff = 0;		// Surface tile texture offsets
-D3DXHANDLE D3D9Effect::eTime = 0;		// FLOAT Simulation elapsed time
-D3DXHANDLE D3D9Effect::eMix = 0;		// FLOAT Auxiliary factor/multiplier
-D3DXHANDLE D3D9Effect::eFogDensity = 0;	// 
-D3DXHANDLE D3D9Effect::ePointScale = 0;
-D3DXHANDLE D3D9Effect::eSHD = 0;
+VkFxHandle D3D9Effect::eSpecularMode = 0;
+VkFxHandle D3D9Effect::eHazeMode = 0;
+VkFxHandle D3D9Effect::eColor = 0;		// Auxiliary color input
+VkFxHandle D3D9Effect::eFogColor = 0;	// Fog color input
+VkFxHandle D3D9Effect::eTexOff = 0;		// Surface tile texture offsets
+VkFxHandle D3D9Effect::eTime = 0;		// FLOAT Simulation elapsed time
+VkFxHandle D3D9Effect::eMix = 0;		// FLOAT Auxiliary factor/multiplier
+VkFxHandle D3D9Effect::eFogDensity = 0;	// 
+VkFxHandle D3D9Effect::ePointScale = 0;
+VkFxHandle D3D9Effect::eSHD = 0;
 
-D3DXHANDLE D3D9Effect::eAtmColor = 0;
-D3DXHANDLE D3D9Effect::eProxySize = 0;
-D3DXHANDLE D3D9Effect::eMtrlAlpha = 0;
-D3DXHANDLE D3D9Effect::eKernel = 0;
-D3DXHANDLE D3D9Effect::eAtmoParams = 0;
+VkFxHandle D3D9Effect::eAtmColor = 0;
+VkFxHandle D3D9Effect::eProxySize = 0;
+VkFxHandle D3D9Effect::eMtrlAlpha = 0;
+VkFxHandle D3D9Effect::eKernel = 0;
+VkFxHandle D3D9Effect::eAtmoParams = 0;
 
 // Shader Flow Controls
-D3DXHANDLE D3D9Effect::eFlow = 0;
-D3DXHANDLE D3D9Effect::eModAlpha = 0;	// BOOL if true multiply material alpha with texture alpha
-D3DXHANDLE D3D9Effect::eFullyLit = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eTextured = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eFresnel = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eSwitch = 0;		// BOOL
-D3DXHANDLE D3D9Effect::eRghnSw = 0;		// BOOL
-D3DXHANDLE D3D9Effect::eShadowToggle = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eEnvMapEnable = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eInSpace = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eNoColor = 0;	// BOOL
-D3DXHANDLE D3D9Effect::eLightsEnabled = 0;	// BOOL	
-D3DXHANDLE D3D9Effect::eTuneEnabled = 0; // BOOL
-D3DXHANDLE D3D9Effect::eBaseBuilding = 0; // BOOL
-D3DXHANDLE D3D9Effect::eOITEnable = 0; // BOOL
+VkFxHandle D3D9Effect::eFlow = 0;
+VkFxHandle D3D9Effect::eModAlpha = 0;	// BOOL if true multiply material alpha with texture alpha
+VkFxHandle D3D9Effect::eFullyLit = 0;	// BOOL
+VkFxHandle D3D9Effect::eTextured = 0;	// BOOL
+VkFxHandle D3D9Effect::eFresnel = 0;	// BOOL
+VkFxHandle D3D9Effect::eSwitch = 0;		// BOOL
+VkFxHandle D3D9Effect::eRghnSw = 0;		// BOOL
+VkFxHandle D3D9Effect::eShadowToggle = 0;	// BOOL
+VkFxHandle D3D9Effect::eEnvMapEnable = 0;	// BOOL
+VkFxHandle D3D9Effect::eInSpace = 0;	// BOOL
+VkFxHandle D3D9Effect::eNoColor = 0;	// BOOL
+VkFxHandle D3D9Effect::eLightsEnabled = 0;	// BOOL	
+VkFxHandle D3D9Effect::eTuneEnabled = 0; // BOOL
+VkFxHandle D3D9Effect::eBaseBuilding = 0; // BOOL
+VkFxHandle D3D9Effect::eOITEnable = 0; // BOOL
 // --------------------------------------------------------------
-D3DXHANDLE D3D9Effect::eExposure = 0;
-D3DXHANDLE D3D9Effect::eCameraPos = 0;	
-D3DXHANDLE D3D9Effect::eNorth = 0;
-D3DXHANDLE D3D9Effect::eEast = 0;
-D3DXHANDLE D3D9Effect::eDistScale = 0;
-D3DXHANDLE D3D9Effect::eRadius = 0;
-D3DXHANDLE D3D9Effect::eAttennuate = 0;
-D3DXHANDLE D3D9Effect::eInScatter = 0;
-D3DXHANDLE D3D9Effect::eInvProxySize = 0;
-D3DXHANDLE D3D9Effect::eGlowConst = 0;
+VkFxHandle D3D9Effect::eExposure = 0;
+VkFxHandle D3D9Effect::eCameraPos = 0;	
+VkFxHandle D3D9Effect::eNorth = 0;
+VkFxHandle D3D9Effect::eEast = 0;
+VkFxHandle D3D9Effect::eDistScale = 0;
+VkFxHandle D3D9Effect::eRadius = 0;
+VkFxHandle D3D9Effect::eAttennuate = 0;
+VkFxHandle D3D9Effect::eInScatter = 0;
+VkFxHandle D3D9Effect::eInvProxySize = 0;
+VkFxHandle D3D9Effect::eGlowConst = 0;
 // --------------------------------------------------------------
-D3DXHANDLE D3D9Effect::eGlobalAmb = 0;	 
-D3DXHANDLE D3D9Effect::eSunAppRad = 0;	 
-D3DXHANDLE D3D9Effect::eAmbient0 = 0;	 
-D3DXHANDLE D3D9Effect::eDispersion = 0;	  
+VkFxHandle D3D9Effect::eGlobalAmb = 0;	 
+VkFxHandle D3D9Effect::eSunAppRad = 0;	 
+VkFxHandle D3D9Effect::eAmbient0 = 0;	 
+VkFxHandle D3D9Effect::eDispersion = 0;	  
 
-LPDIRECT3DDEVICE9 D3D9Effect::pDev = 0;
+VkDev *D3D9Effect::pDev = 0;
 
 static D3DMATERIAL9 _emissive_mat = { 
 	{0,0,0,1},
@@ -256,7 +257,7 @@ static D3DXVECTOR3 shadow_kernel[27] = {
 
 // ===========================================================================================
 //
-D3D9Effect::D3D9Effect() : d3d9id('D3D9')
+D3D9Effect::D3D9Effect() : d3d9id(0x44334439) // 'D3D9': g++ warns on multi-character constants
 {
 
 }
@@ -273,8 +274,8 @@ D3D9Effect::~D3D9Effect()
 void D3D9Effect::GlobalExit()
 {
 	LogAlw("====== D3D9Effect Global Exit =======");
-	SAFE_RELEASE(FX);
-	SAFE_RELEASE(VB);
+	SAFE_DELETE(FX);
+	SAFE_DELETE(VB);
 }
 
 // ===========================================================================================
@@ -292,7 +293,7 @@ void D3D9Effect::ShutDown()
 
 // ===========================================================================================
 //
-void D3D9Effect::D3D9TechInit(D3D9Client *_gc, LPDIRECT3DDEVICE9 _pDev, const char *folder)
+void D3D9Effect::D3D9TechInit(D3D9Client *_gc, VkDev *_pDev, const char *folder)
 {
 	char name[256];
 
@@ -304,86 +305,52 @@ void D3D9Effect::D3D9TechInit(D3D9Client *_gc, LPDIRECT3DDEVICE9 _pDev, const ch
 	LogAlw("Starting to initialize D3D9Client.fx a rendering technique...");
 	
 	// Create the Effect from a .fx file.
-	ID3DXBuffer* errors = 0;
-	D3DXMACRO macro[18]; memset(&macro, 0, 16*sizeof(D3DXMACRO));
+	VkMacros macro; // D3DXMACRO[18]
+	char def[32];
 
-	sprintf_s(name,256,"Modules/D3D9Client/D3D9Client.fx");
+	snprintf(name,256,"Modules/VulkanClient/D3D9Client.fx");
 
 	if (Config->ShadowMapMode == 0) Config->ShadowFilter = -1;
 
 	// ------------------------------------------------------------------------------
-	macro[0].Name = "ANISOTROPY_MACRO";
-	macro[0].Definition = new char[32];
-	sprintf_s((char*)macro[0].Definition,32,"%d",max(2,Config->Anisotrophy));
+	snprintf(def, 32, "%d", max(2,Config->Anisotrophy));
+	macro.push_back({ "ANISOTROPY_MACRO", def });
 	// ------------------------------------------------------------------------------
-	macro[1].Name = "LMODE";
-	macro[1].Definition = new char[32];
-	sprintf_s((char*)macro[1].Definition, 32, "%d", Config->LightConfig);
+	snprintf(def, 32, "%d", Config->LightConfig);
+	macro.push_back({ "LMODE", def });
 	// ------------------------------------------------------------------------------
-	macro[2].Name = "MAX_LIGHTS";
-	macro[2].Definition = new char[32];
-	sprintf_s((char*)macro[2].Definition, 32, "%d", Config->MaxLights());
+	snprintf(def, 32, "%d", Config->MaxLights());
+	macro.push_back({ "MAX_LIGHTS", def });
 	// ------------------------------------------------------------------------------
-	macro[3].Name = "SHDMAP";
-	macro[3].Definition = new char[32];
-	sprintf_s((char*)macro[3].Definition, 32, "%d", Config->ShadowFilter + 1);
+	snprintf(def, 32, "%d", Config->ShadowFilter + 1);
+	macro.push_back({ "SHDMAP", def });
 	// ------------------------------------------------------------------------------
-	macro[4].Name = "KERNEL_SIZE";
-	macro[4].Definition = new char[32];
-	if (Config->ShadowFilter >= 3)  sprintf_s((char*)macro[4].Definition, 32, "%d", 35);
-	else							sprintf_s((char*)macro[4].Definition, 32, "%d", 27);
+	if (Config->ShadowFilter >= 3)  snprintf(def, 32, "%d", 35);
+	else							snprintf(def, 32, "%d", 27);
+	macro.push_back({ "KERNEL_SIZE", def });
 	// ------------------------------------------------------------------------------
-	macro[5].Name = "KERNEL_WEIGHT";
-	macro[5].Definition = new char[32];
-	if (Config->ShadowFilter >= 3)  sprintf_s((char*)macro[5].Definition, 32, "%f", 0.0285f);
-	else							sprintf_s((char*)macro[5].Definition, 32, "%f", 1.0f / 27.0f); // 0.04634f);
+	if (Config->ShadowFilter >= 3)  snprintf(def, 32, "%f", 0.0285f);
+	else							snprintf(def, 32, "%f", 1.0f / 27.0f); // 0.04634f);
+	macro.push_back({ "KERNEL_WEIGHT", def });
 	// ------------------------------------------------------------------------------
 
-	int m = 6;
-	if (Config->EnableGlass) macro[m++].Name = "_GLASS";
-	if (Config->EnableMeshDbg) macro[m++].Name = "_DEBUG";
-	if (Config->EnvMapMode) macro[m++].Name = "_ENVMAP"; 
-	if (Config->PostProcess == PP_DEFAULT) macro[m++].Name = "_LIGHTGLOW";
-	if (Config->bIrradiance && Config->EnvMapMode) macro[m++].Name = "_IRRADIANCE";
+	if (Config->EnableGlass) macro.push_back({ "_GLASS", "" });
+	if (Config->EnableMeshDbg) macro.push_back({ "_DEBUG", "" });
+	if (Config->EnvMapMode) macro.push_back({ "_ENVMAP", "" }); 
+	if (Config->PostProcess == PP_DEFAULT) macro.push_back({ "_LIGHTGLOW", "" });
+	if (Config->bIrradiance && Config->EnvMapMode) macro.push_back({ "_IRRADIANCE", "" });
 	
 	
-	HR(D3DXCreateEffectFromFileA(pDev, name, macro, 0, D3DXSHADER_NO_PRESHADER|D3DXSHADER_PREFER_FLOW_CONTROL, 0, &FX, &errors));
+	FX = VkEffect::Create(pDev, name, macro); // D3DXSHADER_NO_PRESHADER|D3DXSHADER_PREFER_FLOW_CONTROL: no GLSL counterpart
 	
-	delete []macro[0].Definition;
-	delete []macro[1].Definition;
-	delete []macro[2].Definition;
-	delete []macro[3].Definition;
-	delete []macro[4].Definition;
-	delete []macro[5].Definition;
-	macro[0].Definition = NULL;
-	macro[1].Definition = NULL;
-	macro[2].Definition = NULL;
-	macro[3].Definition = NULL;
-	macro[4].Definition = NULL;
-	macro[5].Definition = NULL;
-
-	if (errors) {
-		LogErr("Effect Error: %s",(char*)errors->GetBufferPointer());
-		MessageBoxA(0, (char*)errors->GetBufferPointer(), "D3D9Client.fx Error", 0);
-		FatalAppExitA(0,"Critical error has occured. See Orbiter.log for details");
+	if (!FX) { // errors buffer: the compiler's messages are in the log
+		LogErr("Effect Error: %s", name);
+		QMessageBox::critical(NULL, "D3D9Client.fx Error", QString("Failed to create an Effect (%1). See the log.").arg(name));
+		LogErr("Critical error has occured. See Orbiter.log for details"); // FatalAppExitA
+		exit(1);
 	}
 
-	if (FX==0) {
-		LogErr("Failed to create an Effect (%s)",name);
-		return;
-	}
-
-	if (Config->ShaderDebug) {
-		LPD3DXBUFFER pBuffer = NULL;
-		if (D3DXDisassembleEffect(FX, true, &pBuffer) == S_OK) {
-			FILE *fp = NULL;
-			if (!fopen_s(&fp, "D9D9Effect_asm.html", "w")) {
-				fwrite(pBuffer->GetBufferPointer(), 1, pBuffer->GetBufferSize(), fp);
-				fclose(fp);
-			}
-			pBuffer->Release();
-		}
-	}
+	// ShaderDebug: D3DXDisassembleEffect left out, the passes compile on first use (ShaderClass DISASM writes SPIR-V listings)
 
 
 	// Techniques --------------------------------------------------------------
@@ -512,11 +479,11 @@ void D3D9Effect::D3D9TechInit(D3D9Client *_gc, LPDIRECT3DDEVICE9 _pDev, const ch
 	// Create a Circle Mesh --------------------------------------------
 	//
 	if (!VB) {
-		HR(pDev->CreateVertexBuffer(256 * sizeof(D3DXVECTOR3), 0, 0, D3DPOOL_DEFAULT, &VB, NULL));
+		VB = new VkBuf(pDev, 256 * sizeof(D3DXVECTOR3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DPOOL_DEFAULT
 
-		D3DXVECTOR3 *pVert;
+		D3DXVECTOR3 pVert[256]; // Lock/Unlock: filled here and uploaded
 
-		if (VB->Lock(0, 0, (void **)&pVert, 0) == S_OK) {
+		{
 			float angle = 0.0f, step = float(PI2) / 255.0f;
 			pVert[0] = D3DXVECTOR3(0, 0, 0);
 			for (int i = 1; i < 256; i++) {
@@ -525,9 +492,8 @@ void D3D9Effect::D3D9TechInit(D3D9Client *_gc, LPDIRECT3DDEVICE9 _pDev, const ch
 				pVert[i].z = sin(angle);
 				angle += step;
 			}
-			VB->Unlock();
+			VB->Upload(pVert, sizeof(pVert));
 		}
-		else LogErr("Failed to Lock vertex buffer");
 	}
 }
 
@@ -664,14 +630,14 @@ void D3D9Effect::Render2DPanel(const MESHGROUP *mg, const SURFHANDLE pTex, const
 	else      FX->SetTexture(eTex0, NULL);
 
 	HR(FX->SetFloat(eMix, alpha));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
-	if (additive) pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
-	else		  pDev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+	if (additive) pDev->SetDestBlend(VK_BLEND_FACTOR_ONE);
+	else		  pDev->SetDestBlend(VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
 
-	pDev->SetVertexDeclaration(pNTVertexDecl);
-	pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, mg->nVtx, mg->nIdx/3, mg->Idx, D3DFMT_INDEX16, mg->Vtx, sizeof(NTVERTEX));
+	pDev->SetVertexDecl(pNTVertexDecl);
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mg->nVtx, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mg->nIdx/3), mg->Idx, VK_INDEX_TYPE_UINT16, mg->Vtx, sizeof(NTVERTEX));
 
 	HR(FX->EndPass());
 	HR(FX->End());	
@@ -709,19 +675,19 @@ void D3D9Effect::RenderReEntry(const SURFHANDLE pTex, const LPD3DXVECTOR3 vPosA,
 	D3DMAT_CreateX_Billboard(&vCam, vPosB, size*(0.8f+x*0.02f), &WB);
 	D3DMAT_CreateX_Billboard(&vCam, vPosA, vDir, size, size, &WA);
 
-	pDev->SetVertexDeclaration(pNTVertexDecl);
+	pDev->SetVertexDecl(pNTVertexDecl);
 
 	FX->SetTechnique(eExhaust);
 	FX->SetTexture(eTex0, SURFACE(pTex)->GetTexture());
 	FX->SetFloat(eMix, alpha_b);
 	FX->SetMatrix(eW, &WB);
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(0);
-	pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, &ReentryIdx, D3DFMT_INDEX16, &ReentryVtxB, sizeof(NTVERTEX));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), &ReentryIdx, VK_INDEX_TYPE_UINT16, &ReentryVtxB, sizeof(NTVERTEX));
 	FX->SetFloat(eMix, alpha_a);
 	FX->SetMatrix(eW, &WA);
 	FX->CommitChanges();
-	pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, &ReentryIdx, D3DFMT_INDEX16, &ReentryVtxA, sizeof(NTVERTEX));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), &ReentryIdx, VK_INDEX_TYPE_UINT16, &ReentryVtxA, sizeof(NTVERTEX));
 
 	FX->EndPass();
 	FX->End();	
@@ -734,15 +700,15 @@ void D3D9Effect::RenderReEntry(const SURFHANDLE pTex, const LPD3DXVECTOR3 vPosA,
 void D3D9Effect::RenderSpot(float alpha, const LPD3DXCOLOR pColor, const LPD3DXMATRIX pW, SURFHANDLE pTex)
 {
 	UINT numPasses = 0;
-	HR(pDev->SetVertexDeclaration(pNTVertexDecl));
+	pDev->SetVertexDecl(pNTVertexDecl);
 	HR(FX->SetTechnique(eSpotTech));
 	HR(FX->SetFloat(eMix, alpha));
 	HR(FX->SetValue(eColor, pColor, sizeof(D3DXCOLOR)));
 	HR(FX->SetMatrix(eW, pW));
 	HR(FX->SetTexture(eTex0, SURFACE(pTex)->GetTexture()));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, billboard_idx, D3DFMT_INDEX16, billboard_vtx, sizeof(NTVERTEX)));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), billboard_idx, VK_INDEX_TYPE_UINT16, billboard_vtx, sizeof(NTVERTEX));
 	HR(FX->EndPass());
 	HR(FX->End());	
 }
@@ -751,18 +717,18 @@ void D3D9Effect::RenderSpot(float alpha, const LPD3DXCOLOR pColor, const LPD3DXM
 // ===========================================================================================
 // Used by Render Star only
 //
-void D3D9Effect::RenderBillboard(const LPD3DXMATRIX pW, LPDIRECT3DTEXTURE9 pTex, float alpha)
+void D3D9Effect::RenderBillboard(const LPD3DXMATRIX pW, VkTex *pTex, float alpha)
 {
 	UINT numPasses = 0;
 
-	HR(pDev->SetVertexDeclaration(pNTVertexDecl));
+	pDev->SetVertexDecl(pNTVertexDecl);
 	HR(FX->SetTechnique(eSimple));
 	HR(FX->SetMatrix(eW, pW));
 	HR(FX->SetFloat(eMix, alpha));
 	HR(FX->SetTexture(eTex0, pTex));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, billboard_idx, D3DFMT_INDEX16, billboard_vtx, sizeof(NTVERTEX)));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), billboard_idx, VK_INDEX_TYPE_UINT16, billboard_vtx, sizeof(NTVERTEX));
 	HR(FX->EndPass());
 	HR(FX->End());	
 }
@@ -817,14 +783,14 @@ void D3D9Effect::RenderExhaust(const LPD3DXMATRIX pW, VECTOR3 &cdir, EXHAUSTSPEC
 	exhaust_vtx[6].z = rz - sz - tz;   exhaust_vtx[7].z = rz + sz - tz;
 
 	UINT numPasses = 0;
-	HR(pDev->SetVertexDeclaration(pNTVertexDecl));
+	pDev->SetVertexDecl(pNTVertexDecl);
 	HR(FX->SetTechnique(eExhaust));
 	HR(FX->SetFloat(eMix, float(alpha)));
 	HR(FX->SetMatrix(eW, pW));
 	HR(FX->SetTexture(eTex0, SURFACE(pTex)->GetTexture()));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 8, 4, exhaust_idx, D3DFMT_INDEX16, exhaust_vtx, sizeof(NTVERTEX)));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 8, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4), exhaust_idx, VK_INDEX_TYPE_UINT16, exhaust_vtx, sizeof(NTVERTEX));
 	HR(FX->EndPass());
 	HR(FX->End());	
 }
@@ -857,7 +823,7 @@ void D3D9Effect::RenderBoundingBox(const LPD3DXMATRIX pW, const LPD3DXMATRIX pGT
 		{0, 1, 1}
 	};
 	
-	pDev->SetVertexDeclaration(pPositionDecl);
+	pDev->SetVertexDecl(pPositionDecl);
 
 	FX->SetMatrix(eW, pW);
 	FX->SetMatrix(eGT, pGT);
@@ -867,11 +833,11 @@ void D3D9Effect::RenderBoundingBox(const LPD3DXMATRIX pW, const LPD3DXMATRIX pGT
 	FX->SetTechnique(eBBTech);
 
 	UINT numPasses = 0;
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(0);
 	
-	pDev->DrawPrimitiveUP(D3DPT_LINESTRIP, 9, &poly, sizeof(D3DVECTOR));	
-	pDev->DrawPrimitiveUP(D3DPT_LINELIST, 3, &list, sizeof(D3DVECTOR));	
+	pDev->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 9), &poly, sizeof(D3DVECTOR));	
+	pDev->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 3), &list, sizeof(D3DVECTOR));	
 
 	FX->EndPass();
 	FX->End();	
@@ -886,17 +852,17 @@ void D3D9Effect::RenderTileBoundingBox(const LPD3DXMATRIX pW, VECTOR4 *pVtx, con
 	WORD idc1[10] = { 0, 1, 3, 2, 0, 4, 5, 7, 6, 4 };
 	WORD idc2[6] = { 1, 5, 3, 7, 2, 6};
 
-	pDev->SetVertexDeclaration(pPositionDecl);
+	pDev->SetVertexDecl(pPositionDecl);
 
 	FX->SetMatrix(eW, pW);
 	FX->SetVector(eColor, color);	
 	FX->SetTechnique(eTBBTech);
 
 	UINT numPasses = 0;
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(0);
-	pDev->DrawIndexedPrimitiveUP(D3DPT_LINESTRIP, 0, 8, 9, &idc1, D3DFMT_INDEX16, &poly, sizeof(D3DXVECTOR3));
-	pDev->DrawIndexedPrimitiveUP(D3DPT_LINELIST, 0, 8, 3, &idc2, D3DFMT_INDEX16, &poly, sizeof(D3DXVECTOR3));	
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 8, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 9), &idc1, VK_INDEX_TYPE_UINT16, &poly, sizeof(D3DXVECTOR3));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 8, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 3), &idc2, VK_INDEX_TYPE_UINT16, &poly, sizeof(D3DXVECTOR3));	
 	FX->EndPass();
 	FX->End();	
 }
@@ -905,13 +871,13 @@ void D3D9Effect::RenderTileBoundingBox(const LPD3DXMATRIX pW, VECTOR4 *pVtx, con
 void D3D9Effect::RenderLines(const D3DXVECTOR3 *pVtx, const WORD *pIdx, int nVtx, int nIdx, const D3DXMATRIX *pW, DWORD color)
 {
 	UINT numPasses = 0;
-	pDev->SetVertexDeclaration(pPositionDecl);
+	pDev->SetVertexDecl(pPositionDecl);
 	FX->SetMatrix(eW, pW);
 	FX->SetVector(eColor, (const D3DXVECTOR4 *)ptr(D3DXCOLOR(color)));
 	FX->SetTechnique(eTBBTech);
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(0);
-	pDev->DrawIndexedPrimitiveUP(D3DPT_LINELIST, 0, nVtx, nIdx/2, pIdx, D3DFMT_INDEX16, pVtx, sizeof(D3DXVECTOR3));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, nVtx, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, nIdx/2), pIdx, VK_INDEX_TYPE_UINT16, pVtx, sizeof(D3DXVECTOR3));
 	FX->EndPass();
 	FX->End();
 }
@@ -929,18 +895,18 @@ void D3D9Effect::RenderBoundingSphere(const LPD3DXMATRIX pW, const LPD3DXMATRIX 
 	D3DXVec3Normalize(&vCam, &vPos);
 	D3DMAT_CreateX_Billboard(&vCam, &vPos, bs->w, &mW);
 
-	pDev->SetVertexDeclaration(pPositionDecl);
+	pDev->SetVertexDecl(pPositionDecl);
 
 	FX->SetMatrix(eW, &mW);
 	FX->SetVector(eColor, color);	
 	FX->SetTechnique(eBSTech);
 
 	UINT numPasses = 0;
-	FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE);
+	FX->Begin(&numPasses, VKFX_DONOTSAVESTATE);
 	FX->BeginPass(0);
 	
 	pDev->SetStreamSource(0, VB, 0, sizeof(D3DXVECTOR3));
-	pDev->DrawPrimitive(D3DPT_LINESTRIP, 0, 255);	
+	pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 255));	
 	
 	FX->EndPass();
 	FX->End();	
@@ -1009,13 +975,13 @@ void D3D9Effect::RenderArrow(OBJHANDLE hObj, const VECTOR3 *ofs, const VECTOR3 *
     W._43 = float(pos.z);
 
     UINT numPasses = 0;
-    HR(pDev->SetVertexDeclaration(pPositionDecl)); // Position only vertex decleration
+    pDev->SetVertexDecl(pPositionDecl); // Position only vertex decleration
     HR(FX->SetTechnique(eArrowTech)); // Use arrow shader
     HR(FX->SetValue(eColor, pColor, sizeof(D3DXCOLOR))); // Setup arrow color
     HR(FX->SetMatrix(eW, &W));
-    HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+    HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
     HR(FX->BeginPass(0));
-    HR(pDev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 6, &arrow, sizeof(D3DVECTOR))); // Draw 6 triangles un-indexed
+    pDev->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 6), &arrow, sizeof(D3DVECTOR)); // Draw 6 triangles un-indexed
     HR(FX->EndPass());
     HR(FX->End()); 
 }

@@ -9,13 +9,13 @@
 
 struct PBRData
 {
-	float4 posH     : POSITION0;
-	float3 camW     : TEXCOORD0;
-	float2 tex0     : TEXCOORD1;
-	float3 nrmW     : TEXCOORD2;
-	float4 tanW     : TEXCOORD3;	 // Handiness in .w
+	vec4 posH;     // POSITION0
+	vec3 camW;     // TEXCOORD0
+	vec2 tex0;     // TEXCOORD1
+	vec3 nrmW;     // TEXCOORD2
+	vec4 tanW;     // TEXCOORD3	 // Handiness in .w
 #if SHDMAP > 0
-	float4 shdH     : TEXCOORD4;
+	vec4 shdH;     // TEXCOORD4
 #endif
 };
 
@@ -27,17 +27,17 @@ struct PBRData
 PBRData PBR_VS(MESH_VERTEX vrt)
 {
     // Zero output.
-	PBRData outVS = (PBRData)0;
+	PBRData outVS; // (PBRData)0: every member is set below
 
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	float3 nrmW = mul(float4(vrt.nrmL, 0.0f), gW).xyz;
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	vec3 nrmW = (vec4(vrt.nrmL, 0.0f) * gW).xyz;
 
 	outVS.nrmW = nrmW;
-	outVS.tanW = float4(mul(float4(vrt.tanL, 0.0f), gW).xyz, vrt.tex0.z);
-	outVS.posH = mul(float4(posW, 1.0f), gVP);
+	outVS.tanW = vec4((vec4(vrt.tanL, 0.0f) * gW).xyz, vrt.tex0.z);
+	outVS.posH = vec4(posW, 1.0f) * gVP;
 
 #if SHDMAP > 0
-	outVS.shdH = mul(float4(posW, 1.0f), gLVP);
+	outVS.shdH = vec4(posW, 1.0f) * gLVP;
 #endif
 
     outVS.camW = -posW;
@@ -46,6 +46,17 @@ PBRData PBR_VS(MESH_VERTEX vrt)
     return outVS;
 }
 
+#if defined(VS_PBR_VS) || defined(VS_AdvancedVS) || defined(VS_MetalnessVS) || defined(VS_FAST_VS)
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 2) in vec3 iTanL;
+layout(location = 5) in vec3 iTex0;
+#endif
+#ifdef VS_PBR_VS
+layout(location = 0) out PBRData oVS;
+void main() { oVS = PBR_VS(MESH_VERTEX(iPosL, iNrmL, iTanL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
 
 
 
@@ -53,53 +64,54 @@ PBRData PBR_VS(MESH_VERTEX vrt)
 
 // ============================================================================
 //
-float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
+#ifdef STAGE_PS
+vec4 PBR_PS(vec4 sc, PBRData frg)	// sc : VPOS
 {
-	float3 nrmT;
-	float3 nrmW;
-	float3 cEmis;
-	float3 cRefl, cRefl2, cRefl3;
-	float3 cFrsl = 1;
-	float4 cDiff;
-	float4 cSpec;
-	float4 sMask = float4(1.0f, 1.0f, 1.0f, 1024.0f);
+	vec3 nrmT;
+	vec3 nrmW;
+	vec3 cEmis;
+	vec3 cRefl, cRefl2, cRefl3;
+	vec3 cFrsl = vec3(1);
+	vec4 cDiff;
+	vec4 cSpec;
+	vec4 sMask = vec4(1.0f, 1.0f, 1.0f, 1024.0f);
 	float  fRghn;
-	float3 cDiffLocal;
-	float3 cSpecLocal;
+	vec3 cDiffLocal;
+	vec3 cSpecLocal;
 
 
 	// ----------------------------------------------------------------------
 	// Start fetching texture data
 	// ----------------------------------------------------------------------
 
-	if (gTextured) cDiff = tex2D(WrapS, frg.tex0.xy);
-	else		   cDiff = 1;
+	if (gTextured) cDiff = texture(WrapS, frg.tex0.xy);
+	else		   cDiff = vec4(1);
 
-	if (gOITEnable) if (cDiff.a < 0.5f) clip(-1);
+	if (gOITEnable) if (cDiff.a < 0.5f) discard; // clip(-1)
 
 	// Fetch a normal map
 	//
-	if (gCfg.Norm) nrmT = tex2D(Nrm0S, frg.tex0.xy).rgb;
+	if (gCfg.Norm) nrmT = texture(Nrm0S, frg.tex0.xy).rgb;
 
 
 	// Sample specular map
-	if (gCfg.Spec) cSpec = tex2D(SpecS, frg.tex0.xy).rgba * sMask;
+	if (gCfg.Spec) cSpec = texture(SpecS, frg.tex0.xy).rgba * sMask;
 	else 		   cSpec = gMtrl.specular.rgba;
 
 
 	// Use _refl color for both
-	if (gCfg.Refl) cRefl = tex2D(ReflS, frg.tex0.xy).rgb;
+	if (gCfg.Refl) cRefl = texture(ReflS, frg.tex0.xy).rgb;
 	else		   cRefl = gMtrl.reflect.rgb;
 
 
 	// Roughness map
-	if (gCfg.Rghn) fRghn = tex2D(RghnS, frg.tex0.xy).g;
+	if (gCfg.Rghn) fRghn = texture(RghnS, frg.tex0.xy).g;
 	else		   fRghn = gMtrl.roughness.r;
 
 
 	// Sample emission map. (Note: Emissive materials and textures need to go different stages, material is added to light)
-	if (gCfg.Emis) cEmis = tex2D(EmisS, frg.tex0.xy).rgb;
-	else		   cEmis = 0;
+	if (gCfg.Emis) cEmis = texture(EmisS, frg.tex0.xy).rgb;
+	else		   cEmis = vec3(0);
 
 
 
@@ -107,8 +119,8 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// Now do other calculations while textures are being fetched
 	// ----------------------------------------------------------------------
 
-	float3 CamD = normalize(frg.camW);
-	float3 cSun = saturate(gSun.Color);
+	vec3 CamD = normalize(frg.camW);
+	vec3 cSun = clamp(gSun.Color, 0.0, 1.0);
 
 
 	// ----------------------------------------------------------------------
@@ -120,22 +132,22 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 
 		nrmT *= gTune.Norm.rgb;
 
-		cDiff.rgb = pow(abs(cDiff.rgb), gTune.Albe.a) * gTune.Albe.rgb;
-		cRefl.rgb = pow(abs(cRefl.rgb), gTune.Refl.a) * gTune.Refl.rgb;
-		cEmis.rgb = pow(abs(cEmis.rgb), gTune.Emis.a) * gTune.Emis.rgb;
+		cDiff.rgb = pow(abs(cDiff.rgb), vec3(gTune.Albe.a)) * gTune.Albe.rgb;
+		cRefl.rgb = pow(abs(cRefl.rgb), vec3(gTune.Refl.a)) * gTune.Refl.rgb;
+		cEmis.rgb = pow(abs(cEmis.rgb), vec3(gTune.Emis.a)) * gTune.Emis.rgb;
 		fRghn = pow(abs(fRghn), gTune.Rghn.a) * gTune.Rghn.g;
 		cSpec.rgba = cSpec.rgba * gTune.Spec.rgba;
 
-		cDiff = saturate(cDiff);
-		cRefl = saturate(cRefl);
-		fRghn = saturate(fRghn);
+		cDiff = clamp(cDiff, 0.0, 1.0);
+		cRefl = clamp(cRefl, 0.0, 1.0);
+		fRghn = clamp(fRghn, 0.0, 1.0);
 		cSpec = min(cSpec, sMask);
 	}
 #endif
 
 
 	// Use alpha zero to mask off specular reflections
-	cSpec.rgb *= saturate(cSpec.a);
+	cSpec.rgb *= clamp(cSpec.a, 0.0, 1.0);
 
 	// ----------------------------------------------------------------------
 	// "Legacy/PBR" switch
@@ -170,7 +182,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// ----------------------------------------------------------------------
 
 	if (gCfg.Norm) {
-		float3 bitW = cross(frg.tanW.xyz, frg.nrmW) * frg.tanW.w;
+		vec3 bitW = cross(frg.tanW.xyz, frg.nrmW) * frg.tanW.w;
 		nrmT.rg = nrmT.rg * 2.0f - 1.0f;
 		nrmW = frg.nrmW*nrmT.z + frg.tanW.xyz*nrmT.x + bitW*nrmT.y;
 	}
@@ -184,10 +196,10 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// Compute reflection vector and some required dot products
 	// ----------------------------------------------------------------------
 
-	float3 RflW = reflect(-CamD, nrmW);				// Reflection vector
-	float dRS = saturate(-dot(RflW, gSun.Dir));		// Reflection/sun angle
-	float dLN = saturate(-dot(gSun.Dir, nrmW));		// Diffuse lighting term
-	float dLNx = saturate(dLN * 80.0f);				// Specular, Fresnel shadowing term
+	vec3 RflW = reflect(-CamD, nrmW);				// Reflection vector
+	float dRS = clamp(-dot(RflW, gSun.Dir), 0.0, 1.0);		// Reflection/sun angle
+	float dLN = clamp(-dot(gSun.Dir, nrmW), 0.0, 1.0);		// Diffuse lighting term
+	float dLNx = clamp(dLN * 80.0f, 0.0, 1.0);				// Specular, Fresnel shadowing term
 
 
 	// ----------------------------------------------------------------------
@@ -211,13 +223,13 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	if (gFresnel) {
 
-		float dCN = saturate(dot(CamD, nrmW));
+		float dCN = clamp(dot(CamD, nrmW), 0.0, 1.0);
 
 		// Compute a fresnel term
 		fFrsl = pow(1.0f - dCN, gMtrl.fresnel.x);
 
 		// Compute a specular lobe for fresnel reflection
-		fFLbe = pow(dRS, gMtrl.fresnel.z) * dLNx * any(cRefl);
+		fFLbe = pow(dRS, gMtrl.fresnel.z) * dLNx * float(any(notEqual(cRefl, vec3(0))));
 
 		// Modulate with material
 		cFrsl *= gMtrl.fresnel.y;
@@ -250,11 +262,11 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// Compute Earth glow
 	// ----------------------------------------------------------------------
 
-	float angl = saturate((-dot(gCameraPos, nrmW) - gProxySize) * gInvProxySize);
+	float angl = clamp((-dot(gCameraPos, nrmW) - gProxySize) * gInvProxySize, 0.0, 1.0);
 	cDiffLocal += gAtmColor.rgb * max(0, angl*gGlowConst);
 
 	// Bake material props and lights together
-	float3 diffBaked = Light_fx(gMtrl.diffuse.rgb * (dLN * cSun + cDiffLocal) + gMtrl.emissive.rgb + gMtrl.ambient.rgb*gSun.Ambient);
+	vec3 diffBaked = Light_fx(gMtrl.diffuse.rgb * (dLN * cSun + cDiffLocal) + gMtrl.emissive.rgb + gMtrl.ambient.rgb*gSun.Ambient);
 
 #if LMODE > 0
 	cSun = Light_fx(cSun + cSpecLocal);	// Add local light sources
@@ -262,7 +274,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	// Special alpha only texture in use, set the .rgb to 1.0f
 	// Used for panel background lighting in Delta Glider
-	if (gNoColor) cDiff.rgb = 1;
+	if (gNoColor) cDiff.rgb = vec3(1);
 
 	// ------------------------------------------------------------------------
 	cDiff.rgb *= diffBaked;				// Lit the texture
@@ -272,13 +284,13 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// ------------------------------------------------------------------------
 	// Compute total reflected sun light from a material
 	//
-	float3 cBase = cSpec.rgb * (1.0f - iFrsl) * fLobe;
+	vec3 cBase = cSpec.rgb * (1.0f - iFrsl) * fLobe;
 
 #if defined(_GLASS)
 	cBase += cFrsl.rgb * fFrsl * fFLbe;
 #endif
 
-	cSpec.rgb = cSun * saturate(cBase);
+	cSpec.rgb = cSun * clamp(cBase, 0.0, 1.0);
 
 
 
@@ -290,7 +302,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 	// Compute a environment reflections
 	// ----------------------------------------------------------------------
 
-	float3 cEnv = 0;
+	vec3 cEnv = vec3(0);
 
 #if defined(_ENVMAP)
 
@@ -307,7 +319,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 			fLOD *= (1.0f - fFrsl);
 
 			// Fresnel based environment reflections
-			cEnv = (cFrsl * fFrsl) * texCUBElod(EnvMapAS, float4(RflW, fLOD)).rgb;
+			cEnv = (cFrsl * fFrsl) * textureLod(EnvMapAS, RflW, fLOD).rgb;
 		}
 #endif
 
@@ -315,7 +327,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 		float fLOD = (1.0f - fRghn) * 8.0f;
 
 		// Add a metallic reflections from a base material
-		cEnv += cRefl3 * (1.0f-iFrsl) * texCUBElod(EnvMapAS, float4(RflW, fLOD)).rgb;
+		cEnv += cRefl3 * (1.0f-iFrsl) * textureLod(EnvMapAS, RflW, fLOD).rgb;
 	}
 
 #endif
@@ -344,7 +356,7 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 #endif
 
 	// Re-compute output alpha for alpha blending stage
-	cDiff.a = saturate(cDiff.a + fTot);
+	cDiff.a = clamp(cDiff.a + fTot, 0.0, 1.0);
 
 	// Add reflections to output
 	cDiff.rgb += cEnv;
@@ -365,6 +377,15 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	return cDiff;
 }
+#endif
+
+#if defined(PS_PBR_PS) || defined(PS_AdvancedPS) || defined(PS_MetalnessPS)
+layout(location = 0) in PBRData frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_PBR_PS
+void main() { oColor = PBR_PS(vec4(gl_FragCoord.xy - 0.5, 0, 0), frg PS_ARGS); } // VPOS: pixel coordinates without D3D9's centre offset
+#endif
 
 
 
@@ -379,12 +400,12 @@ float4 PBR_PS(float4 sc : VPOS, PBRData frg) : COLOR
 
 struct FASTData
 {
-	float4 posH     : POSITION0;
-	float3 camW     : TEXCOORD0;
-	float2 tex0     : TEXCOORD1;
-	float3 nrmW     : TEXCOORD2;
+	vec4 posH;     // POSITION0
+	vec3 camW;     // TEXCOORD0
+	vec2 tex0;     // TEXCOORD1
+	vec3 nrmW;     // TEXCOORD2
 #if SHDMAP > 0
-	float4 shdH     : TEXCOORD4;
+	vec4 shdH;     // TEXCOORD4
 #endif
 };
 
@@ -395,59 +416,65 @@ struct FASTData
 FASTData FAST_VS(MESH_VERTEX vrt)
 {
 	// Zero output.
-	FASTData outVS = (FASTData)0;
+	FASTData outVS; // (FASTData)0: every member is set below
 
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	float3 nrmW = mul(float4(vrt.nrmL, 0.0f), gW).xyz;
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	vec3 nrmW = (vec4(vrt.nrmL, 0.0f) * gW).xyz;
 
 	outVS.nrmW = nrmW;
-	outVS.posH = mul(float4(posW, 1.0f), gVP);
+	outVS.posH = vec4(posW, 1.0f) * gVP;
 	outVS.camW = -posW;
 	outVS.tex0 = vrt.tex0.xy;
 
 #if SHDMAP > 0
-	outVS.shdH = mul(float4(posW, 1.0f), gLVP);
+	outVS.shdH = vec4(posW, 1.0f) * gLVP;
 #endif
 
 	return outVS;
 }
 
+#ifdef VS_FAST_VS
+layout(location = 0) out FASTData oVS;
+void main() { oVS = FAST_VS(MESH_VERTEX(iPosL, iNrmL, iTanL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
 
 // ============================================================================
 //
-float4 FAST_PS(float4 sc : VPOS, FASTData frg) : COLOR
+#ifdef STAGE_PS
+vec4 FAST_PS(vec4 sc, FASTData frg)	// sc : VPOS
 {
 
-	float3 cEmis;
-	float4 cDiff;
-	float3 cDiffLocal;
-	float3 cSpecLocal;
+	vec3 cEmis;
+	vec4 cDiff;
+	vec3 cDiffLocal;
+	vec3 cSpecLocal;
 
 	// Start fetching texture data -------------------------------------------
 	//
-	if (gTextured) cDiff = tex2D(WrapS, frg.tex0.xy);
-	else		   cDiff = 1;
+	if (gTextured) cDiff = texture(WrapS, frg.tex0.xy);
+	else		   cDiff = vec4(1);
 
-	if (gOITEnable) if (cDiff.a < 0.5f) clip(-1);
+	if (gOITEnable) if (cDiff.a < 0.5f) discard; // clip(-1)
 
 	if (gFullyLit) {
-		if (gNoColor) cDiff.rgb = 1;
-		cDiff.rgb *= saturate(gMtrl.diffuse.rgb + gMtrl.emissive.rgb);
+		if (gNoColor) cDiff.rgb = vec3(1);
+		cDiff.rgb *= clamp(gMtrl.diffuse.rgb + gMtrl.emissive.rgb, 0.0, 1.0);
 	}
 	else {
 
 		// Sample emission map. (Note: Emissive materials and textures need to go different stages, material is added to light)
-		if (gCfg.Emis) cEmis = tex2D(EmisS, frg.tex0.xy).rgb;
-		else		   cEmis = 0;
+		if (gCfg.Emis) cEmis = texture(EmisS, frg.tex0.xy).rgb;
+		else		   cEmis = vec3(0);
 
-		float3 nrmW  = normalize(frg.nrmW);
-		float4 cSpec = gMtrl.specular.rgba;
-		float3 cSun  = saturate(gSun.Color);
-		float  dLN   = saturate(-dot(gSun.Dir, nrmW));
+		vec3 nrmW  = normalize(frg.nrmW);
+		vec4 cSpec = gMtrl.specular.rgba;
+		vec3 cSun  = clamp(gSun.Color, 0.0, 1.0);
+		float  dLN   = clamp(-dot(gSun.Dir, nrmW), 0.0, 1.0);
 
 		//cSpec.rgb *= 0.33333f;
 
-		if (gNoColor) cDiff.rgb = 1;
+		if (gNoColor) cDiff.rgb = vec3(1);
 
 		// ----------------------------------------------------------------------
 		// Add vessel self-shadows
@@ -469,14 +496,14 @@ float4 FAST_PS(float4 sc : VPOS, FASTData frg) : COLOR
 		// Compute Earth glow
 		// ----------------------------------------------------------------------
 
-		float angl = saturate((-dot(gCameraPos, nrmW) - gProxySize) * gInvProxySize);
+		float angl = clamp((-dot(gCameraPos, nrmW) - gProxySize) * gInvProxySize, 0.0, 1.0);
 		cDiffLocal += gAtmColor.rgb * max(0, angl*gGlowConst);
 
-		cDiff.rgb *= saturate( (gMtrl.diffuse.rgb*(dLN * cSun + cDiffLocal)) + (gMtrl.ambient.rgb*gSun.Ambient) + gMtrl.emissive.rgb );
+		cDiff.rgb *= clamp( (gMtrl.diffuse.rgb*(dLN * cSun + cDiffLocal)) + (gMtrl.ambient.rgb*gSun.Ambient) + gMtrl.emissive.rgb , 0.0, 1.0);
 
-		float3 CamD = normalize(frg.camW);
-		float3 HlfW = normalize(CamD - gSun.Dir);
-		float  fSun = pow(saturate(dot(HlfW, nrmW)), gMtrl.specular.a);
+		vec3 CamD = normalize(frg.camW);
+		vec3 HlfW = normalize(CamD - gSun.Dir);
+		float  fSun = pow(clamp(dot(HlfW, nrmW), 0.0, 1.0), gMtrl.specular.a);
 
 #if SHDMAP > 0
 		fSun *= fShadow;
@@ -486,9 +513,9 @@ float4 FAST_PS(float4 sc : VPOS, FASTData frg) : COLOR
 		if (dLN == 0) fSun = 0;
 
 #if LMODE > 0
-		float3 specLight = saturate((fSun * cSun) + cSpecLocal);
+		vec3 specLight = clamp((fSun * cSun) + cSpecLocal, 0.0, 1.0);
 #else
-		float3 specLight = (fSun * cSun);
+		vec3 specLight = (fSun * cSun);
 #endif
 		cDiff.rgb += (cSpec.rgb * specLight);
 
@@ -507,12 +534,24 @@ float4 FAST_PS(float4 sc : VPOS, FASTData frg) : COLOR
 
 	return cDiff;
 }
+#endif
 
 
 
 // ========================================================================================================================
 //
-float4 XRHUD_PS(FASTData frg) : COLOR
+vec4 XRHUD_PS(FASTData frg)
 {
-	return tex2D(WrapS, frg.tex0.xy);
+	return texture(WrapS, frg.tex0.xy);
 }
+
+#if defined(PS_FAST_PS) || defined(PS_XRHUD_PS)
+layout(location = 0) in FASTData frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_FAST_PS
+void main() { oColor = FAST_PS(vec4(gl_FragCoord.xy - 0.5, 0, 0), frg PS_ARGS); } // VPOS
+#endif
+#ifdef PS_XRHUD_PS
+void main() { oColor = XRHUD_PS(frg PS_ARGS); }
+#endif

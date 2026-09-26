@@ -7,42 +7,42 @@
 
 struct TileMeshVS
 {
-	float4 posH     : POSITION0;
-	float3 CamW     : TEXCOORD0;
-	float2 tex0     : TEXCOORD1;
-	float3 nrmW     : TEXCOORD2;
-	float4 atten    : COLOR0;			// (Atmospheric haze) Attennuate incoming fragment color
-	float4 insca    : COLOR1;			// (Atmospheric haze) "Inscatter" Add to incoming fragment color
+	vec4 posH;     // POSITION0
+	vec3 CamW;     // TEXCOORD0
+	vec2 tex0;     // TEXCOORD1
+	vec3 nrmW;     // TEXCOORD2
+	vec4 atten;    // COLOR0			// (Atmospheric haze) Attennuate incoming fragment color
+	vec4 insca;    // COLOR1			// (Atmospheric haze) "Inscatter" Add to incoming fragment color
 };
 
 struct MeshVS
 {
-	float4 posH     : POSITION0;
-	float3 CamW     : TEXCOORD0;
-	float2 tex0     : TEXCOORD1;
-	float3 nrmW     : TEXCOORD2;
+	vec4 posH;     // POSITION0
+	vec3 CamW;     // TEXCOORD0
+	vec2 tex0;     // TEXCOORD1
+	vec3 nrmW;     // TEXCOORD2
 };
 
 struct TileMeshNMVS
 {
-	float4 posH     : POSITION0;
-	float3 camW     : TEXCOORD0;
-	float4 atten    : TEXCOORD1;
-	float4 insca    : TEXCOORD2;
-	float2 tex0     : TEXCOORD3;
-	float3 nrmT     : TEXCOORD4;
-	float3 tanT     : TEXCOORD5;
+	vec4 posH;     // POSITION0
+	vec3 camW;     // TEXCOORD0
+	vec4 atten;    // TEXCOORD1
+	vec4 insca;    // TEXCOORD2
+	vec2 tex0;     // TEXCOORD3
+	vec3 nrmT;     // TEXCOORD4
+	vec3 tanT;     // TEXCOORD5
 
 };
 
 MeshVS TinyMeshTechVS(MESH_VERTEX vrt)
 {
 	// Zero output.
-	MeshVS outVS = (MeshVS)0;
+	MeshVS outVS = MeshVS(vec4(0), vec3(0), vec2(0), vec3(0));
 
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;	// Apply world transformation matrix
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
-	float3 nrmW = mul(float4(vrt.nrmL, 0.0f), gW).xyz;	// Apply world transformation matri
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;	// Apply world transformation matrix
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
+	vec3 nrmW = (vec4(vrt.nrmL, 0.0f) * gW).xyz;	// Apply world transformation matri
 	outVS.nrmW  = normalize(nrmW);
 	outVS.CamW  = -posW;
 	outVS.tex0  = vrt.tex0.xy;
@@ -50,41 +50,50 @@ MeshVS TinyMeshTechVS(MESH_VERTEX vrt)
 	return outVS;
 }
 
+#ifdef VS_TinyMeshTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 2) in vec3 iTanL;
+layout(location = 5) in vec3 iTex0;
+layout(location = 0) out MeshVS oVS;
+void main() { oVS = TinyMeshTechVS(MESH_VERTEX(iPosL, iNrmL, iTanL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
-float4 TinyMeshTechPS(MeshVS frg) : COLOR
+
+vec4 TinyMeshTechPS(MeshVS frg)
 {
-	return float4(0,1,0,1);
+	return vec4(0,1,0,1);
 
 	// Normalize input
-	float3 nrmW = normalize(frg.nrmW);
-	float3 CamW = normalize(frg.CamW);
-	float4 cSpec = gMtrl.specular;
-	float4 cTex = 1;
+	vec3 nrmW = normalize(frg.nrmW);
+	vec3 CamW = normalize(frg.CamW);
+	vec4 cSpec = gMtrl.specular;
+	vec4 cTex = vec4(1);
 
 	if (gTextured) {
-		if (gNoColor) cTex.a = tex2D(WrapS, frg.tex0.xy).a;
-		else cTex = tex2D(WrapS, frg.tex0.xy);
+		if (gNoColor) cTex.a = texture(WrapS, frg.tex0.xy).a;
+		else cTex = texture(WrapS, frg.tex0.xy);
 	}
 
-	if (gFullyLit) return float4(cTex.rgb*saturate(gMtrl.diffuse.rgb + gMtrl.emissive.rgb), cTex.a);
+	if (gFullyLit) return vec4(cTex.rgb*clamp(gMtrl.diffuse.rgb + gMtrl.emissive.rgb, 0.0, 1.0), cTex.a);
 
 	cTex.a *= gMtrlAlpha;
 
 	// Sunlight calculations. Saturate with cSpec.a to gain an ability to disable specular light
-	float  d = saturate(-dot(gSun.Dir, nrmW));
-	float  s = pow(saturate(dot(reflect(gSun.Dir, nrmW), CamW)), cSpec.a) * saturate(cSpec.a);
+	float  d = clamp(-dot(gSun.Dir, nrmW), 0.0, 1.0);
+	float  s = pow(clamp(dot(reflect(gSun.Dir, nrmW), CamW), 0.0, 1.0), cSpec.a) * clamp(cSpec.a, 0.0, 1.0);
 
 	if (d == 0) s = 0;
 
-	float3 diff = gMtrl.diffuse.rgb * (d * saturate(gSun.Color)); // Compute total diffuse light
+	vec3 diff = gMtrl.diffuse.rgb * (d * clamp(gSun.Color, 0.0, 1.0)); // Compute total diffuse light
 	diff += (gMtrl.ambient.rgb*gSun.Ambient) + (gMtrl.emissive.rgb);
 
-	float3 cTot = cSpec.rgb * (s * gSun.Color);	// Compute total specular light
+	vec3 cTot = cSpec.rgb * (s * gSun.Color);	// Compute total specular light
 
-	cTex.rgb *= saturate(diff);	// Lit the diffuse texture
+	cTex.rgb *= clamp(diff, 0.0, 1.0);	// Lit the diffuse texture
 
 #if defined(_GLASS)
-	cTex.a = saturate(cTex.a + max(max(cTot.r, cTot.g), cTot.b));	// Re-compute output alpha for alpha blending stage
+	cTex.a = clamp(cTex.a + max(max(cTot.r, cTot.g), cTot.b), 0.0, 1.0);	// Re-compute output alpha for alpha blending stage
 #endif
 
 	cTex.rgb += cTot.rgb;											// Apply reflections to output color
@@ -98,11 +107,11 @@ float4 TinyMeshTechPS(MeshVS frg) : COLOR
 // Planet Rings Technique
 // ============================================================================
 
-float4 RingTechPS(MeshVS frg) : COLOR
+vec4 RingTechPS(MeshVS frg)
 {
-	float4 color = tex2D(RingS, frg.tex0);
+	vec4 color = texture(RingS, frg.tex0);
 
-	float3 pp = gCameraPos*gRadius[2] - frg.CamW*gDistScale;
+	vec3 pp = gCameraPos*gRadius[2] - frg.CamW*gDistScale;
 
 	float  da = dot(normalize(pp), gSun.Dir);
 	float  r  = sqrt(dot(pp,pp) * (1.0-da*da));
@@ -111,19 +120,19 @@ float4 RingTechPS(MeshVS frg) : COLOR
 
 	if (da<0) sh = 1.0f;
 
-	if ((dot(frg.nrmW, frg.CamW)*dot(frg.nrmW, gSun.Dir))>0) return float4(color.rgb*0.35f*sh, color.a);
-	return float4(color.rgb*sh, color.a);
+	if ((dot(frg.nrmW, frg.CamW)*dot(frg.nrmW, gSun.Dir))>0) return vec4(color.rgb*0.35f*sh, color.a);
+	return vec4(color.rgb*sh, color.a);
 }
 
-float4 RingTech2PS(MeshVS frg) : COLOR
+vec4 RingTech2PS(MeshVS frg)
 {
-	float3 pp  = gCameraPos*gRadius[2] - frg.CamW*gDistScale;
+	vec3 pp  = gCameraPos*gRadius[2] - frg.CamW*gDistScale;
 	float  dpp = dot(pp,pp);
 	float  len = sqrt(dpp);
 
-	len = saturate(smoothstep(gTexOff.x, gTexOff.y, len));
+	len = clamp(smoothstep(gTexOff.x, gTexOff.y, len), 0.0, 1.0);
 
-	float4 color = tex2D(RingS, float2(len, 0.5));
+	vec4 color = texture(RingS, vec2(len, 0.5));
 	color.a = color.r*0.75;
 
 	float  da = dot(normalize(pp), gSun.Dir);
@@ -135,9 +144,23 @@ float4 RingTech2PS(MeshVS frg) : COLOR
 
 	color.rgb *= sh;
 
-	if ((dot(frg.nrmW, frg.CamW)*dot(frg.nrmW, gSun.Dir))>0) return float4(color.rgb*0.35f, color.a);
-	return float4(color.rgb, color.a);
+	if ((dot(frg.nrmW, frg.CamW)*dot(frg.nrmW, gSun.Dir))>0) return vec4(color.rgb*0.35f, color.a);
+	return vec4(color.rgb, color.a);
 }
+
+#if defined(PS_TinyMeshTechPS) || defined(PS_RingTechPS) || defined(PS_RingTech2PS) || defined(PS_AxisTechPS)
+layout(location = 0) in MeshVS frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_TinyMeshTechPS
+void main() { oColor = TinyMeshTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_RingTechPS
+void main() { oColor = RingTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_RingTech2PS
+void main() { oColor = RingTech2PS(frg PS_ARGS); }
+#endif
 
 
 // ============================================================================
@@ -147,11 +170,11 @@ float4 RingTech2PS(MeshVS frg) : COLOR
 TileMeshVS BaseTileVS(NTVERTEX vrt)
 {
 	// Null the output
-	TileMeshVS outVS = (TileMeshVS)0;
+	TileMeshVS outVS = TileMeshVS(vec4(0), vec3(0), vec2(0), vec3(0), vec4(0), vec4(0));
 
-	float3 posW  = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	outVS.posH   = mul(float4(posW, 1.0f), gVP);
-	outVS.nrmW   = mul(float4(vrt.nrmL, 0.0f), gW).xyz;
+	vec3 posW  = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	outVS.posH   = vec4(posW, 1.0f) * gVP;
+	outVS.nrmW   = (vec4(vrt.nrmL, 0.0f) * gW).xyz;
 	outVS.tex0   = vrt.tex0;
 	outVS.CamW   = -posW;
 
@@ -159,7 +182,7 @@ TileMeshVS BaseTileVS(NTVERTEX vrt)
 
 	AtmosphericHaze(outVS.atten, outVS.insca, outVS.posH.z, posW);
 
-	float4 diffuse;
+	vec4 diffuse;
 	float ambi, nigh;
 
 	LegacySunColor(diffuse, ambi, nigh, outVS.nrmW);
@@ -170,28 +193,42 @@ TileMeshVS BaseTileVS(NTVERTEX vrt)
 	return outVS;
 }
 
+#ifdef VS_BaseTileVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out TileMeshVS oVS;
+void main() { oVS = BaseTileVS(NTVERTEX(iPosL, iNrmL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
-float4 BaseTilePS(TileMeshVS frg) : COLOR
+
+vec4 BaseTilePS(TileMeshVS frg)
 {
 	// Normalize input
-	float3 nrmW = normalize(frg.nrmW);
-	float3 CamW = normalize(frg.CamW);
+	vec3 nrmW = normalize(frg.nrmW);
+	vec3 CamW = normalize(frg.CamW);
 
-	float4 cTex = tex2D(ClampS, frg.tex0);
+	vec4 cTex = texture(ClampS, frg.tex0);
 
-	float3 r = reflect(gSun.Dir, nrmW);
-	float  s = pow(saturate(dot(r, CamW)), 20.0f) * (1.0f-cTex.a);
-	float  d = saturate(dot(-gSun.Dir, nrmW));
+	vec3 r = reflect(gSun.Dir, nrmW);
+	float  s = pow(clamp(dot(r, CamW), 0.0, 1.0), 20.0f) * (1.0f-cTex.a);
+	float  d = clamp(dot(-gSun.Dir, nrmW), 0.0, 1.0);
 
 	if (d<=0) s = 0;
 
-	float3 clr = cTex.rgb * saturate(d * gSun.Color + s * gSun.Color + gSun.Ambient);
+	vec3 clr = cTex.rgb * clamp(d * gSun.Color + s * gSun.Color + gSun.Ambient, 0.0, 1.0);
 
-	if (gNight) clr += tex2D(Tex1S, frg.tex0).rgb;
+	if (gNight) clr += texture(Tex1S, frg.tex0).rgb;
 
-	return float4(clr.rgb*frg.atten.rgb+frg.insca.rgb, cTex.a);
+	return vec4(clr.rgb*frg.atten.rgb+frg.insca.rgb, cTex.a);
 	//return float4(clr.rgb*frg.atten.rgb+frg.insca.rgb, cTex.a*(1-frg.insca.a));	// Make basetiles transparent during night
 }
+
+#ifdef PS_BaseTilePS
+layout(location = 0) in TileMeshVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = BaseTilePS(frg PS_ARGS); }
+#endif
 
 
 // ============================================================================
@@ -201,12 +238,12 @@ float4 BaseTilePS(TileMeshVS frg) : COLOR
 MeshVS AxisTechVS(MESH_VERTEX vrt)
 {
 	// Zero output.
-	MeshVS outVS = (MeshVS)0;
+	MeshVS outVS = MeshVS(vec4(0), vec3(0), vec2(0), vec3(0));
 	float  stretch = vrt.tex0.x * gMix;
-	float3 posX = vrt.posL + float3(0.0, stretch, 0.0);
-	float3 posW = mul(float4(posX, 1.0f), gW).xyz;			// Apply world transformation matrix
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
-	float3 nrmW = mul(float4(vrt.nrmL, 0.0f), gW).xyz;		// Apply world transformation matrix
+	vec3 posX = vrt.posL + vec3(0.0, stretch, 0.0);
+	vec3 posW = (vec4(posX, 1.0f) * gW).xyz;			// Apply world transformation matrix
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
+	vec3 nrmW = (vec4(vrt.nrmL, 0.0f) * gW).xyz;		// Apply world transformation matrix
 
 	outVS.nrmW  = normalize(nrmW);
 	outVS.CamW  = -posW;
@@ -214,14 +251,27 @@ MeshVS AxisTechVS(MESH_VERTEX vrt)
 	return outVS;
 }
 
+#ifdef VS_AxisTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 2) in vec3 iTanL;
+layout(location = 5) in vec3 iTex0;
+layout(location = 0) out MeshVS oVS;
+void main() { oVS = AxisTechVS(MESH_VERTEX(iPosL, iNrmL, iTanL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
-float4 AxisTechPS(MeshVS frg) : COLOR
+
+vec4 AxisTechPS(MeshVS frg)
 {
-	float3 nrmW = normalize(frg.nrmW);
-	float  d = saturate(dot(-gSun.Dir, nrmW));
-	float3 clr = gColor.rgb * saturate(max(d,0) + 0.5);
-	return float4(clr, gColor.a);
+	vec3 nrmW = normalize(frg.nrmW);
+	float  d = clamp(dot(-gSun.Dir, nrmW), 0.0, 1.0);
+	vec3 clr = gColor.rgb * clamp(max(d,0) + 0.5, 0.0, 1.0);
+	return vec4(clr, gColor.a);
 }
+
+#ifdef PS_AxisTechPS
+void main() { oColor = AxisTechPS(frg PS_ARGS); }
+#endif
 
 technique AxisTech
 {
@@ -247,11 +297,11 @@ technique AxisTech
 ShadowTexVS ShadowMeshTechVS(POSTEX vrt)
 {
 	// Zero output.
-	ShadowTexVS outVS = (ShadowTexVS)0;
-	float3 posW = mul(float4(vrt.posL.xyz, 1.0f), gW).xyz;
+	ShadowTexVS outVS = ShadowTexVS(vec4(0), vec2(0), vec3(0));
+	vec3 posW = (vec4(vrt.posL.xyz, 1.0f) * gW).xyz;
 	float alpha = dot(vrt.posL.xyz, gInScatter.xyz) + gInScatter.w;
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
-	outVS.tex0  = float3(vrt.tex0.xy, alpha);
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
+	outVS.tex0  = vec3(vrt.tex0.xy, alpha);
 	outVS.dstW  = outVS.posH.zw;
 	return outVS;
 }
@@ -259,25 +309,45 @@ ShadowTexVS ShadowMeshTechVS(POSTEX vrt)
 ShadowTexVS ShadowMeshTechExVS(POSTEX vrt)
 {
 	// Zero output.
-	ShadowTexVS outVS = (ShadowTexVS)0;
+	ShadowTexVS outVS = ShadowTexVS(vec4(0), vec2(0), vec3(0));
 	float alpha = dot(vrt.posL.xyz, gColor.xyz) + gColor.w;
-	float3 posX = mul(float4(vrt.posL.xyz, 1.0f), gGrpT).xyz;
-	float3 posW = mul(float4(posX, 1.0f), gW).xyz;
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
-	outVS.tex0  = float3(vrt.tex0.xy, alpha);
+	vec3 posX = (vec4(vrt.posL.xyz, 1.0f) * gGrpT).xyz;
+	vec3 posW = (vec4(posX, 1.0f) * gW).xyz;
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
+	outVS.tex0  = vec3(vrt.tex0.xy, alpha);
 	outVS.dstW  = outVS.posH.zw;
 	return outVS;
 }
 
-float4 ShadowTechPS(ShadowTexVS frg) : COLOR
+#if defined(VS_ShadowMeshTechVS) || defined(VS_ShadowMeshTechExVS) || defined(VS_ShadowMapOIT_VS)
+layout(location = 0) in vec3 iPosL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out ShadowTexVS oVS;
+#endif
+#ifdef VS_ShadowMeshTechVS
+void main() { oVS = ShadowMeshTechVS(POSTEX(iPosL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+#ifdef VS_ShadowMeshTechExVS
+void main() { oVS = ShadowMeshTechExVS(POSTEX(iPosL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+#ifdef STAGE_PS
+vec4 ShadowTechPS(ShadowTexVS frg)
 {
-	if (frg.tex0.b < 0) clip(-1);
+	if (frg.tex0.b < 0) discard; // clip(-1)
 	if (gOITEnable) {
-		float4 alpha = tex2D(WrapS, frg.tex0.xy);
-		if (alpha.a < 0.5f) clip(-1);
+		vec4 alpha = texture(WrapS, frg.tex0.xy);
+		if (alpha.a < 0.5f) discard;
 	}
-	return float4(0.0f, 0.0f, 0.0f, gMix);
+	return vec4(0.0f, 0.0f, 0.0f, gMix);
 }
+#endif
+
+#ifdef PS_ShadowTechPS
+layout(location = 0) in ShadowTexVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = ShadowTechPS(frg PS_ARGS); }
+#endif
 
 
 // -----------------------------------------------------------------------------------
@@ -286,17 +356,29 @@ float4 ShadowTechPS(ShadowTexVS frg) : COLOR
 BShadowVS ShadowMapVS(SHADOW_VERTEX vrt)
 {
 	// Zero output.
-	BShadowVS outVS = (BShadowVS)0;
-	float3 posW = mul(float4(vrt.posL.xyz, 1.0f), gW).xyz;
-	outVS.posH = mul(float4(posW, 1.0f), gLVP);
+	BShadowVS outVS = BShadowVS(vec4(0), vec2(0), 0.0);
+	vec3 posW = (vec4(vrt.posL.xyz, 1.0f) * gW).xyz;
+	outVS.posH = vec4(posW, 1.0f) * gLVP;
 	outVS.dstW = outVS.posH.zw;
 	return outVS;
 }
 
-float4 ShadowMapPS(BShadowVS frg) : COLOR
+#ifdef VS_ShadowMapVS
+layout(location = 0) in vec4 iPosL;
+layout(location = 0) out BShadowVS oVS;
+void main() { oVS = ShadowMapVS(SHADOW_VERTEX(iPosL) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 ShadowMapPS(BShadowVS frg)
 {
-	return 1 - (frg.dstW.x / frg.dstW.y);
+	return vec4(1 - (frg.dstW.x / frg.dstW.y));
 }
+
+#ifdef PS_ShadowMapPS
+layout(location = 0) in BShadowVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = ShadowMapPS(frg PS_ARGS); }
+#endif
 
 
 // -----------------------------------------------------------------------------------
@@ -305,22 +387,32 @@ float4 ShadowMapPS(BShadowVS frg) : COLOR
 ShadowTexVS ShadowMapOIT_VS(POSTEX vrt)
 {
 	// Zero output.
-	ShadowTexVS outVS = (ShadowTexVS)0;
-	float3 posW = mul(float4(vrt.posL.xyz, 1.0f), gW).xyz;
-	outVS.posH = mul(float4(posW, 1.0f), gLVP);
-	outVS.tex0 = float3(vrt.tex0.xy, 0);
+	ShadowTexVS outVS = ShadowTexVS(vec4(0), vec2(0), vec3(0));
+	vec3 posW = (vec4(vrt.posL.xyz, 1.0f) * gW).xyz;
+	outVS.posH = vec4(posW, 1.0f) * gLVP;
+	outVS.tex0 = vec3(vrt.tex0.xy, 0);
 	outVS.dstW = outVS.posH.zw;
 	return outVS;
 }
 
-float4 ShadowMapOIT_PS(ShadowTexVS frg) : COLOR
+#ifdef VS_ShadowMapOIT_VS
+void main() { oVS = ShadowMapOIT_VS(POSTEX(iPosL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 ShadowMapOIT_PS(ShadowTexVS frg)
 {
 	if (gOITEnable) {
-		float alpha = tex2D(WrapS, frg.tex0.xy).a;
-		if (alpha < 0.5f) return 1.0f;
+		float alpha = texture(WrapS, frg.tex0.xy).a;
+		if (alpha < 0.5f) return vec4(1.0f);
 	}
-	return 1 - (frg.dstW.x / frg.dstW.y);
+	return vec4(1 - (frg.dstW.x / frg.dstW.y));
 }
+
+#ifdef PS_ShadowMapOIT_PS
+layout(location = 0) in ShadowTexVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = ShadowMapOIT_PS(frg PS_ARGS); }
+#endif
 
 // -----------------------------------------------------------------------------------
 
@@ -396,34 +488,51 @@ technique ShadowTech
 // Mesh Bounding Box Technique
 // =============================================================================
 
-BShadowVS BoundingBoxVS(float3 posL : POSITION0)
+BShadowVS BoundingBoxVS(vec3 posL)	// posL : POSITION0
 {
 	// Zero output.
-	BShadowVS outVS = (BShadowVS)0;
-	float3 pos;
+	BShadowVS outVS = BShadowVS(vec4(0), vec2(0), 0.0);
+	vec3 pos;
 	pos.x = gAttennuate.x * posL.x + gInScatter.x * (1-posL.x);
 	pos.y = gAttennuate.y * posL.y + gInScatter.y * (1-posL.y);
 	pos.z = gAttennuate.z * posL.z + gInScatter.z * (1-posL.z);
 
-	float3 posX = mul(float4(pos, 1.0f), gGrpT).xyz;		// Apply meshgroup specific transformation
-	float3 posW = mul(float4(posX, 1.0f), gW).xyz;			// Apply world transformation matrix
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
+	vec3 posX = (vec4(pos, 1.0f) * gGrpT).xyz;		// Apply meshgroup specific transformation
+	vec3 posW = (vec4(posX, 1.0f) * gW).xyz;			// Apply world transformation matrix
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
 	return outVS;
 }
 
-BShadowVS BoundingSphereVS(float3 posL : POSITION0)
+BShadowVS BoundingSphereVS(vec3 posL)	// posL : POSITION0
 {
 	// Zero output.
-	BShadowVS outVS = (BShadowVS)0;
-	float3 posW = mul(float4(posL, 1.0f), gW).xyz;			// Apply world transformation matrix
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
+	BShadowVS outVS = BShadowVS(vec4(0), vec2(0), 0.0);
+	vec3 posW = (vec4(posL, 1.0f) * gW).xyz;			// Apply world transformation matrix
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
 	return outVS;
 }
 
-float4 BoundingBoxPS(BShadowVS frg) : COLOR
+#if defined(VS_BoundingBoxVS) || defined(VS_BoundingSphereVS)
+layout(location = 0) in vec3 iPosL;
+layout(location = 0) out BShadowVS oVS;
+#endif
+#ifdef VS_BoundingBoxVS
+void main() { oVS = BoundingBoxVS(iPosL VS_ARGS); gl_Position = oVS.posH; }
+#endif
+#ifdef VS_BoundingSphereVS
+void main() { oVS = BoundingSphereVS(iPosL VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 BoundingBoxPS(BShadowVS frg)
 {
 	return gColor;
 }
+
+#ifdef PS_BoundingBoxPS
+layout(location = 0) in BShadowVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = BoundingBoxPS(frg PS_ARGS); }
+#endif
 
 technique TileBoxTech
 {

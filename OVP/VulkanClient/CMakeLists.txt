@@ -38,7 +38,7 @@ set(SourceFiles
 #	D3D9Client.cpp
 #	D3D9Config.cpp
 #	D3D9ControlPanel.cpp
-#	D3D9Effect.cpp
+	D3D9Effect.cpp
 	D3D9Frame.cpp
 #	D3D9Pad.cpp
 #	D3D9Pad2.cpp
@@ -146,15 +146,15 @@ set(APIHeaders
 
 set(ShaderFiles
 	${ShaderDir}/BeaconArray.fx
-	${ShaderDir}/Common.hlsl
+	${ShaderDir}/Common.glsl
 	${ShaderDir}/D3D9Client.fx
 	${ShaderDir}/EnvMapBlur.hlsl
 	${ShaderDir}/GDIOverlay.hlsl
 	${ShaderDir}/HorizonHaze.fx
-	${ShaderDir}/IPI.hlsl
+	${ShaderDir}/IPI.glsl
 	${ShaderDir}/IrradianceInteg.hlsl
 	${ShaderDir}/LensFlare.hlsl
-	${ShaderDir}/LightBlur.hlsl
+	${ShaderDir}/LightBlur.glsl
     ${ShaderDir}/CelSphere.hlsl
     ${ShaderDir}/NewMesh.hlsl
     ${ShaderDir}/NewPlanet.hlsl

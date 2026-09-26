@@ -1032,6 +1032,16 @@ void VkDev::SetBlendFunc (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op)
 	if (recording) vkx.CmdSetColorBlendEquationEXT (Cmd(), 0, 1, &st.blendEq);
 }
 
+void VkDev::SetSrcBlend (VkBlendFactor src)
+{
+	SetBlendFunc (src, st.blendEq.dstColorBlendFactor, st.blendEq.colorBlendOp);
+}
+
+void VkDev::SetDestBlend (VkBlendFactor dst)
+{
+	SetBlendFunc (st.blendEq.srcColorBlendFactor, dst, st.blendEq.colorBlendOp);
+}
+
 void VkDev::SetBlendFuncAlpha (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op)
 {
 	st.blendSeparate = true;

@@ -6,15 +6,15 @@
 
 struct TileVS
 {
-	float4 posH    : POSITION0;
-	float2 tex0    : TEXCOORD0;
-	float3 normalW : TEXCOORD1;
-	float3 toCamW  : TEXCOORD2;  // Vector to the camera
-	float3 posW    : TEXCOORD3;  // World space vertex position
-	float4 aux     : TEXCOORD4;  // Specular, Diffuse, Twilight, Night Texture Intensity,
-	float4 diffuse : TEXCOORD5;  // Sun light
-	float4 atten   : COLOR0;     // Attennuate incoming fragment color
-	float4 insca   : COLOR1;     // "Inscatter" Add to incoming fragment color
+	vec4 posH;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
+	vec3 normalW;  // TEXCOORD1
+	vec3 toCamW;   // TEXCOORD2  // Vector to the camera
+	vec3 posW;     // TEXCOORD3  // World space vertex position
+	vec4 aux;      // TEXCOORD4  // Specular, Diffuse, Twilight, Night Texture Intensity,
+	vec4 diffuse;  // TEXCOORD5  // Sun light
+	vec4 atten;    // COLOR0     // Attennuate incoming fragment color
+	vec4 insca;    // COLOR1     // "Inscatter" Add to incoming fragment color
 };
 
 
@@ -22,33 +22,33 @@ struct TileVS
 TileVS PlanetTechVS(TILEVERTEX vrt)
 {
 	// Zero output.
-	TileVS outVS = (TileVS)0;
+	TileVS outVS = TileVS(vec4(0), vec2(0), vec3(0), vec3(0), vec3(0), vec4(0), vec4(0), vec4(0), vec4(0));
 
 	// Apply a mesh group transformation matrix
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	float3 nrmW = normalize(mul(float4(vrt.normalL, 0.0f), gW).xyz);
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	vec3 nrmW = normalize((vec4(vrt.normalL, 0.0f) * gW).xyz);
 
 	// Convert transformed vertex position into a "screen" space using a combined (World, View and Projection) Matrix
-	outVS.posH = mul(float4(posW, 1.0f), gVP);
+	outVS.posH = vec4(posW, 1.0f) * gVP;
 
 	// A vector from the vertex to the camera
-	float3 tocam  = normalize(-posW);
-	float3 sundir = gSun.Dir;
+	vec3 tocam  = normalize(-posW);
+	vec3 sundir = gSun.Dir;
 
-	float diff    = saturate(dot(-sundir, nrmW));
+	float diff    = clamp(dot(-sundir, nrmW), 0.0, 1.0);
 	float dotr    = max(dot(reflect(sundir, nrmW), tocam), 0.0f);
 	float spec    = pow(diff,0.25f) * pow(dotr, gWater.specPower);
 	float nigh    = 0.0f;
 	float ambi    = 0.0f;
 
-	outVS.tex0    = float2(vrt.tex0.x*gTexOff[0] + gTexOff[1], vrt.tex0.y*gTexOff[2] + gTexOff[3]);
+	outVS.tex0    = vec2(vrt.tex0.x*gTexOff[0] + gTexOff[1], vrt.tex0.y*gTexOff[2] + gTexOff[3]);
 	outVS.toCamW  = tocam;
 	outVS.normalW = nrmW;
 	outVS.posW    = gCameraPos*gRadius[2] + posW*gDistScale;
 
 	LegacySunColor(outVS.diffuse, ambi, nigh, nrmW);
 
-	outVS.aux     = float4(spec, diff, ambi, nigh);
+	outVS.aux     = vec4(spec, diff, ambi, nigh);
 
 	AtmosphericHaze(outVS.atten, outVS.insca, outVS.posH.z, posW);
 
@@ -57,43 +57,63 @@ TileVS PlanetTechVS(TILEVERTEX vrt)
 	return outVS;
 }
 
+#ifdef VS_PlanetTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 6) in float iElev;
+layout(location = 0) out TileVS oVS;
+void main() { oVS = PlanetTechVS(TILEVERTEX(iPosL, iNrmL, iTex0, iElev) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
 
-float4 PlanetTechPS(TileVS frg) : COLOR
+
+vec4 PlanetTechPS(TileVS frg)
 {
 
-	float4 diff  = frg.aux.g*(gMat.diffuse*frg.diffuse) + (gMat.ambient*frg.aux.b);
-	float4 vSpe = frg.aux.r * (gWater.specular*frg.diffuse);
-	float4 vEff = tex2D(Planet1S, frg.tex0);
+	vec4 diff  = frg.aux.g*(gMat.diffuse*frg.diffuse) + (gMat.ambient*frg.aux.b);
+	vec4 vSpe = frg.aux.r * (gWater.specular*frg.diffuse);
+	vec4 vEff = texture(Planet1S, frg.tex0);
 
 	if (gSpecMode==2) vSpe *= 1.0f - vEff.a;
-	if (gSpecMode==0) vSpe = 0;
+	if (gSpecMode==0) vSpe = vec4(0);
 
-	float3 cTex = tex2D(Planet0S, frg.tex0).rgb;
-	float3 color = diff.rgb * cTex.rgb + frg.aux.a*vEff.rgb + vSpe.rgb;
+	vec3 cTex = texture(Planet0S, frg.tex0).rgb;
+	vec3 color = diff.rgb * cTex.rgb + frg.aux.a*vEff.rgb + vSpe.rgb;
 
-	return float4(color*frg.atten.rgb+gColor.rgb+frg.insca.rgb, 1.0f);
+	return vec4(color*frg.atten.rgb+gColor.rgb+frg.insca.rgb, 1.0f);
 }
 
 
 
-float4 CloudTechPS(TileVS frg) : COLOR
+vec4 CloudTechPS(TileVS frg)
 {
 
-	float4 data  = (gMat.ambient*frg.aux.b);
-	float4 color = tex2D(Planet0S, frg.tex0);
+	vec4 data  = (gMat.ambient*frg.aux.b);
+	vec4 color = texture(Planet0S, frg.tex0);
 	float  alpha = color.a;
 
 	if (dot(frg.normalW, frg.toCamW)<0) {    // Render cloud layer from below
-		float4 diff = (min(1,frg.aux.g*2) * frg.diffuse) * gMat.diffuse + data;
-		return float4(color.rgb*diff.rgb, alpha);
+		vec4 diff = (min(1,frg.aux.g*2) * frg.diffuse) * gMat.diffuse + data;
+		return vec4(color.rgb*diff.rgb, alpha);
 	}
 
 	else { // Render cloud layer from above
-		float4 diff = (min(1,frg.aux.g*1.5) * frg.diffuse) * gMat.diffuse + data;
-		return float4(color.rgb*diff.rgb, alpha);
+		vec4 diff = (min(1,frg.aux.g*1.5) * frg.diffuse) * gMat.diffuse + data;
+		return vec4(color.rgb*diff.rgb, alpha);
 	}
 }
+
+#if defined(PS_PlanetTechPS) || defined(PS_CloudTechPS)
+layout(location = 0) in TileVS frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_PlanetTechPS
+void main() { oColor = PlanetTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_CloudTechPS
+void main() { oColor = CloudTechPS(frg PS_ARGS); }
+#endif
 
 
 
@@ -110,31 +130,46 @@ float4 CloudTechPS(TileVS frg) : COLOR
 
 struct ShadowVS
 {
-	float4 posH    : POSITION0;
-	float2 tex0    : TEXCOORD0;
-	float4 atten   : TEXCOORD2;
+	vec4 posH;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
+	vec4 atten;    // TEXCOORD2
 };
 
 ShadowVS CloudShadowTechVS(TILEVERTEX vrt)
 {
 	// Zero output.
-	ShadowVS outVS = (ShadowVS)0;
+	ShadowVS outVS = ShadowVS(vec4(0), vec2(0), vec4(0));
 
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	outVS.posH  = mul(float4(posW, 1.0f), gVP);
-	outVS.tex0  = float2(vrt.tex0.x*gTexOff[0] + gTexOff[1], vrt.tex0.y*gTexOff[2] + gTexOff[3]);
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	outVS.posH  = vec4(posW, 1.0f) * gVP;
+	outVS.tex0  = vec2(vrt.tex0.x*gTexOff[0] + gTexOff[1], vrt.tex0.y*gTexOff[2] + gTexOff[3]);
 
-	float4 none;
+	vec4 none;
 
 	AtmosphericHaze(outVS.atten, none, outVS.posH.z, posW);
 
 	return outVS;
 }
 
-float4 CloudShadowPS(ShadowVS frg) : COLOR
+#ifdef VS_CloudShadowTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 6) in float iElev;
+layout(location = 0) out ShadowVS oVS;
+void main() { oVS = CloudShadowTechVS(TILEVERTEX(iPosL, iNrmL, iTex0, iElev) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 CloudShadowPS(ShadowVS frg)
 {
-	return float4(0,0,0, tex2D(Planet0S, frg.tex0).a * frg.atten.b);
+	return vec4(0,0,0, texture(Planet0S, frg.tex0).a * frg.atten.b);
 }
+
+#ifdef PS_CloudShadowPS
+layout(location = 0) in ShadowVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = CloudShadowPS(frg PS_ARGS); }
+#endif
 
 
 

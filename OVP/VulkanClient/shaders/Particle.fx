@@ -5,33 +5,48 @@
 // ==============================================================
 
 struct EPVERTEX {
-	float3 posL     : POSITION0;
-	float2 tex0     : TEXCOORD0;
+	vec3 posL;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
 };
 
 struct ParticleVS
 {
-	float4 posH     : POSITION0;
-	float2 tex0     : TEXCOORD0;
-	float  light    : TEXCOORD1;
+	vec4 posH;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
+	float  light;  // TEXCOORD1
 };
 
 ParticleVS ParticleDiffuseVS(NTVERTEX vrt)
 {
-	ParticleVS outVS = (ParticleVS)0;
+	ParticleVS outVS = ParticleVS(vec4(0), vec2(0), 0.0);
 	outVS.tex0    = vrt.tex0;
 	outVS.light   = 1.0f; // saturate(dot(-gSun.Dir, vrt.nrmL) * 2.0f);
-	outVS.posH    = mul(float4(vrt.posL, 1.0f), gVP);
+	outVS.posH    = vec4(vrt.posL, 1.0f) * gVP;
 	return outVS;
 }
 
 ParticleVS ParticleEmissiveVS(EPVERTEX vrt)
 {
-	ParticleVS outVS = (ParticleVS)0;
+	ParticleVS outVS = ParticleVS(vec4(0), vec2(0), 0.0);
 	outVS.tex0   = vrt.tex0;
-	outVS.posH   = mul(float4(vrt.posL, 1.0f), gVP);
+	outVS.posH   = vec4(vrt.posL, 1.0f) * gVP;
 	return outVS;
 }
+
+#ifdef VS_ParticleDiffuseVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out ParticleVS oVS;
+void main() { oVS = ParticleDiffuseVS(NTVERTEX(iPosL, iNrmL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+#ifdef VS_ParticleEmissiveVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out ParticleVS oVS;
+void main() { oVS = ParticleEmissiveVS(EPVERTEX(iPosL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
 
 
@@ -42,23 +57,37 @@ ParticleVS ParticleEmissiveVS(EPVERTEX vrt)
 // ----------------------------------------------------------------------------
 
 
-float4 ParticleDiffusePS(ParticleVS frg) : COLOR
+vec4 ParticleDiffusePS(ParticleVS frg)
 {
-	float4 color = tex2D(WrapS, frg.tex0);
-	return float4(color.rgb*frg.light, color.a*gMix);
+	vec4 color = texture(WrapS, frg.tex0);
+	return vec4(color.rgb*frg.light, color.a*gMix);
 }
 
-float4 ParticleEmissivePS(ParticleVS frg) : COLOR
+vec4 ParticleEmissivePS(ParticleVS frg)
 {
-	float4 color = tex2D(WrapS, frg.tex0);
-	return float4(color.rgb*gColor.rgb, color.a*gMix);
+	vec4 color = texture(WrapS, frg.tex0);
+	return vec4(color.rgb*gColor.rgb, color.a*gMix);
 }
 
-float4 ParticleShadowPS(ParticleVS frg) : COLOR
+vec4 ParticleShadowPS(ParticleVS frg)
 {
-	float4 color = tex2D(WrapS, frg.tex0);
-	return float4(0,0,0,color.a*gMix*2.0);
+	vec4 color = texture(WrapS, frg.tex0);
+	return vec4(0,0,0,color.a*gMix*2.0);
 }
+
+#if defined(PS_ParticleDiffusePS) || defined(PS_ParticleEmissivePS) || defined(PS_ParticleShadowPS)
+layout(location = 0) in ParticleVS frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_ParticleDiffusePS
+void main() { oColor = ParticleDiffusePS(frg PS_ARGS); }
+#endif
+#ifdef PS_ParticleEmissivePS
+void main() { oColor = ParticleEmissivePS(frg PS_ARGS); }
+#endif
+#ifdef PS_ParticleShadowPS
+void main() { oColor = ParticleShadowPS(frg PS_ARGS); }
+#endif
 
 
 

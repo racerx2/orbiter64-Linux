@@ -15,45 +15,45 @@
 
 struct Mat
 {
-	float4 diffuse;
-	float4 ambient;
-	float4 specular;
-	float4 emissive;
+	vec4 diffuse;
+	vec4 ambient;
+	vec4 specular;
+	vec4 emissive;
 	float  specPower;
 };
 
 struct Mtrl
 {
-	float4 diffuse;
-	float4 specular;
-	float3 ambient;
-	float3 emissive;
-	float3 reflect;
-	float3 emission2;
-	float3 fresnel;
-	float2 roughness;
+	vec4 diffuse;
+	vec4 specular;
+	vec3 ambient;
+	vec3 emissive;
+	vec3 reflect;
+	vec3 emission2;
+	vec3 fresnel;
+	vec2 roughness;
 	float  metalness;
-	float4 specialfx;			// x = Heat 
+	vec4 specialfx;			// x = Heat 
 };
 
 struct Sun
 {
-	float3 Dir;
-	float3 Color;			// Color and Intensity of received sunlight 
-	float3 Ambient;			// Ambient light level (Base Objects Only, Vessels are using dynamic methods)
-	float3 Transmission;	// Visibility through atmosphere (1.0 = fully visible, 0.0 = obscured)
-	float3 Inscatter;		// Amount of incattered light from haze
+	vec3 Dir;
+	vec3 Color;			// Color and Intensity of received sunlight 
+	vec3 Ambient;			// Ambient light level (Base Objects Only, Vessels are using dynamic methods)
+	vec3 Transmission;	// Visibility through atmosphere (1.0 = fully visible, 0.0 = obscured)
+	vec3 Inscatter;		// Amount of incattered light from haze
 };
 
 struct Light
 {
 	int      type;       	   /* Is is spotlight */
 	float    dst2;			   /* Camera-Light Emitter distance squared */
-	float4   diffuse;          /* diffuse color of light */
-	float3   position;         /* position in world space */
-	float3   direction;        /* direction in world space */
-	float3   attenuation;      /* Attenuation */
-	float4   param;            /* range, falloff, theta, phi */
+	vec4     diffuse;          /* diffuse color of light */
+	vec3     position;         /* position in world space */
+	vec3     direction;        /* direction in world space */
+	vec3     attenuation;      /* Attenuation */
+	vec4     param;            /* range, falloff, theta, phi */
 };
 
 // Must match with counterpart in D3D9Effect.h
@@ -76,14 +76,14 @@ struct Flow
 
 struct Tune
 {
-	float4 Albe;		// Tune Diffese Maps
-	float4 Emis;		// Tune Emission Maps
-	float4 Spec;		// Tune Specular Maps
-	float4 Refl;		// Tune Reflection Maps
-	float4 Transl;		// Tune translucent effect
-	float4 Transm;		// Tune transmissive effect
-	float4 Norm;		// Tune normal map
-	float4 Rghn;		// Tune roughness map
+	vec4 Albe;		// Tune Diffese Maps
+	vec4 Emis;		// Tune Emission Maps
+	vec4 Spec;		// Tune Specular Maps
+	vec4 Refl;		// Tune Reflection Maps
+	vec4 Transl;		// Tune translucent effect
+	vec4 Transm;		// Tune transmissive effect
+	vec4 Norm;		// Tune normal map
+	vec4 Rghn;		// Tune roughness map
 };
 
 
@@ -96,58 +96,61 @@ struct Tune
 #define SH_SIZE		0
 #define SH_INVSIZE	1
 
-uniform extern float3    kernel[KERNEL_SIZE];
+layout(binding = 0, row_major, scalar) uniform FxParams	// the uniform extern parameters, packed as the client's structs
+{
+vec3      kernel[KERNEL_SIZE];
 
 // -------------------------------------------------------------------------
-uniform extern float4x4  gW;			    // World matrix
-uniform extern float4x4  gLVP;			    // Light view projection
-uniform extern float4x4  gVP;			    // Combined View and Projection matrix
-uniform extern float4x4  gGrpT;	            // Mesh group transformation matrix
-uniform extern float4    gAttennuate;       // (Mesh Constant Fog) Attennuation of fragment color
-uniform extern float4    gInScatter;        // (Mesh Constant Fog) In scattering light
-uniform extern float4    gColor;            // General purpose color parameter
-uniform extern float4    gFogColor;         // Distance fog color in "Legacy" implementation
-uniform extern float4    gAtmColor;         // Earth glow color
-uniform extern float4    gTexOff;			// Texture offsets used by surface manager
-uniform extern float4    gRadius;           // PlanetRad, AtmOuterLimit, CameraRad, CameraAlt
-uniform extern float4    gSHD;				// ShadowMap data
-uniform extern float3    gCameraPos;        // Planet relative camera position, Unit vector
-uniform extern float3    gNorth;
-uniform extern float3    gEast;
-uniform extern Sun		 gSun;				// Sun light direction
-uniform extern Mat       gMat;			    // Material input structure  TODO:  Remove all reference to this. Use gMtrl
-uniform extern Mat       gWater;			// Water material input structure
-uniform extern Mtrl      gMtrl;			    // Material input structure
-uniform extern Tune      gTune;			    // Texture tuning parameters
-uniform extern Light	 gLights[MAX_LIGHTS];
-uniform extern bool		 gLightsEnabled;
-uniform extern bool      gTuneEnabled;
-uniform extern bool      gModAlpha;		    // Configuration input
-uniform extern bool      gFullyLit;			// Always fully lit bypass lighting calculations
-uniform extern bool      gTextured;			// Enable Diffuse Texturing
-uniform extern bool      gFresnel;			// Enable fresnel material
-uniform extern bool      gPBRSw;			// Legacy / PBR Switch
-uniform extern bool      gRghnSw;			// Roughness converter switch
-uniform extern bool      gNight;			// Nighttime/Daytime
-uniform extern bool      gShadowsEnabled;	// Enable shadow maps
-uniform extern bool      gEnvMapEnable;		// Enable Environment mapping
-uniform extern bool		 gInSpace;			// True if a mesh is located in space
-uniform extern bool		 gNoColor;			// No color flag
-uniform extern bool		 gBaseBuilding;
-uniform extern bool		 gOITEnable;
-uniform extern int       gSpecMode;
-uniform extern int       gHazeMode;
-uniform extern float     gProxySize;		// Cosine of the angular size of the Proxy Gbody. (one half)
-uniform extern float	 gInvProxySize;		// = 1.0 / (1.0f-gProxySize)
-uniform extern float     gPointScale;
-uniform extern float     gDistScale;
-uniform extern float     gFogDensity;
-uniform extern float     gTime;
-uniform extern float     gMix;				// General purpose parameter (multible uses)
-uniform extern float 	 gMtrlAlpha;
-uniform extern float	 gGlowConst;
-uniform extern float	 gNightTime;		// 1 for nighttime, 0 for daytime
-uniform extern Flow		 gCfg;
+mat4      gW;			    // World matrix
+mat4      gLVP;			    // Light view projection
+mat4      gVP;			    // Combined View and Projection matrix
+mat4      gGrpT;	            // Mesh group transformation matrix
+vec4      gAttennuate;       // (Mesh Constant Fog) Attennuation of fragment color
+vec4      gInScatter;        // (Mesh Constant Fog) In scattering light
+vec4      gColor;            // General purpose color parameter
+vec4      gFogColor;         // Distance fog color in "Legacy" implementation
+vec4      gAtmColor;         // Earth glow color
+vec4      gTexOff;			// Texture offsets used by surface manager
+vec4      gRadius;           // PlanetRad, AtmOuterLimit, CameraRad, CameraAlt
+vec4      gSHD;				// ShadowMap data
+vec3      gCameraPos;        // Planet relative camera position, Unit vector
+vec3      gNorth;
+vec3      gEast;
+Sun		  gSun;				// Sun light direction
+Mat       gMat;			    // Material input structure  TODO:  Remove all reference to this. Use gMtrl
+Mat       gWater;			// Water material input structure
+Mtrl      gMtrl;			    // Material input structure
+Tune      gTune;			    // Texture tuning parameters
+Light	  gLights[MAX_LIGHTS];
+bool	  gLightsEnabled;
+bool      gTuneEnabled;
+bool      gModAlpha;		    // Configuration input
+bool      gFullyLit;			// Always fully lit bypass lighting calculations
+bool      gTextured;			// Enable Diffuse Texturing
+bool      gFresnel;			// Enable fresnel material
+bool      gPBRSw;			// Legacy / PBR Switch
+bool      gRghnSw;			// Roughness converter switch
+bool      gNight;			// Nighttime/Daytime
+bool      gShadowsEnabled;	// Enable shadow maps
+bool      gEnvMapEnable;		// Enable Environment mapping
+bool	  gInSpace;			// True if a mesh is located in space
+bool	  gNoColor;			// No color flag
+bool	  gBaseBuilding;
+bool	  gOITEnable;
+int       gSpecMode;
+int       gHazeMode;
+float     gProxySize;		// Cosine of the angular size of the Proxy Gbody. (one half)
+float	  gInvProxySize;		// = 1.0 / (1.0f-gProxySize)
+float     gPointScale;
+float     gDistScale;
+float     gFogDensity;
+float     gTime;
+float     gMix;				// General purpose parameter (multible uses)
+float 	  gMtrlAlpha;
+float	  gGlowConst;
+float	  gNightTime;		// 1 for nighttime, 0 for daytime
+Flow	  gCfg;
+};
 
 // Textures -----------------------------------------------------------------
 
@@ -169,10 +172,13 @@ uniform extern texture   gIrradianceMap;    // Irradiance Map
 
 // Legacy Atmosphere --------------------------------------------------------
 
-uniform extern float     gGlobalAmb;        // Global Ambient Level
-uniform extern float     gSunAppRad;        // Sun apparent size (Radius / Distance)
-uniform extern float     gDispersion;
-uniform extern float     gAmbient0;
+layout(binding = 1, row_major, scalar) uniform FxLegacyAtmo
+{
+float     gGlobalAmb;        // Global Ambient Level
+float     gSunAppRad;        // Sun apparent size (Radius / Distance)
+float     gDispersion;
+float     gAmbient0;
+};
 
 
 // ----------------------------------------------------------------------------
@@ -180,38 +186,38 @@ uniform extern float     gAmbient0;
 // ----------------------------------------------------------------------------
 
 struct MESH_VERTEX {                        // D3D9Client Mesh vertex layout
-	float3 posL   : POSITION0;
-	float3 nrmL   : NORMAL0;
-	float3 tanL   : TANGENT0;
-	float3 tex0   : TEXCOORD0;
+	vec3 posL;     // POSITION0
+	vec3 nrmL;     // NORMAL0
+	vec3 tanL;     // TANGENT0
+	vec3 tex0;     // TEXCOORD0
 };
 
 struct NTVERTEX {                           // Orbiter Mesh vertex layout
-	float3 posL     : POSITION0;
-	float3 nrmL     : NORMAL0;
-	float2 tex0     : TEXCOORD0;
+	vec3 posL;     // POSITION0
+	vec3 nrmL;     // NORMAL0
+	vec2 tex0;     // TEXCOORD0
 };
 
 struct TILEVERTEX {                         // Vertex declaration used for surface tiles and cloud layer
-	float3 posL     : POSITION0;
-	float3 normalL  : NORMAL0;
-	float2 tex0     : TEXCOORD0;
-	float  elev     : TEXCOORD1;
+	vec3 posL;     // POSITION0
+	vec3 normalL;  // NORMAL0
+	vec2 tex0;     // TEXCOORD0
+	float  elev;   // TEXCOORD1
 };
 
 struct HZVERTEX {
-	float3 posL     : POSITION0;
-	float4 color    : COLOR0;
-	float2 tex0     : TEXCOORD0;
+	vec3 posL;     // POSITION0
+	vec4 color;    // COLOR0
+	vec2 tex0;     // TEXCOORD0
 };
 
 struct POSTEX {
-	float3 posL     : POSITION0;
-	float2 tex0     : TEXCOORD0;
+	vec3 posL;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
 };
 
 struct SHADOW_VERTEX {
-	float4 posL     : POSITION0;
+	vec4 posL;     // POSITION0
 };
 
 
@@ -221,38 +227,38 @@ struct SHADOW_VERTEX {
 
 struct SimpleVS
 {
-	float4 posH     : POSITION0;
-	float2 tex0     : TEXCOORD0;
-	float3 nrmW     : TEXCOORD1;
-	float3 toCamW   : TEXCOORD2;
+	vec4 posH;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
+	vec3 nrmW;     // TEXCOORD1
+	vec3 toCamW;   // TEXCOORD2
 };
 
 struct HazeVS
 {
-	float4 posH    : POSITION0;
-	float4 color   : TEXCOORD0;
-	float2 tex0    : TEXCOORD1;
+	vec4 posH;     // POSITION0
+	vec4 color;    // TEXCOORD0
+	vec2 tex0;     // TEXCOORD1
 };
 
 struct BShadowVS
 {
-	float4 posH    : POSITION0;
-	float2 dstW    : TEXCOORD0;
-	float  alpha   : TEXCOORD1;
+	vec4 posH;     // POSITION0
+	vec2 dstW;     // TEXCOORD0
+	float  alpha;  // TEXCOORD1
 };
 
 struct ShadowTexVS
 {
-	float4 posH    : POSITION0;
-	float2 dstW    : TEXCOORD0;
-	float3 tex0	   : TEXCOORD1;
+	vec4 posH;     // POSITION0
+	vec2 dstW;     // TEXCOORD0
+	vec3 tex0;     // TEXCOORD1
 };
 
 // ----------------------------------------------------------------------------
 // Texture Sampler implementations
 // ----------------------------------------------------------------------------
 
-sampler IrradS = sampler_state      // Irradiance map sampler
+sampler2D IrradS = sampler_state      // Irradiance map sampler
 {
 	Texture = <gIrradianceMap>;
 	MinFilter = LINEAR;
@@ -262,7 +268,7 @@ sampler IrradS = sampler_state      // Irradiance map sampler
 	AddressV = CLAMP;
 };
 
-sampler ShadowS = sampler_state      // Shadow map sampler
+sampler2D ShadowS = sampler_state      // Shadow map sampler
 {
 	Texture = <gShadowMap>;
 	MinFilter = POINT;
@@ -272,7 +278,7 @@ sampler ShadowS = sampler_state      // Shadow map sampler
 	AddressV = CLAMP;
 };
 
-sampler WrapS = sampler_state       // Primary Mesh texture sampler
+sampler2D WrapS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -284,7 +290,7 @@ sampler WrapS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler ClampS = sampler_state      // Base tile sampler
+sampler2D ClampS = sampler_state      // Base tile sampler
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -296,7 +302,7 @@ sampler ClampS = sampler_state      // Base tile sampler
 	AddressV = CLAMP;
 };
 
-sampler SpecS = sampler_state       // Primary Mesh texture sampler
+sampler2D SpecS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gSpecMap>;
 	MinFilter = ANISOTROPIC;
@@ -308,7 +314,7 @@ sampler SpecS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler EmisS = sampler_state       // Primary Mesh texture sampler
+sampler2D EmisS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gEmisMap>;
 	MinFilter = ANISOTROPIC;
@@ -320,7 +326,7 @@ sampler EmisS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler ReflS = sampler_state       // Primary Mesh texture sampler
+sampler2D ReflS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gReflMap>;
 	MinFilter = ANISOTROPIC;
@@ -332,7 +338,7 @@ sampler ReflS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler MetlS = sampler_state       // Primary Mesh texture sampler
+sampler2D MetlS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gMetlMap>;
 	MinFilter = ANISOTROPIC;
@@ -344,7 +350,7 @@ sampler MetlS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler HeatS = sampler_state       // Primary Mesh texture sampler
+sampler2D HeatS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gHeatMap>;
 	MinFilter = ANISOTROPIC;
@@ -356,7 +362,7 @@ sampler HeatS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler RghnS = sampler_state       // Primary Mesh texture sampler
+sampler2D RghnS = sampler_state       // Primary Mesh texture sampler
 {
 	Texture = <gRghnMap>;
 	MinFilter = ANISOTROPIC;
@@ -368,7 +374,7 @@ sampler RghnS = sampler_state       // Primary Mesh texture sampler
 	AddressV = WRAP;
 };
 
-sampler TranslS = sampler_state       // Translucence texture sampler
+sampler2D TranslS = sampler_state       // Translucence texture sampler
 {
 	Texture = <gTranslMap>;
 	MinFilter = ANISOTROPIC;
@@ -379,7 +385,7 @@ sampler TranslS = sampler_state       // Translucence texture sampler
 	AddressU = WRAP;
 	AddressV = WRAP;
 };
-sampler TransmS = sampler_state       // Transmittance texture sampler
+sampler2D TransmS = sampler_state       // Transmittance texture sampler
 {
 	Texture = <gTransmMap>;
 	MinFilter = ANISOTROPIC;
@@ -391,7 +397,7 @@ sampler TransmS = sampler_state       // Transmittance texture sampler
 	AddressV = WRAP;
 };
 
-sampler Tex1S = sampler_state       // Secundary mesh texture sampler (i.e. night texture)
+sampler2D Tex1S = sampler_state       // Secundary mesh texture sampler (i.e. night texture)
 {
 	Texture = <gTex1>;
 	MinFilter = ANISOTROPIC;
@@ -402,7 +408,7 @@ sampler Tex1S = sampler_state       // Secundary mesh texture sampler (i.e. nigh
 	AddressV = WRAP;
 };
 
-sampler Nrm0S = sampler_state       // Normal Map Sampler
+sampler2D Nrm0S = sampler_state       // Normal Map Sampler
 {
 	Texture = <gTex3>;
 	MinFilter = ANISOTROPIC;
@@ -414,7 +420,7 @@ sampler Nrm0S = sampler_state       // Normal Map Sampler
 	AddressV = WRAP;
 };
 
-sampler MFDSamp = sampler_state     // Virtual Cockpit MFD screen sampler
+sampler2D MFDSamp = sampler_state     // Virtual Cockpit MFD screen sampler
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -425,7 +431,7 @@ sampler MFDSamp = sampler_state     // Virtual Cockpit MFD screen sampler
 	AddressV = CLAMP;
 };
 
-sampler Panel0S = sampler_state     // Sampler for mesh based panels, Panel MFDs. Must be compatible with Non-power of two conditional due to MFD screens.
+sampler2D Panel0S = sampler_state     // Sampler for mesh based panels, Panel MFDs. Must be compatible with Non-power of two conditional due to MFD screens.
 {
 	Texture = <gTex0>;
 	MinFilter = POINT;
@@ -435,7 +441,7 @@ sampler Panel0S = sampler_state     // Sampler for mesh based panels, Panel MFDs
 	AddressV  = CLAMP;
 };
 
-sampler SimpleS = sampler_state       // Sampler used for SimpleTech. (Star, VC HUD)
+sampler2D SimpleS = sampler_state       // Sampler used for SimpleTech. (Star, VC HUD)
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -447,7 +453,7 @@ sampler SimpleS = sampler_state       // Sampler used for SimpleTech. (Star, VC 
 	AddressV = CLAMP;
 };
 
-sampler ExhaustS = sampler_state
+sampler2D ExhaustS = sampler_state
 {
 	Texture = <gTex0>;
 	MinFilter = LINEAR;
@@ -458,7 +464,7 @@ sampler ExhaustS = sampler_state
 	AddressV = CLAMP;
 };
 
-sampler RingS = sampler_state       // Planetary rings sampler
+sampler2D RingS = sampler_state       // Planetary rings sampler
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -469,7 +475,7 @@ sampler RingS = sampler_state       // Planetary rings sampler
 	AddressV = WRAP;
 };
 
-sampler EnvMapAS = sampler_state
+samplerCube EnvMapAS = sampler_state
 {
 	Texture = <gEnvMapA>;
 	MinFilter = LINEAR;
@@ -480,7 +486,7 @@ sampler EnvMapAS = sampler_state
 	AddressW = CLAMP;
 };
 
-sampler EnvMapBS = sampler_state
+samplerCube EnvMapBS = sampler_state
 {
 	Texture = <gEnvMapB>;
 	MinFilter = LINEAR;
@@ -494,7 +500,7 @@ sampler EnvMapBS = sampler_state
 
 // Planet surface samplers ----------------------------------------------------
 
-sampler Planet0S = sampler_state    // Planet/Cloud diffuse texture sampler
+sampler2D Planet0S = sampler_state    // Planet/Cloud diffuse texture sampler
 {
 	Texture = <gTex0>;
 	MinFilter = ANISOTROPIC;
@@ -505,7 +511,7 @@ sampler Planet0S = sampler_state    // Planet/Cloud diffuse texture sampler
 	AddressV = CLAMP;
 };
 
-sampler Planet1S = sampler_state    // Planet nightlights/specular mask sampler
+sampler2D Planet1S = sampler_state    // Planet nightlights/specular mask sampler
 {
 	Texture = <gTex1>;
 	MinFilter = ANISOTROPIC;
@@ -516,7 +522,7 @@ sampler Planet1S = sampler_state    // Planet nightlights/specular mask sampler
 	AddressV = CLAMP;
 };
 
-sampler Planet3S = sampler_state    // Planet/Cloud micro texture sampler
+sampler2D Planet3S = sampler_state    // Planet/Cloud micro texture sampler
 {
 	Texture = <gTex3>;
 	MinFilter = ANISOTROPIC;
@@ -536,11 +542,11 @@ sampler Planet3S = sampler_state    // Planet/Cloud micro texture sampler
 // posW = camera centric world space position of the vertex
 // ----------------------------------------------------------------------------
 
-void AtmosphericHaze(out float4 att, out float4 ins, in float depth, in float3 posW)
+void AtmosphericHaze(out vec4 att, out vec4 ins, in float depth, in vec3 posW)
 {
 	if (gHazeMode==0) {
-		att = 1;
-		ins = 0;
+		att = vec4(1);
+		ins = vec4(0);
 		return;
 	}
 	else if (gHazeMode==1) {
@@ -549,9 +555,9 @@ void AtmosphericHaze(out float4 att, out float4 ins, in float depth, in float3 p
 		return;
 	}
 	else if (gHazeMode==2) {
-		float fogFact = 1.0f / exp(max(0,depth) * gFogDensity);
-		att = fogFact;
-		ins = half4((1.0f-fogFact) * gFogColor.rgb, 0.0f);
+		float fogFact = 1.0f / exp(max(0.0f,depth) * gFogDensity);
+		att = vec4(fogFact);
+		ins = vec4((1.0f-fogFact) * gFogColor.rgb, 0.0f);
 		return;
 	}
 }
@@ -562,23 +568,23 @@ void AtmosphericHaze(out float4 att, out float4 ins, in float depth, in float3 p
 // buildings.  See SurfaceLighting() in D3D9Util.cpp
 // ----------------------------------------------------------------------------
 
-void LegacySunColor(out float4 diff, out float ambi, out float nigh, in float3 normalW)
+void LegacySunColor(out vec4 diff, out float ambi, out float nigh, in vec3 normalW)
 {
 	float   h = dot(-gSun.Dir, normalW);
-	float   s = saturate((h+gSunAppRad)/(2.0f*gSunAppRad));
-	float3 r0 = 1.0 - float3(0.65, 0.75, 1.0) * gDispersion;
+	float   s = clamp((h+gSunAppRad)/(2.0f*gSunAppRad), 0.0, 1.0);
+	vec3 r0 = 1.0 - vec3(0.65, 0.75, 1.0) * gDispersion;
 
 	if (gDispersion!=0) { // case 1: planet has atmosphere
-		float3 di = (r0 + (1.0-r0) * saturate(h*5.780)) * s;
+		vec3 di = (r0 + (1.0-r0) * clamp(h*5.780, 0.0, 1.0)) * s;
 		float  ni = (h+0.242)*2.924;
-		float  am = saturate(max(gAmbient0*saturate(ni)-0.05, gGlobalAmb));
+		float  am = clamp(max(gAmbient0*clamp(ni, 0.0, 1.0)-0.05, gGlobalAmb), 0.0, 1.0);
 
-		diff = float4(di*(1.0-am*0.5),1);
+		diff = vec4(di*(1.0-am*0.5),1);
 		ambi = am;
-		nigh = saturate(-ni-0.2);
+		nigh = clamp(-ni-0.2, 0.0, 1.0);
 	}
 	else { // case 2: planet has no atmosphere
-		diff = float4(r0*s, 1);
+		diff = vec4(r0*s, 1);
 		ambi = gGlobalAmb;
 		nigh = 0;
 	}
@@ -593,14 +599,22 @@ void LegacySunColor(out float4 diff, out float ambi, out float nigh, in float3 n
 
 SimpleVS BasicVS(NTVERTEX vrt)
 {
-	SimpleVS outVS = (SimpleVS)0;
-	float3 posW  = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	outVS.posH   = mul(float4(posW, 1.0f), gVP);
-	outVS.nrmW   = mul(float4(vrt.nrmL, 0.0f), gW).xyz;
+	SimpleVS outVS = SimpleVS(vec4(0), vec2(0), vec3(0), vec3(0));
+	vec3 posW  = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	outVS.posH   = vec4(posW, 1.0f) * gVP;
+	outVS.nrmW   = (vec4(vrt.nrmL, 0.0f) * gW).xyz;
 	outVS.toCamW = -posW;
 	outVS.tex0   = vrt.tex0;
 	return outVS;
 }
+
+#ifdef VS_BasicVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 1) in vec3 iNrmL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out SimpleVS oVS;
+void main() { oVS = BasicVS(NTVERTEX(iPosL, iNrmL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
 
 
 
@@ -608,34 +622,54 @@ SimpleVS BasicVS(NTVERTEX vrt)
 // PixelShader Implementations
 // ----------------------------------------------------------------------------
 
-float4 SimpleTechPS(SimpleVS frg) : COLOR
+vec4 SimpleTechPS(SimpleVS frg)
 {
-	float4 c = tex2D(SimpleS, frg.tex0);
-	return float4(c.rgb, c.a * gMix);
+	vec4 c = texture(SimpleS, frg.tex0);
+	return vec4(c.rgb, c.a * gMix);
 }
 
-float4 PanelTechPS(SimpleVS frg) : COLOR
+vec4 PanelTechPS(SimpleVS frg)
 {
-	float4 cTex = tex2D(SimpleS, frg.tex0);
-	return float4(cTex.rgb, cTex.a*gMix);
+	vec4 cTex = texture(SimpleS, frg.tex0);
+	return vec4(cTex.rgb, cTex.a*gMix);
 }
 
-float4 PanelTechBPS(SimpleVS frg) : COLOR
+vec4 PanelTechBPS(SimpleVS frg)
 {
-	float4 cTex = tex2D(Panel0S, frg.tex0);
-	return float4(cTex.rgb, cTex.a*gMix);
+	vec4 cTex = texture(Panel0S, frg.tex0);
+	return vec4(cTex.rgb, cTex.a*gMix);
 }
 
-float4 ExhaustTechPS(SimpleVS frg) : COLOR
+vec4 ExhaustTechPS(SimpleVS frg)
 {
-	float4 c = tex2D(ExhaustS, frg.tex0);
-	return float4(c.rgb, c.a*gMix);
+	vec4 c = texture(ExhaustS, frg.tex0);
+	return vec4(c.rgb, c.a*gMix);
 }
 
-float4 SpotTechPS(SimpleVS frg) : COLOR
+vec4 SpotTechPS(SimpleVS frg)
 {
-	return (tex2D(SimpleS, frg.tex0) * gColor) * gMix;
+	return (texture(SimpleS, frg.tex0) * gColor) * gMix;
 }
+
+#if defined(PS_SimpleTechPS) || defined(PS_PanelTechPS) || defined(PS_PanelTechBPS) || defined(PS_ExhaustTechPS) || defined(PS_SpotTechPS)
+layout(location = 0) in SimpleVS frg;
+layout(location = 0) out vec4 oColor;
+#endif
+#ifdef PS_SimpleTechPS
+void main() { oColor = SimpleTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_PanelTechPS
+void main() { oColor = PanelTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_PanelTechBPS
+void main() { oColor = PanelTechBPS(frg PS_ARGS); }
+#endif
+#ifdef PS_ExhaustTechPS
+void main() { oColor = ExhaustTechPS(frg PS_ARGS); }
+#endif
+#ifdef PS_SpotTechPS
+void main() { oColor = SpotTechPS(frg PS_ARGS); }
+#endif
 
 #include "Particle.fx"
 #include "Mesh.fx"
@@ -645,19 +679,31 @@ float4 SpotTechPS(SimpleVS frg) : COLOR
 #include "BeaconArray.fx"
 
 
-BShadowVS ArrowTechVS(float3 posL : POSITION0)
+BShadowVS ArrowTechVS(vec3 posL)	// posL : POSITION0
 {
 	// Zero output.
-	BShadowVS outVS = (BShadowVS)0;
-	float3 posW = mul(float4(posL, 1.0f), gW).xyz; // Apply world transformation matrix
-	outVS.posH = mul(float4(posW, 1.0f), gVP); // Apply view projection matrix
+	BShadowVS outVS = BShadowVS(vec4(0), vec2(0), 0.0);
+	vec3 posW = (vec4(posL, 1.0f) * gW).xyz; // Apply world transformation matrix
+	outVS.posH = vec4(posW, 1.0f) * gVP; // Apply view projection matrix
 	return outVS;
 }
 
-float4 ArrowTechPS(BShadowVS frg) : COLOR
+#ifdef VS_ArrowTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 0) out BShadowVS oVS;
+void main() { oVS = ArrowTechVS(iPosL VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 ArrowTechPS(BShadowVS frg)
 {
 	return gColor;
 }
+
+#ifdef PS_ArrowTechPS
+layout(location = 0) in BShadowVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = ArrowTechPS(frg PS_ARGS); }
+#endif
 
 
 // This is used for rendering grapple points ----------------------------------

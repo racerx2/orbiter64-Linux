@@ -186,6 +186,8 @@ public:
 	void SetBlend (bool enable);                     // D3DRS_ALPHABLENDENABLE
 	void SetBlendFunc (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op = VK_BLEND_OP_ADD); // D3DRS_SRCBLEND/DESTBLEND/BLENDOP
 	void SetBlendFuncAlpha (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op = VK_BLEND_OP_ADD); // D3DRS_SEPARATEALPHABLENDENABLE
+	void SetSrcBlend (VkBlendFactor src);            // D3DRS_SRCBLEND alone
+	void SetDestBlend (VkBlendFactor dst);           // D3DRS_DESTBLEND alone
 	void SetColorWrite (VkColorComponentFlags mask); // D3DRS_COLORWRITEENABLE
 	void SetStencil (bool enable, VkCompareOp op, UINT ref, UINT mask, VkStencilOp pass, VkStencilOp fail, VkStencilOp zfail); // D3DRS_STENCIL*
 	void SetDepthBias (float constant, float slope);  // D3DRS_DEPTHBIAS/SLOPESCALEDEPTHBIAS

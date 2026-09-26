@@ -5,19 +5,19 @@
 
 
 
-float3 cLuminosity = { 0.4, 0.7, 0.3 };
+const vec3 cLuminosity = vec3( 0.4, 0.7, 0.3 ); // HLSL global with a default value, never set by the client
 
 
-inline float cmax(float3 color)
+float cmax(vec3 color)
 {
 	return max(max(color.r, color.g), color.b);
 }
 
 // Sun light brightness for diffuse and specular lighting
-#include "LightBlur.hlsl"
+// LightBlur.glsl not included: nothing of it is used here and its constants and samplers have bindings of their own
 
 // Incluse Light and Shadow
-#include "Common.hlsl"
+#include "Common.glsl"
 
 // Must be included here
 #include "PBR.fx"
@@ -31,63 +31,69 @@ inline float cmax(float3 color)
 PBRData AdvancedVS(MESH_VERTEX vrt)
 {
 	// Zero output.
-	PBRData outVS = (PBRData)0;
+	PBRData outVS; // (PBRData)0: every member is set below
 
-	float3 posW = mul(float4(vrt.posL, 1.0f), gW).xyz;
-	float3 nrmW = mul(float4(vrt.nrmL, 0.0f), gW).xyz;
+	vec3 posW = (vec4(vrt.posL, 1.0f) * gW).xyz;
+	vec3 nrmW = (vec4(vrt.nrmL, 0.0f) * gW).xyz;
 
 #if SHDMAP > 0
-	outVS.shdH = mul(float4(posW, 1.0f), gLVP);
+	outVS.shdH = vec4(posW, 1.0f) * gLVP;
 #endif
 
 	outVS.nrmW = nrmW;
-	outVS.tanW = float4(mul(float4(vrt.tanL, 0.0f), gW).xyz, vrt.tex0.z);
-	outVS.posH = mul(float4(posW, 1.0f), gVP);
+	outVS.tanW = vec4((vec4(vrt.tanL, 0.0f) * gW).xyz, vrt.tex0.z);
+	outVS.posH = vec4(posW, 1.0f) * gVP;
 	outVS.camW = -posW;
 	outVS.tex0 = vrt.tex0.xy;
 
 	return outVS;
 }
 
+#ifdef VS_AdvancedVS
+layout(location = 0) out PBRData oVS;
+void main() { oVS = AdvancedVS(MESH_VERTEX(iPosL, iNrmL, iTanL, iTex0) VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
 
 
 // ============================================================================
 //
-float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
+#ifdef STAGE_PS
+vec4 AdvancedPS(vec4 sc, PBRData frg)	// sc : VPOS
 {
-	float3 bitW;
-	float3 nrmT;
-	float3 cRefl;
-	float3 cEmis;
-	float4 cSpec;
-	float4 cTex;
+	vec3 bitW;
+	vec3 nrmT;
+	vec3 cRefl;
+	vec3 cEmis;
+	vec4 cSpec;
+	vec4 cTex;
 
-	float3 cDiffLocal;
-	float3 cSpecLocal;
+	vec3 cDiffLocal;
+	vec3 cSpecLocal;
 
-	if (gTextured) cTex = tex2D(WrapS, frg.tex0.xy);
-	else		   cTex = 1;
+	if (gTextured) cTex = texture(WrapS, frg.tex0.xy);
+	else		   cTex = vec4(1);
 
-	if (gOITEnable) if (cTex.a < 0.5f) clip(-1);
+	if (gOITEnable) if (cTex.a < 0.5f) discard; // clip(-1)
 
-	if (gCfg.Norm) nrmT  = tex2D(Nrm0S, frg.tex0.xy).rgb;
+	if (gCfg.Norm) nrmT  = texture(Nrm0S, frg.tex0.xy).rgb;
 
-	if (gCfg.Spec) cSpec = tex2D(SpecS, frg.tex0.xy);
+	if (gCfg.Spec) cSpec = texture(SpecS, frg.tex0.xy);
 	else		   cSpec = gMtrl.specular;
 
-	if (gCfg.Refl) cRefl = tex2D(ReflS, frg.tex0.xy).rgb;
+	if (gCfg.Refl) cRefl = texture(ReflS, frg.tex0.xy).rgb;
 	else		   cRefl = gMtrl.reflect.rgb;
 
 	// Sample emission map. (Note: Emissive materials and textures need to go different stages, material is added to light)
-	if (gCfg.Emis) cEmis = tex2D(EmisS, frg.tex0.xy).rgb;
-	else		   cEmis = 0;
+	if (gCfg.Emis) cEmis = texture(EmisS, frg.tex0.xy).rgb;
+	else		   cEmis = vec3(0);
 
 
-	float3 nrmW = frg.nrmW;
-	float3 tanW = frg.tanW.xyz;
-	float3 cSun = saturate(gSun.Color);
-	float3 CamD = normalize(frg.camW);
-	float3 Base = (gMtrl.ambient.rgb*gSun.Ambient) + (gMtrl.emissive.rgb);
+	vec3 nrmW = frg.nrmW;
+	vec3 tanW = frg.tanW.xyz;
+	vec3 cSun = clamp(gSun.Color, 0.0, 1.0);
+	vec3 CamD = normalize(frg.camW);
+	vec3 Base = (gMtrl.ambient.rgb*gSun.Ambient) + (gMtrl.emissive.rgb);
 
 
 	// Compute World space normal -------------------------------------------
@@ -100,9 +106,9 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	nrmW  = normalize(nrmW);
 
-	float3 TnrmW = -nrmW;
-	float3 RflW  = reflect(-CamD, nrmW);
-	float  dLN   = saturate(-dot(gSun.Dir, nrmW));
+	vec3 TnrmW = -nrmW;
+	vec3 RflW  = reflect(-CamD, nrmW);
+	float  dLN   = clamp(-dot(gSun.Dir, nrmW), 0.0, 1.0);
 
 	if (gCfg.Spec) cSpec.a *= 255.0f;
 
@@ -110,12 +116,12 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 	float fRghn = log2(cSpec.a) * 0.1f;
 
 	// Sunlight calculation
-	float fSun = pow(saturate(-dot(RflW, gSun.Dir)), cSpec.a) * saturate(cSpec.a);
+	float fSun = pow(clamp(-dot(RflW, gSun.Dir), 0.0, 1.0), cSpec.a) * clamp(cSpec.a, 0.0, 1.0);
 
 	if (dLN == 0) fSun = 0;
 
 	// Special alpha only texture in use
-	if (gNoColor) cTex.rgb = 1;
+	if (gNoColor) cTex.rgb = vec3(1);
 
 
 	// ----------------------------------------------------------------------
@@ -136,10 +142,10 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 
 
 	// Lit the diffuse texture
-	cTex.rgb *= saturate(Base + gMtrl.diffuse.rgb * Light_fx(cDiffLocal + cSun * dLN));
+	cTex.rgb *= clamp(Base + gMtrl.diffuse.rgb * Light_fx(cDiffLocal + cSun * dLN), 0.0, 1.0);
 
 	// Lit the specular surface
-	cSpec.rgb *= saturate(cSpecLocal + fSun * cSun);
+	cSpec.rgb *= clamp(cSpecLocal + fSun * cSun, 0.0, 1.0);
 
 
 	// Compute Transluciency effect --------------------------------------------------------------
@@ -147,17 +153,17 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	if (gCfg.Transm || gCfg.Transl) {
 
-		float4 cTransm = float4(cTex.rgb, 1.0f);
+		vec4 cTransm = vec4(cTex.rgb, 1.0f);
 
 		if (gCfg.Transm) {
-			cTransm = tex2D(TransmS, frg.tex0.xy);
+			cTransm = texture(TransmS, frg.tex0.xy);
 			cTransm.a *= 1024.0f;
 		}
 
-		float3 cTransl = cTex.rgb;
+		vec3 cTransl = cTex.rgb;
 
 		if (gCfg.Transl) {
-			cTransl = tex2D(TranslS, frg.tex0.xy).rgb;
+			cTransl = texture(TranslS, frg.tex0.xy).rgb;
 		}
 
 		// Texture Tuning -------------------------------------------------------
@@ -167,11 +173,11 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 			cTransl *= gTune.Transl.rgb;
 		}
 
-		float sunLightFromBehind = saturate(dot(gSun.Dir, nrmW));
-		float sunSpotFromBehind = pow(saturate(dot(gSun.Dir, CamD)), cTransm.a);
-		sunSpotFromBehind *= saturate(sunLightFromBehind * 3.0f);// Causes the transmittance (sun spot) effect to fall off at very shallow angles
+		float sunLightFromBehind = clamp(dot(gSun.Dir, nrmW), 0.0, 1.0);
+		float sunSpotFromBehind = pow(clamp(dot(gSun.Dir, CamD), 0.0, 1.0), cTransm.a);
+		sunSpotFromBehind *= clamp(sunLightFromBehind * 3.0f, 0.0, 1.0);// Causes the transmittance (sun spot) effect to fall off at very shallow angles
 
-		cTransl.rgb *= saturate(cSun * sunLightFromBehind);
+		cTransl.rgb *= clamp(cSun * sunLightFromBehind, 0.0, 1.0);
 
 		cTex.rgb += (1 - cTex.rgb) * cTransl.rgb;
 		cTex.rgb += cTransm.rgb * (sunSpotFromBehind * cSun);
@@ -199,22 +205,22 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 			fFrsl = gMtrl.fresnel.y;
 
 			// Get mirror reflection for fresnel
-			float3 cEnvFres = texCUBElod(EnvMapAS, float4(RflW, 0)).rgb;
+			vec3 cEnvFres = textureLod(EnvMapAS, RflW, 0).rgb;
 
-			float  dCN = saturate(dot(CamD, nrmW));
+			float  dCN = clamp(dot(CamD, nrmW), 0.0, 1.0);
 
 			// Compute a fresnel term with compensations included
-			fFrsl *= pow(1.0f - dCN, gMtrl.fresnel.x) * (1.0 - fRefl) * any(cRefl);
+			fFrsl *= pow(1.0f - dCN, gMtrl.fresnel.x) * (1.0 - fRefl) * float(any(notEqual(cRefl, vec3(0))));
 
 			// Sunlight reflection for fresnel material
-			cSpec.rgb = saturate(cSpec.rgb + fSun * fFrsl * cSun);
+			cSpec.rgb = clamp(cSpec.rgb + fSun * fFrsl * cSun, 0.0, 1.0);
 
 			// Compute total reflected light with fresnel reflection
 			// and accummulate in cSpec
-			cSpec.rgb = saturate(cSpec.rgb + fFrsl * cEnvFres);
+			cSpec.rgb = clamp(cSpec.rgb + fFrsl * cEnvFres, 0.0, 1.0);
 
 			// Compute intensity
-			fInt = saturate(dot(cSpec.rgb, cLuminosity));
+			fInt = clamp(dot(cSpec.rgb, cLuminosity), 0.0, 1.0);
 
 			// Attennuate diffuse surface
 			cTex.rgb *= (1.0f - fInt);
@@ -223,7 +229,7 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 		// Compute LOD level for blur effect
 		float fLOD = (1.0f - fRghn) * 10.0f;
 
-		float3 cEnv = texCUBElod(EnvMapAS, float4(RflW, fLOD)).rgb;
+		vec3 cEnv = textureLod(EnvMapAS, RflW, fLOD).rgb;
 
 		// Compute total reflected light, accummulate in cSpec
 		cSpec.rgb += cRefl.rgb * cEnv;
@@ -236,7 +242,7 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	// Re-compute output alpha for alpha blending stage
 	// NOTE: Without fresnel fInt remains zero
-	cTex.a = saturate(cTex.a + fInt);
+	cTex.a = clamp(cTex.a + fInt, 0.0, 1.0);
 
 	// Add reflections to output
 	cTex.rgb += cSpec.rgb;
@@ -254,6 +260,11 @@ float4 AdvancedPS(float4 sc : VPOS, PBRData frg) : COLOR
 
 	return cTex;
 }
+#endif
+
+#ifdef PS_AdvancedPS
+void main() { oColor = AdvancedPS(vec4(gl_FragCoord.xy - 0.5, 0, 0), frg PS_ARGS); } // VPOS
+#endif
 
 
 

@@ -1,4 +1,5 @@
 
+
 #define KERNEL_RADIUS 2.0f
 #define SHADOW_THRESHOLD 0.1f       // 0.3 to 7.0
 
@@ -6,22 +7,22 @@
 
 // ============================================================================
 //
-float4 Paraboloidal_LVLH(sampler s, float3 i)
+vec4 Paraboloidal_LVLH(sampler2D s, vec3 i)
 {
 	float z = dot(gCameraPos, i);
-	float2 p = float2(dot(gEast, i), dot(gNorth, i)) / (1.0f + abs(z));
-	p *= float2(0.2273f, 0.4545f);
-	float4 A = tex2D(s, p + float2(0.25f, 0.5f));
-	float4 B = tex2D(s, p + float2(0.75f, 0.5f));
-	return lerp(A, B, smoothstep(-0.03, 0.03, z));
+	vec2 p = vec2(dot(gEast, i), dot(gNorth, i)) / (1.0f + abs(z));
+	p *= vec2(0.2273f, 0.4545f);
+	vec4 A = texture(s, p + vec2(0.25f, 0.5f));
+	vec4 B = texture(s, p + vec2(0.75f, 0.5f));
+	return mix(A, B, smoothstep(-0.03, 0.03, z));
 }
 
-float3 Sq(float3 x)
+vec3 Sq(vec3 x)
 {
 	return x * x;
 }
 
-float4 Sq(float4 x)
+vec4 Sq(vec4 x)
 {
 	return x * x;
 }
@@ -32,217 +33,219 @@ float4 Sq(float4 x)
 // ==========================================================================================================
 
 
-float3 Light_fx(float3 x)
+vec3 Light_fx(vec3 x)
 {
-	return saturate(x);  //1.5 - exp2(-x.rgb)*1.5f;
+	return clamp(x, 0.0, 1.0);  //1.5 - exp2(-x.rgb)*1.5f;
 }
 
 void LocalLights(
-	out float3 diff_out,
-	out float3 spec_out,
-	in float3 nrmW,
-	in float3 posW,
+	out vec3 diff_out,
+	out vec3 spec_out,
+	in vec3 nrmW,
+	in vec3 posW,
 	in float sp,
-	uniform int x,
-	uniform bool bSpec)
+	int x,
+	bool bSpec)
 {
 
-	float3 posWN = normalize(-posW);
-	float3 p[4];
-	float4 spe;
+	vec3 posWN = normalize(-posW);
+	vec3 p[4];
+	vec4 spe;
 	int i;
 
 	// Relative positions
-	[unroll] for (i = 0; i < 4; i++) p[i] = posW - gLights[i + x].position;
+	for (i = 0; i < 4; i++) p[i] = posW - gLights[i + x].position;
 
 	// Square distances
-	float4 sd;
-	[unroll] for (i = 0; i < 4; i++) sd[i] = dot(p[i], p[i]);
+	vec4 sd;
+	for (i = 0; i < 4; i++) sd[i] = dot(p[i], p[i]);
 
 	// Normalize
-	sd = rsqrt(sd);
-	[unroll] for (i = 0; i < 4; i++) p[i] *= sd[i];
+	sd = inversesqrt(sd);
+	for (i = 0; i < 4; i++) p[i] *= sd[i];
 
 	// Distances
-	float4 dst = rcp(sd);
+	vec4 dst = 1.0 / sd;
 
 	// Attennuation factors
-	float4 att;
-	[unroll] for (i = 0; i < 4; i++) att[i] = dot(gLights[i + x].attenuation.xyz, float3(1.0, dst[i], dst[i] * dst[i]));
+	vec4 att;
+	for (i = 0; i < 4; i++) att[i] = dot(gLights[i + x].attenuation.xyz, vec3(1.0, dst[i], dst[i] * dst[i]));
 
-	att = rcp(att);
+	att = 1.0 / att;
 
 	// Spotlight factors
-	float4 spt;
-	[unroll] for (i = 0; i < 4; i++) {
+	vec4 spt;
+	for (i = 0; i < 4; i++) {
 		spt[i] = (dot(p[i], gLights[i + x].direction) - gLights[i + x].param[Phi]) * gLights[i + x].param[Theta];
 		if (gLights[i + x].type == 0) spt[i] = 1.0f;
 	}
 
-	spt = saturate(spt);
+	spt = clamp(spt, 0.0, 1.0);
 
 	// Diffuse light factors
-	float4 dif;
-	[unroll] for (i = 0; i < 4; i++) dif[i] = dot(-p[i], nrmW);
+	vec4 dif;
+	for (i = 0; i < 4; i++) dif[i] = dot(-p[i], nrmW);
 
-	dif = saturate(dif);
+	dif = clamp(dif, 0.0, 1.0);
 	dif *= (att * spt);
 
 	// Specular lights factors
 	if (bSpec) {
 
-		[unroll] for (i = 0; i < 4; i++) spe[i] = dot(reflect(p[i], nrmW), posWN) * (dif[i] > 0);
+		for (i = 0; i < 4; i++) spe[i] = dot(reflect(p[i], nrmW), posWN) * float(dif[i] > 0);
 
-		spe = pow(saturate(spe), sp);
+		spe = pow(clamp(spe, 0.0, 1.0), vec4(sp));
 		spe *= (att * spt);
 	}
 
-	diff_out = 0;
-	spec_out = 0;
+	diff_out = vec3(0);
+	spec_out = vec3(0);
 
-	[unroll] for (i = 0; i < 4; i++) diff_out += gLights[i + x].diffuse.rgb * dif[i];
+	for (i = 0; i < 4; i++) diff_out += gLights[i + x].diffuse.rgb * dif[i];
 
 	if (bSpec) {
-		[unroll] for (i = 0; i < 4; i++) spec_out += gLights[i + x].diffuse.rgb * spe[i];
+		for (i = 0; i < 4; i++) spec_out += gLights[i + x].diffuse.rgb * spe[i];
 	}
 }
 
 
 void LocalLightsBeckman(
-	out float3 diff_out,
-	out float3 spec_out,
-	in float3 nrmW,
-	in float3 posW,
+	out vec3 diff_out,
+	out vec3 spec_out,
+	in vec3 nrmW,
+	in vec3 posW,
 	in float fRgh,
-	uniform int x,
-	uniform bool bSpec)
+	int x,
+	bool bSpec)
 {
 
-	float3 camW = normalize(-posW);
-	float3 p[4];
-	float3 H[4];
-	float4 spe;
-	float4 dHN;
+	vec3 camW = normalize(-posW);
+	vec3 p[4];
+	vec3 H[4];
+	vec4 spe;
+	vec4 dHN;
 	int i;
 
 	// Relative positions
-	[unroll] for (i = 0; i < 4; i++) p[i] = posW - gLights[i + x].position;
+	for (i = 0; i < 4; i++) p[i] = posW - gLights[i + x].position;
 
 	// Square distances
-	float4 sd;
-	[unroll] for (i = 0; i < 4; i++) sd[i] = dot(p[i], p[i]);
+	vec4 sd;
+	for (i = 0; i < 4; i++) sd[i] = dot(p[i], p[i]);
 
 	// Normalize
-	sd = rsqrt(sd);
-	[unroll] for (i = 0; i < 4; i++) p[i] *= sd[i];
+	sd = inversesqrt(sd);
+	for (i = 0; i < 4; i++) p[i] *= sd[i];
 
 	// Distances
-	float4 dst = rcp(sd);
+	vec4 dst = 1.0 / sd;
 
 	if (bSpec) {
 
 		// Halfway Vectors
-		float4 hd;
-		[unroll] for (i = 0; i < 4; i++) H[i] = (camW - p[i]);
-		[unroll] for (i = 0; i < 4; i++) hd[i] = dot(H[i], H[i]);
+		vec4 hd;
+		for (i = 0; i < 4; i++) H[i] = (camW - p[i]);
+		for (i = 0; i < 4; i++) hd[i] = dot(H[i], H[i]);
 
-		hd = rsqrt(hd);
+		hd = inversesqrt(hd);
 
-		[unroll] for (i = 0; i < 4; i++) H[i] *= hd[i];
-		[unroll] for (i = 0; i < 4; i++) dHN[i] = dot(H[i], nrmW);
+		for (i = 0; i < 4; i++) H[i] *= hd[i];
+		for (i = 0; i < 4; i++) dHN[i] = dot(H[i], nrmW);
 	}
 
 
 
 	// Attennuation factors
-	float4 att;
-	[unroll] for (i = 0; i < 4; i++) att[i] = dot(gLights[i + x].attenuation.xyz, float3(1.0, dst[i], dst[i] * dst[i]));
+	vec4 att;
+	for (i = 0; i < 4; i++) att[i] = dot(gLights[i + x].attenuation.xyz, vec3(1.0, dst[i], dst[i] * dst[i]));
 
-	att = rcp(att);
+	att = 1.0 / att;
 
 	// Spotlight factors
-	float4 spt;
-	[unroll] for (i = 0; i < 4; i++) {
+	vec4 spt;
+	for (i = 0; i < 4; i++) {
 		spt[i] = (dot(p[i], gLights[i + x].direction) - gLights[i + x].param[Phi]) * gLights[i + x].param[Theta];
 		if (gLights[i + x].type == 0) spt[i] = 1.0f;
 	}
 
-	spt = saturate(spt);
+	spt = clamp(spt, 0.0, 1.0);
 
 	// Diffuse light factors
-	float4 dif;
-	[unroll] for (i = 0; i < 4; i++) dif[i] = dot(-p[i], nrmW);
+	vec4 dif;
+	for (i = 0; i < 4; i++) dif[i] = dot(-p[i], nrmW);
 
-	dif = saturate(dif);
+	dif = clamp(dif, 0.0, 1.0);
 
 	// Specular lights factors
 
 	if (bSpec) {
 
 		float r2 = fRgh * fRgh;
-		float4 d2 = dHN * dHN;
-		float4 w = rcp(3.14 * r2 * d2 * d2);
-		float4 q = rcp(r2 * d2);
+		vec4 d2 = dHN * dHN;
+		vec4 w = 1.0 / (3.14 * r2 * d2 * d2);
+		vec4 q = 1.0 / (r2 * d2);
 
 		spe = (att * spt * dif) * w * exp((d2 - 1.0f) * q);
 	}
 
 	dif *= (att * spt);
 
-	diff_out = 0;
-	spec_out = 0;
+	diff_out = vec3(0);
+	spec_out = vec3(0);
 
-	[unroll] for (i = 0; i < 4; i++) diff_out += Sq(gLights[i + x].diffuse.rgb * dif[i]);
+	for (i = 0; i < 4; i++) diff_out += Sq(gLights[i + x].diffuse.rgb * dif[i]);
 
 	if (bSpec) {
-		[unroll] for (i = 0; i < 4; i++) spec_out += gLights[i + x].diffuse.rgb * spe[i];
+		for (i = 0; i < 4; i++) spec_out += gLights[i + x].diffuse.rgb * spe[i];
 	}
 }
 
 
 
-void LocalLightsEx(out float3 cDiffLocal, out float3 cSpecLocal, in float3 nrmW, in float3 posW, in float sp, uniform bool ubBeckman)
+void LocalLightsEx(out vec3 cDiffLocal, out vec3 cSpecLocal, in vec3 nrmW, in vec3 posW, in float sp, bool ubBeckman)
 {
+	cDiffLocal = vec3(0); // uninitialized in HLSL, where fxc started it at 0 (the += below)
+	cSpecLocal = vec3(0);
 
 #if LMODE !=0
     if (!gLightsEnabled) {
-        cDiffLocal = 0;
-        cSpecLocal = 0;
+        cDiffLocal = vec3(0);
+        cSpecLocal = vec3(0);
     }
 #endif
 
 #if LMODE == 0
-    cDiffLocal = 0;
-    cSpecLocal = 0;
+    cDiffLocal = vec3(0);
+    cSpecLocal = vec3(0);
 #elif (LMODE & 1) == 1 // partial
-    float3 dd, ss;
+    vec3 dd, ss;
 	int i;
     if (ubBeckman) {
-        [unroll] for (i = 0; i < MAX_LIGHTS; i += 4) {
+        for (i = 0; i < MAX_LIGHTS; i += 4) {
             LocalLightsBeckman(dd, ss, nrmW, posW, sp, i, false);
             cDiffLocal += dd;
             cSpecLocal += ss;
         }
     }
     else {
-        [unroll] for (i = 0; i < MAX_LIGHTS; i += 4) {
+        for (i = 0; i < MAX_LIGHTS; i += 4) {
             LocalLights(dd, ss, nrmW, posW, sp, i, false);
             cDiffLocal += dd;
             cSpecLocal += ss;
         }
     }
 #elif (LMODE & 1) == 0 // full
-    float3 dd, ss;
+    vec3 dd, ss;
     int i;
     if (ubBeckman) {
-        [unroll] for (i = 0; i < MAX_LIGHTS; i += 4) {
+        for (i = 0; i < MAX_LIGHTS; i += 4) {
             LocalLightsBeckman(dd, ss, nrmW, posW, sp, i, true);
             cDiffLocal += dd;
             cSpecLocal += ss;
         }
     }
     else {
-        [unroll] for (i = 0; i < MAX_LIGHTS; i += 4) {
+        for (i = 0; i < MAX_LIGHTS; i += 4) {
             LocalLights(dd, ss, nrmW, posW, sp, i, true);
             cDiffLocal += dd;
             cSpecLocal += ss;
@@ -292,25 +295,25 @@ float ProjectShadows(float2 sp)
 
 // ---------------------------------------------------------------------------------------------------
 //
-float SampleShadows(float2 sp, float pd)
+float SampleShadows(vec2 sp, float pd)
 {
 
-	float2 dx = float2(gSHD[1], 0) * 1.5f;
-	float2 dy = float2(0, gSHD[1]) * 1.5f;
+	vec2 dx = vec2(gSHD[1], 0) * 1.5f;
+	vec2 dy = vec2(0, gSHD[1]) * 1.5f;
 	float  va = 0;
 
 	sp -= dy;
-	if ((tex2D(ShadowS, sp - dx).r) > pd) va++;
-	if ((tex2D(ShadowS, sp).r) > pd) va++;
-	if ((tex2D(ShadowS, sp + dx).r) > pd) va++;
+	if ((texture(ShadowS, sp - dx).r) > pd) va++;
+	if ((texture(ShadowS, sp).r) > pd) va++;
+	if ((texture(ShadowS, sp + dx).r) > pd) va++;
 	sp += dy;
-	if ((tex2D(ShadowS, sp - dx).r) > pd) va++;
-	if ((tex2D(ShadowS, sp).r) > pd) va++;
-	if ((tex2D(ShadowS, sp + dx).r) > pd) va++;
+	if ((texture(ShadowS, sp - dx).r) > pd) va++;
+	if ((texture(ShadowS, sp).r) > pd) va++;
+	if ((texture(ShadowS, sp + dx).r) > pd) va++;
 	sp += dy;
-	if ((tex2D(ShadowS, sp - dx).r) > pd) va++;
-	if ((tex2D(ShadowS, sp).r) > pd) va++;
-	if ((tex2D(ShadowS, sp + dx).r) > pd) va++;
+	if ((texture(ShadowS, sp - dx).r) > pd) va++;
+	if ((texture(ShadowS, sp).r) > pd) va++;
+	if ((texture(ShadowS, sp + dx).r) > pd) va++;
 
 	return va * 0.1111111f;
 }
@@ -318,40 +321,40 @@ float SampleShadows(float2 sp, float pd)
 
 // ---------------------------------------------------------------------------------------------------
 //
-float SampleShadows2(float2 sp, float pd)
+float SampleShadows2(vec2 sp, float pd)
 {
 
 	float val = 0;
 	float m = KERNEL_RADIUS * gSHD[1];
 
-	[unroll] for (int i = 0; i < KERNEL_SIZE; i++) {
-		if ((tex2D(ShadowS, sp + kernel[i].xy * m).r) > pd) val += kernel[i].z;
+	for (int i = 0; i < KERNEL_SIZE; i++) {
+		if ((texture(ShadowS, sp + kernel[i].xy * m).r) > pd) val += kernel[i].z;
 	}
 
-	return saturate(val * KERNEL_WEIGHT);
+	return clamp(val * KERNEL_WEIGHT, 0.0, 1.0);
 }
 
 
 // ---------------------------------------------------------------------------------------------------
 //
-float SampleShadows3(float2 sp, float pd, float4 frame)
+float SampleShadows3(vec2 sp, float pd, vec4 frame)
 {
 
 	float val = 0;
 	frame *= KERNEL_RADIUS * gSHD[1];
 
-	[unroll] for (int i = 0; i < KERNEL_SIZE; i++) {
-		float2 ofs = frame.xy * kernel[i].x + frame.zw * kernel[i].y;
-		if (tex2D(ShadowS, sp + ofs).r > pd) val += kernel[i].z;
+	for (int i = 0; i < KERNEL_SIZE; i++) {
+		vec2 ofs = frame.xy * kernel[i].x + frame.zw * kernel[i].y;
+		if (texture(ShadowS, sp + ofs).r > pd) val += kernel[i].z;
 	}
 
-	return saturate(val * KERNEL_WEIGHT);
+	return clamp(val * KERNEL_WEIGHT, 0.0, 1.0);
 }
 
 
 // ---------------------------------------------------------------------------------------------------
 //
-float SampleShadowsEx(float2 sp, float pd, float4 sc)
+float SampleShadowsEx(vec2 sp, float pd, vec4 sc)
 {
 
 #if SHDMAP == 1
@@ -361,23 +364,23 @@ float SampleShadowsEx(float2 sp, float pd, float4 sc)
 #else
 	float si, co;
 	sc += (gSHD[2] * 2.0f);
-	sincos(sc.y + sc.x * 149.0f, si, co);
-	return SampleShadows3(sp, pd, float4(si, co, co, -si));
+	si = sin(sc.y + sc.x * 149.0f); co = cos(sc.y + sc.x * 149.0f); // sincos
+	return SampleShadows3(sp, pd, vec4(si, co, co, -si));
 #endif
 }
 
 
 // ---------------------------------------------------------------------------------------------------
 //
-float ComputeShadow(float4 shdH, float dLN, float4 sc)
+float ComputeShadow(vec4 shdH, float dLN, vec4 sc)
 {
 	if (!gShadowsEnabled) return 1.0f;
 
 	shdH.xyz /= shdH.w;
 	shdH.z = 1 - shdH.z;
-	float2 sp = shdH.xy * float2(0.5f, -0.5f) + float2(0.5f, 0.5f);
+	vec2 sp = shdH.xy * vec2(0.5f, -0.5f) + vec2(0.5f, 0.5f);
 
-	sp += gSHD[1] * 0.5f;
+	// sp += gSHD[1] * 0.5f left out: D3D9's half-texel offset, Vulkan pixel centres are at .5
 
 	if (sp.x < 0 || sp.y < 0) return 1.0f;	// If a sample is outside border -> fully lit
 	if (sp.x > 1 || sp.y > 1) return 1.0f;
@@ -385,7 +388,7 @@ float ComputeShadow(float4 shdH, float dLN, float4 sc)
 	float fShadow;
 
 	float kr = gSHD[0] * KERNEL_RADIUS;
-	float dx = rsqrt(1.0 - dLN * dLN);
+	float dx = inversesqrt(1.0 - dLN * dLN);
 	float ofs = kr / (dLN * dx);
 	float omx = min(0.05 + ofs, 0.5);
 

@@ -415,6 +415,11 @@ VkSurf::VkSurf (VkTex *_tex, UINT _level, UINT _layer)
 	layer = _layer;
 	w = std::max (1u, tex->w >> level);
 	h = std::max (1u, tex->h >> level);
+	MakeView ();
+}
+
+void VkSurf::MakeView ()
+{
 	view = VK_NULL_HANDLE;
 	if (!tex->img || !(tex->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))) return;
 	// always an own view: attachments need the identity swizzle, and SetSwizzle may replace the texture's view
@@ -433,20 +438,20 @@ VkSurf::VkSurf (VkDev *_dev, UINT _w, UINT _h, VkFormat fmt, VkImageUsageFlags u
 	level = layer = 0;
 	w = _w, h = _h;
 	tex = new VkTex (dev, w, h, 1, fmt, usage, 1, false, samples);
-	view = tex->view;
+	MakeView ();
 }
 
 VkSurf::~VkSurf ()
 {
 	VkDev *td = owner ? dev : (tex ? tex->Device() : NULL);
 	if (td) td->ForgetTarget (this);
-	if (owner) { delete tex; return; }
 	if (view && view != tex->view) {
 		VkDev *d = tex->Device();
 		VkImageView v = view;
 		VkDevice vd = d->dev;
 		d->Defer ([vd, v]() { vkDestroyImageView (vd, v, NULL); });
 	}
+	if (owner) delete tex;
 }
 
 // VkSamplerDesc

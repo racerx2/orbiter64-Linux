@@ -123,6 +123,7 @@ public:
 	UINT w, h;
 	VkImageView view;      // single level and layer, for rendering
 private:
+	void MakeView ();
 	VkDev *dev;
 	bool owner;
 };

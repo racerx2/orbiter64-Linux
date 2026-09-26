@@ -54,13 +54,14 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 | Date | From | To | Upstream commits | Port changes |
 |---|---|---|---|---|
 | 2026-09-26 | — | `4137930c` | base (main HEAD, PR #679) | — |
+| 2026-09-26 | `4137930c` | `4137930c` | none new (Phase 1 close) | — |
 
 ## Phases
 
 | # | Phase | Status |
 |---|---|---|
 | 0 | Setup: CMake skeleton, Extern, test harness, port-plan | done 2026-09-26 |
-| 1 | SDK + core utils (Orbitersdk, Vecmat, Astro, Element, Log, Util, Config, file resolver) | in progress |
+| 1 | SDK + core utils (Orbitersdk, Vecmat, Astro, Element, Log, Util, Config, file resolver) | done 2026-09-26 |
 | 2 | Celbody modules + Body/Planet/Star/Psys/BodyIntegrator/PinesGrav, headless run | — |
 | 3 | Vessel core + `.so` module loading, ShuttlePB first | — |
 | 4 | Launchpad (Launchpad, Tab*, OptionsPages, Orbiter.rc dialogs) | — |
@@ -81,6 +82,12 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 | `readme.txt` | Phase 8 |
 | `Extern/Htmlhelp`, `compileOrbiter.py`, `cmake/FindDXSDK.cmake`, `cmake/*.bat.in` | left in the tree, unused: Windows only |
 | `Src/Orbiter/Vecmat.h/.cpp` | ported (Phase 1), unit-tested |
+| `Src/Orbiter/Astro`, `TimeData` | ported (Phase 1), unit-tested |
+| `Src/Orbiter/PathResolve.cpp` | not upstream: `oapiResolvePath`, case-insensitive and `\`-tolerant file lookup, unit-tested |
+| `Src/Orbiter/Log`, `Memstat` | ported (Phase 1) |
+| `Src/Orbiter/Di7frame`, `Input` | ported (Phase 1): DirectInput 7 → Qt key events + evdev joysticks, unit-tested |
+| `Src/Orbiter/Keymap`, `Element`, `Util`, `Select`, `Orbiter.h`, `Mesh.h` | ported (Phase 1), syntax-checked with g++ 15 |
+| `Src/Orbiter/Config`, `State`, `cmdline` | converted (Phase 1); full compile once VectorMap/Vessel/Launchpad headers are in (Phases 2–4) |
 | `Orbitersdk/include/*.h` (OrbiterAPI, GraphicsAPI, DrawAPI, ModuleAPI, CelBodyAPI, VesselAPI, MFDAPI, CamAPI, CelSphereAPI, Orbitersdk) | ported (Phase 1), all compile with g++ 15 |
 | `Orbitersdk/include/OrbiterPlatform.h` | not upstream: the windows.h types the SDK uses |
 | `Orbitersdk/include/DlgCtrl.h`, `afxres.h` | Phase 4 (dialog controls, .rc support) |
@@ -132,6 +139,30 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
   `dladdr` + `dlopen(RTLD_NOLOAD)` and skips the exe (which links the same static lib). Verify with the first
   real module in Phase 2.
 - `libOrbitersdk.a` is built `-fPIC` (it is linked into .so modules).
+- `PSTR`/`PCSTR`, `DWORDLONG`, `LONGLONG`, `INT`, `FLOAT`, `VOID` added to OrbiterPlatform.h as the core files need them.
+
+### Core (Phase 1)
+- Handles follow the SDK map; `HRESULT` in Orbiter's own methods → `int` (0 = success).
+- Direct3D 7 data types in core files: D3DVALUE → float, D3DVECTOR → `oapi::FVECTOR3`, D3DMATRIX → `oapi::FMATRIX4`,
+  D3DMATERIAL7 → MATERIAL, D3DCOLORVALUE → COLOUR4, D3DVERTEX → NTVERTEX, D3DCOLOR → DWORD. The inline D3D7 render
+  path (`Mesh::Render/RenderGroup/MakeGroupVertexBuffer`, LPDIRECT3DDEVICE7/LPDIRECTDRAWSURFACE7) is dead upstream
+  (the graphics client renders) → left out with one-line comments.
+- Every file open goes through `oapiResolvePath`; `_stricmp`/`_strnicmp`/`stricmp` → `strcasecmp`/`strncasecmp`.
+- CRLF data files: Linux streams keep `'\r'`, so `trim_string` and `Config::GetString` drop it.
+- `va_list` is `va_copy`'d before a second use (x86-64 SysV consumes it).
+- Log: QueryPerformanceCounter → `steady_clock`, GetLastError → `errno`/`strerror`, module list via
+  `dl_iterate_phdr`, DebugBreak → `raise(SIGTRAP)`; `LogOut_DDErr`/`LOGOUT_DDERR` left out (DirectDraw).
+- Memstat: working set → resident pages from `/proc/self/statm`.
+- Input: keyboard fed from Qt key events (`nativeScanCode()-8` = evdev code → DIK code; 1–88 identical, extended
+  keys by table) with DI-style state array and 10-entry buffer; joysticks read from `/dev/input/event*` with DI
+  range/deadzone/saturation, axes X,Y,Z,RX,RY,RZ, slider0 = throttle, slider1 = rudder, hats → POV, buttons in
+  code order. DIJOYSTATE2 → `JoyState`, DIDEVICEOBJECTDATA → `KeyData`. DI mouse device left out (Qt mouse events).
+- Config: display size = primary `QScreen` size × devicePixelRatio; scenario paths absolute when they start with `/`.
+- Util: `MakePath` creates each missing level with `mkdir` (SHCreateDirectoryEx); `Get/SetClientPos` on QWidget.
+- cmdline: console attach left out (stdout is the launching terminal); help names `Orbiter` and `Modules/Plugin/<pg>.so`.
+- Modules are `<name>.so` without a `lib` prefix, matching upstream's `<name>.dll` lookups.
+- `class ScriptInterface;` forward declaration in Orbiter.h (friend rule, as in the SDK).
+- Sources are UTF-8 with a few cp1252 bytes (e.g. Element.cpp); edits keep the bytes as they are.
 
 ## Left out (can't apply)
 
@@ -161,6 +192,13 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
   `asinh`/`acosh` inlines compile as is against glibc. `Tests/Vecmat.Test.cpp` (vectors, matrix inverse,
   quaternion round trip, 3x3/4x4 QR solves, plane helpers) passes.
 
+### 2026-09-26 — Phase 1 done
+- `b8fe15db` Astro, TimeData, `oapiResolvePath` (+ Astro.Test, PathResolve.Test).
+- `28ca6d4d` + `5a34bf64` Log, Memstat, DirectInput layer on evdev (+ Input.Test), Config (28ca6d4d's message
+  named Config before it was applied; 5a34bf64 carries it).
+- `759f531d` Keymap, Mesh.h, Orbiter.h, Util, Element, State, cmdline.
+- Verified: build clean, `ctest` 5/5 passed; upstream checked, no new commits.
+
 ## Bugs
 
 - Upstream root CMake points `ldoc` at `packages/LDoc/ldoc.lua` but CopyLDoc writes `packages/ldoc`;
@@ -169,3 +207,4 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 - `Port.Harness` couldn't find `libCatch2Main.so` — fixed by building Catch2 static.
 - Upstream: `FMATRIX4()` writes `m11 = m12 = m13, m14 = ... = 0`, so m11/m12 copy an uninitialised m13 and m13
   is never set. Kept as upstream; g++ warns.
+- Upstream State.cpp passes `&color` (`char (*)[256]`) to `sscanf "%255s"`; same address, works. Kept; g++ warns.

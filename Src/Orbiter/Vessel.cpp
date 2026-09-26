@@ -22,7 +22,7 @@
 
 #include "Orbiter.h"
 #include "Vessel.h"
-#include "Supervessel.h"
+#include "SuperVessel.h"
 #include "Config.h"
 #include "Camera.h"
 #include "Pane.h"
@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <dlfcn.h>
 
 using namespace std;
 
@@ -239,15 +240,15 @@ bool Vessel::OpenConfigFile (ifstream &cfgfile) const
 	strcpy (cbuf, "Vessels\\");
 	strcat (cbuf, classname ? classname : name.c_str());
 	// first search in $CONFIGDIR\Vessels
-	cfgfile.open (g_pOrbiter->ConfigPath (cbuf));
+	cfgfile.open (oapiResolvePath (g_pOrbiter->ConfigPath (cbuf)));
 	if (cfgfile.good()) return true;
 	else cfgfile.clear();
 	// next search in $CONFIGDIR
-	cfgfile.open (g_pOrbiter->ConfigPath (cbuf+8));
+	cfgfile.open (oapiResolvePath (g_pOrbiter->ConfigPath (cbuf+8)));
 	if (cfgfile.good()) return true;
 	else {
 		cfgfile.clear();
-		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name);
+		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name.c_str()); // name.c_str(): a std::string can't pass through ...
 		//LogOut (">>> ERROR: No vessel class configuration file found for:");
 		//LOGOUT_ERR(classname ? classname : name);
 		return false;
@@ -436,7 +437,7 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 
 	// recursively read base class specs
 	if (GetItemString (ifs, "BaseClass", cbuf)) {
-		ifstream basef (g_pOrbiter->ConfigPath (cbuf));
+		ifstream basef (oapiResolvePath (g_pOrbiter->ConfigPath (cbuf)));
 		if (basef) ReadGenericCaps (basef);
 	}
 
@@ -686,7 +687,7 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 		for (;;) {
 			Vector pos, dir, rot;
 			int n, ids_step;
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_DOCKLIST", 12)) break;
+			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_DOCKLIST", 12)) break;
 			n = sscanf (cbuf, "%lf%lf%lf%lf%lf%lf%lf%lf%lf%d",
 				&pos.x, &pos.y, &pos.z,
 				&dir.x, &dir.y, &dir.z,
@@ -704,7 +705,7 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 		int n;
 		bool toparent;
 		for (;;) {
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_ATTACHMENT", 14)) break;
+			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_ATTACHMENT", 14)) break;
 			n = sscanf (trim_string (cbuf), "%c%lf%lf%lf%lf%lf%lf%lf%lf%lf%s",
 				&type,
 				&pos.x, &pos.y, &pos.z,
@@ -5952,9 +5953,9 @@ bool Vessel::LoadModule (ifstream &classf)
 	if (found = GetItemString (classf, "Module", cbuf)) {
 		found = RegisterModule (cbuf);
 		if (!found) {
-			DWORD code = GetLastError();
+			const char *err = dlerror(); // GetLastError counterpart
 			char errbuf[256];
-			sprintf(errbuf, "Could not load vessel module: %s (code %d)", cbuf, code);
+			snprintf(errbuf, 256, "Could not load vessel module: %s (%s)", cbuf, err ? err : "unknown error");
 			LOGOUT_ERR (errbuf);
 		}
 		if (modIntf.ovcInit)
@@ -5970,24 +5971,24 @@ bool Vessel::LoadModule (ifstream &classf)
 bool Vessel::RegisterModule (const char *dllname)
 {
 	char cbuf[256];
-	sprintf (cbuf, "Modules\\%s.dll", dllname);
-	hMod = LoadLibrary (cbuf);
+	sprintf (cbuf, "Modules/%s.so", dllname);
+	hMod = dlopen (oapiResolvePath (cbuf).c_str(), RTLD_NOW);
 	if (!hMod)
 		return false;
 
 	// retrieve module version
-	int (*fversion)() = (int(*)())GetProcAddress (hMod, "GetModuleVersion");
+	int (*fversion)() = (int(*)())ModuleProc (hMod, "GetModuleVersion");
 	modIntf.version = (fversion ? fversion() : 0);
 
-	modIntf.ovcInit = (VESSEL_Init)GetProcAddress (hMod, "ovcInit");
-	modIntf.ovcExit = (VESSEL_Exit)GetProcAddress (hMod, "ovcExit");
+	modIntf.ovcInit = (VESSEL_Init)ModuleProc (hMod, "ovcInit");
+	modIntf.ovcExit = (VESSEL_Exit)ModuleProc (hMod, "ovcExit");
 	return true;
 }
 
 void Vessel::ClearModule ()
 {
 	if (hMod) {
-		FreeLibrary (hMod);
+		dlclose (hMod);
 		hMod = 0;
 	}
 	memset (&modIntf, 0, sizeof (modIntf));
@@ -6090,7 +6091,7 @@ bool Vessel::ParseScenario (ifstream &scn, VESSELSTATUS &vs)
 	for (;;) {
 		if (!scn.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-		if (!_stricmp (pc, "END")) break;
+		if (!strcasecmp (pc, "END")) break;
 		ParseScenarioLine (pc, vs);
 	}
 	return true;
@@ -6103,7 +6104,7 @@ bool Vessel::ParseScenarioEx (ifstream &scn, void *status)
 	for (;;) {
 		if (!scn.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-		if (!_stricmp (pc, "END")) break;
+		if (!strcasecmp (pc, "END")) break;
 		ParseScenarioLineEx (pc, status);
 	}
 	return true;
@@ -8841,7 +8842,7 @@ void VESSEL2::clbkVisualDestroyed (VISHANDLE vis, int refcount)
 {
 }
 
-void VESSEL2::clbkDrawHUD (int mode, const HUDPAINTSPEC *hps, HDC hDC)
+void VESSEL2::clbkDrawHUD (int mode, const HUDPAINTSPEC *hps, QPainter *hDC)
 {
 	if (vessel->hudskp && vessel->hudskp->GetDC() == hDC)
 		g_pane->DrawDefaultHUD (vessel->hudskp);

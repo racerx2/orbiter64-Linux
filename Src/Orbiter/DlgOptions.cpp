@@ -23,7 +23,7 @@ DlgOptions::DlgOptions(): ImGuiDialog(ICON_FA_LIST_CHECK " Orbiter: Options", {6
 	m_pathBgImage.clear();
 	featuretarget = "Select...";
 
-	std::ifstream ifs(g_pOrbiter->Cfg()->ConfigPath("CSphere/bkgimage"));
+	std::ifstream ifs(oapiResolvePath(g_pOrbiter->Cfg()->ConfigPath("CSphere/bkgimage")));
 	if (ifs) {
 		char* c;
 		char cbuf[256];
@@ -72,7 +72,7 @@ DlgOptions::DlgOptions(): ImGuiDialog(ICON_FA_LIST_CHECK " Orbiter: Options", {6
 			}
 		}
 	}
-	std::ifstream fcfg(g_pOrbiter->Cfg()->ConfigPath(g_psys->Name().c_str()));
+	std::ifstream fcfg(oapiResolvePath(g_pOrbiter->Cfg()->ConfigPath(g_psys->Name().c_str())));
 	g_psys->ScanLabelLists(fcfg);
 }
 
@@ -340,7 +340,7 @@ void DlgOptions::DrawPlanetarium()
 				}
 
 				if(lblchanged) {
-					std::ifstream fcfg(g_pOrbiter->Cfg()->ConfigPath(g_psys->Name().c_str()));
+					std::ifstream fcfg(oapiResolvePath(g_pOrbiter->Cfg()->ConfigPath(g_psys->Name().c_str())));
 					g_psys->ScanLabelLists(fcfg);
 				}
 			ImGui::EndDisabled();
@@ -417,7 +417,7 @@ void DlgOptions::DrawLabels()
 						oapi::GraphicsClient::LABELLIST* list = planet->LabelList(&nlist);
 						for(int i = 0; i < nlist; i++) {
 							if(ImGui::Selectable(list[i].name.c_str(), &list[i].active)) {
-								std::ifstream fcfg(g_pOrbiter->Cfg()->ConfigPath(planet->Name()));
+								std::ifstream fcfg(oapiResolvePath(g_pOrbiter->Cfg()->ConfigPath(planet->Name())));
 								planet->ScanLabelLists(fcfg);
 							}
 						}

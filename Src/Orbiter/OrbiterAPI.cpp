@@ -1379,7 +1379,7 @@ DLLEXPORT VISHANDLE *oapiObjectVisualPtr (OBJHANDLE hObject)
 
 DLLEXPORT MESHHANDLE oapiLoadMesh (const char *fname)
 {
-	ifstream ifs(g_pOrbiter->MeshPath(fname));
+	ifstream ifs(oapiResolvePath(g_pOrbiter->MeshPath(fname)));
 	Mesh *mesh = new Mesh; TRACENEW
 	ifs >> *mesh;
 	return (MESHHANDLE)mesh;
@@ -2282,11 +2282,13 @@ DLLEXPORT FILEHANDLE oapiOpenFile (const char *fname, FileAccessMode mode, PathR
 		break;
 	}
 
+	std::string rp = oapiResolvePath (cbuf); // '\' separators and case as on disk
+
 	switch (mode) {
 	case FILE_IN:
-		return (FILEHANDLE)(new ifstream (cbuf));
+		return (FILEHANDLE)(new ifstream (rp));
 	case FILE_IN_ZEROONFAIL: {
-		ifstream *ifs = new ifstream (cbuf);
+		ifstream *ifs = new ifstream (rp);
 		if (ifs->fail()) {
 			delete ifs;
 			ifs = 0;
@@ -2294,9 +2296,9 @@ DLLEXPORT FILEHANDLE oapiOpenFile (const char *fname, FileAccessMode mode, PathR
 		return (FILEHANDLE)ifs;
 		}
 	case FILE_OUT:
-		TRACENEW; return (FILEHANDLE)(new ofstream (cbuf));
+		TRACENEW; return (FILEHANDLE)(new ofstream (rp));
 	case FILE_APP:
-		TRACENEW; return (FILEHANDLE)(new ofstream (cbuf, ios::app));
+		TRACENEW; return (FILEHANDLE)(new ofstream (rp, ios::app));
 	}
 	return 0;
 }

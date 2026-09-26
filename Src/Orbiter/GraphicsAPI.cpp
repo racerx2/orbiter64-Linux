@@ -181,13 +181,15 @@ bool GraphicsClient::TexturePath (const char *fname, char *path) const
 	// first try htex directory
 	strcpy (path, g_pOrbiter->Cfg()->CfgDirPrm.HightexDir);
 	strcat (path, fname);
-	if (fs::exists(path)) return true;
+	std::string r = oapiResolvePath (path); // the resolved path is returned: callers open it directly
+	if (fs::exists(r)) { snprintf (path, MAX_PATH, "%s", r.c_str()); return true; }
 
 	// try tex directory
 	strcpy (path, g_pOrbiter->Cfg()->CfgDirPrm.TextureDir);
 	strcat (path, fname);
 
-	if (fs::exists(path)) return true;
+	r = oapiResolvePath (path);
+	if (fs::exists(r)) { snprintf (path, MAX_PATH, "%s", r.c_str()); return true; }
 
 	return false;
 }

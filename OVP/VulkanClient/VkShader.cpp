@@ -729,8 +729,7 @@ VkFxHandle VkEffect::GetParameterByName (VkFxHandle parent, const char *name)
 VkFxHandle VkEffect::GetTechniqueByName (const char *name)
 {
 	for (auto &t : tech) if (t.name == name) return &t;
-	LogErr("VkEffect %s: no technique %s", file.c_str(), name);
-	return NULL;
+	return NULL; // D3DX returns NULL without a message (D3D9Client asks for techniques D3D9Client.fx no longer has)
 }
 
 int VkEffect::SetTechnique (VkFxHandle t)

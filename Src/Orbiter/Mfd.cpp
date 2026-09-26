@@ -152,7 +152,7 @@ void Instrument::GlobalInit (oapi::GraphicsClient *gc)
 	draw[4][1].col = 0xA00000;  // aux colour 4 dim
 
 	// Read customised settings
-	ifstream ifs (g_pOrbiter->ConfigPath ("MFD\\Default"));
+	ifstream ifs (oapiResolvePath(g_pOrbiter->ConfigPath ("MFD\\Default")));
 	if (ifs) {
 		char label[64];
 		int c;

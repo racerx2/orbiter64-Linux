@@ -1085,7 +1085,7 @@ const Mesh *MeshManager::LoadMesh (const char *fname, bool *firstload)
 		}
 	}
 	// not found, so load from file
-	ifstream ifs (g_pOrbiter->MeshPath (fname), ios::in);
+	ifstream ifs (oapiResolvePath(g_pOrbiter->MeshPath (fname)), ios::in);
 	Mesh *mesh = new Mesh; TRACENEW
 	ifs >> *mesh;
 	if (!mesh->nGroup()) { // load error
@@ -1118,7 +1118,7 @@ const Mesh *MeshManager::LoadMesh (const char *fname, bool *firstload)
 
 bool LoadMesh (const char *meshname, Mesh &mesh)
 {
-	ifstream ifs (g_pOrbiter->MeshPath (meshname), ios::in);
+	ifstream ifs (oapiResolvePath(g_pOrbiter->MeshPath (meshname)), ios::in);
 	ifs >> mesh;
 	if (ifs.good()) {
 		mesh.SetName(meshname);

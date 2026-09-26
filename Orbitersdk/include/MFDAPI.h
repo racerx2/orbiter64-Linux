@@ -19,6 +19,7 @@
 #include "OrbiterAPI.h"
 
 class Instrument;
+class Instrument_User; // g++ needs the name declared before the friend declaration uses it as a type
 
 // ======================================================================
 // class MFD
@@ -69,7 +70,7 @@ public:
 	 * \deprecated This method is deprecated. %MFD implementations should derive from MFD2
 	 *   and use the device-independent \ref MFD2::Update(oapi::Sketchpad*) method instead.
 	 */
-	virtual void Update (HDC hDC) = 0;
+	virtual void Update (QPainter *hDC) = 0;
 
 	/**	
 	 * \brief Force a display update in the next frame.
@@ -107,7 +108,7 @@ public:
 	 * \deprecated This method is deprecated. %MFD implementations should derive from MFD2
 	 *   and use the device-independent \ref MFD2::Title method instead.
 	 */
-	void Title (HDC hDC, const char *title) const;
+	void Title (QPainter *hDC, const char *title) const;
 
 	/**
 	 * \brief Selects a predefined pen into the device context.
@@ -127,7 +128,7 @@ public:
 	 * \deprecated This method is deprecated. %MFD implementations should derive from MFD2
 	 *   and use the device-independent \ref MFD2::GetDefaultPen method instead.
 	 */
-	HPEN SelectDefaultPen (HDC hDC, DWORD i) const;
+	QPen *SelectDefaultPen (QPainter *hDC, DWORD i) const;
 
 	/**
 	 * \brief Selects a predefined MFD font into the device context
@@ -146,7 +147,7 @@ public:
 	 * \deprecated This method is deprecated. %MFD implementations should derive from MFD2
 	 *   and use the device-independent \ref MFD2::GetDefaultFont method instead.
 	 */
-	HFONT SelectDefaultFont (HDC hDC, DWORD i) const;
+	QFont *SelectDefaultFont (QPainter *hDC, DWORD i) const;
 
 	/** 
 	 * \brief MFD keyboard handler for buffered keys.
@@ -318,7 +319,7 @@ public:
 	 * \brief Dummy implementation of GDI-specific base class method.
 	 * \note Derived classes should overload the \ref Update(oapi::Sketchpad*) method instead.
 	 */
-	void Update (HDC hDC) {}
+	void Update (QPainter *hDC) {}
 
 	/**
 	 * \brief Callback function: Orbiter calls this method when the MFD needs to update its display.
@@ -505,7 +506,7 @@ public:
 	 * \note This function should be called from Update to paint the graph(s) into the
 	 *   provided device context.
 	 */
-	void Plot (HDC hDC, int g, int h0, int h1, const char *title = 0);
+	void Plot (QPainter *hDC, int g, int h0, int h1, const char *title = 0);
 
 	/**
 	 * \brief Determines the range of an array of data.

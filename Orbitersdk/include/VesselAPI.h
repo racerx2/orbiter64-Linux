@@ -18,9 +18,8 @@
 #ifndef __VESSELAPI_H
 #define __VESSELAPI_H
 
-#if defined(_MSC_VER) && (_MSC_VER < 1920 ) // Microsoft Visual Studio Version 2017 and lower
+// g++ needs <algorithm> for std::max/min as well
 #include <algorithm>
-#endif
 
 // reference frame flags
 #define FRAME_ECL 0
@@ -5680,7 +5679,7 @@ public:
 	 *   version uses a generic \e Sketchpad drawing context instead of a HDC.
 	 * \sa VESSEL3::clbkDrawHUD, \ref progflow1
 	 */
-	virtual void clbkDrawHUD (int mode, const HUDPAINTSPEC *hps, HDC hDC);
+	virtual void clbkDrawHUD (int mode, const HUDPAINTSPEC *hps, QPainter *hDC);
 
 	/**
 	 * \brief Reaction Control System mode change notification.

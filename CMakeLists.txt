@@ -252,10 +252,10 @@ INSTALL(FILES LICENSE
 
 # Sub-projects
 add_subdirectory(Extern)
-# not ported yet: Src, Utils, Orbitersdk, OVP, Sound, Html
-#add_subdirectory(Src)
+# not ported yet: Utils, OVP, Sound, Html
+add_subdirectory(Src)
 #add_subdirectory(Utils)
-#add_subdirectory(Orbitersdk)
+add_subdirectory(Orbitersdk)
 #add_subdirectory(OVP)
 #add_subdirectory(Sound)
 #add_subdirectory(Html)

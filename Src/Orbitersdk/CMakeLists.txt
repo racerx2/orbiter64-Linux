@@ -21,6 +21,7 @@ add_library(Orbitersdk STATIC
 set_target_properties(Orbitersdk
 	PROPERTIES
 	FOLDER Core
+	POSITION_INDEPENDENT_CODE ON # linked into .so modules
 )
 
 target_include_directories(Orbitersdk

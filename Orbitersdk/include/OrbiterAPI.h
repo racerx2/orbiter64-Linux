@@ -24,7 +24,7 @@
 #endif
 #endif
 #include <fstream>
-#include <windows.h>
+#include "OrbiterPlatform.h"
 #include <float.h>
 #include <math.h>
 #include <vector>
@@ -34,13 +34,13 @@
 #endif
 
 extern "C" {
-#include <lua/lua.h>
+#include <Lua/lua.h>
 }
 
-// Assumes MS VC++ compiler. Modify these statements for other compilers
-#define DLLEXPORT __declspec(dllexport)
-#define DLLIMPORT __declspec(dllimport)
-#define DLLCLBK extern "C" __declspec(dllexport)
+// GCC/ELF: exported symbols get default visibility, imports need no marker
+#define DLLEXPORT __attribute__((visibility("default")))
+#define DLLIMPORT
+#define DLLCLBK extern "C" __attribute__((visibility("default")))
 
 #ifdef OAPI_IMPLEMENTATION
 #define OAPIFUNC DLLEXPORT
@@ -48,14 +48,10 @@ extern "C" {
 #define OAPIFUNC DLLIMPORT
 #endif
 
-#pragma warning(disable: 4201)
+// MSVC warning 4201 pragma left out: g++ accepts nameless structs/unions
 
 // Message loop return type - maintain backward compatibility for 32-bit
-#ifdef _WIN64
-#define OAPI_MSGTYPE LRESULT
-#else
-#define OAPI_MSGTYPE int
-#endif
+#define OAPI_MSGTYPE intptr_t // LRESULT on 64-bit Windows
 
 // ======================================================================
 /// \defgroup constants Some useful general constants
@@ -1429,7 +1425,7 @@ typedef struct {
 	char *name;
 	void *parent;
 	char *desc;
-	void (*clbkFunc)(HINSTANCE,HWND);
+	void (*clbkFunc)(void*,QWidget*); // module handle, Launchpad window
 } LP_EXTRAPRM;
 
 #pragma pack(push,1)
@@ -1595,14 +1591,14 @@ typedef struct {
 typedef struct {
 	char *name;
 	DWORD key;
-	OAPI_MSGTYPE (*msgproc)(UINT,UINT,WPARAM,LPARAM);
+	OAPI_MSGTYPE (*msgproc)(UINT,UINT,uintptr_t,intptr_t);
 } MFDMODESPEC;
 
 typedef struct {
 	char *name;
 	DWORD key;
 	void *context;
-	OAPI_MSGTYPE (*msgproc)(UINT,UINT,WPARAM,LPARAM);
+	OAPI_MSGTYPE (*msgproc)(UINT,UINT,uintptr_t,intptr_t);
 } MFDMODESPECEX;
 
 typedef struct {
@@ -2322,7 +2318,7 @@ public:
 	*  obtained with a call to <i>GetWindowLongPtr (hWnd, DWLP_USER)</i>, where hWnd
 	*  is the dialog box handle passed to the message handler.
 	*/
-	virtual bool OpenDialog (HINSTANCE hInst, HWND hLaunchpad, int resId, DLGPROC pDlg);
+	virtual bool OpenDialog (void *hInst, QWidget *hLaunchpad, int resId, DLGINIT pDlg);
 
 	/**
 	* \brief This method is called whenever the user opens the item by double-clicking on the list or
@@ -2333,7 +2329,7 @@ public:
 	* \note The derived class can use this function to open a dialog box or some other
 	*  means of allowing the user to set addon-specific parameters.
 	*/
-	virtual bool clbkOpen (HWND hLaunchpad);
+	virtual bool clbkOpen (QWidget *hLaunchpad);
 
 	/**
 	* \brief This method is called whenever the item should write its current state to a file.
@@ -2489,7 +2485,7 @@ int oapiGetModuleVersion ();
  * \brief Returns the instance handle for the running Orbiter application.
  * \return Orbiter instance handle
  */
-OAPIFUNC HINSTANCE oapiGetOrbiterInstance ();
+OAPIFUNC void *oapiGetOrbiterInstance (); // dlopen handle of the Orbiter executable
 
 /**
  * \brief Returns a pointer to the command line with which Orbiter was invoked.
@@ -5230,7 +5226,7 @@ OAPIFUNC bool oapiUnregisterExternMFD (ExternMFD *emfd);
 	*   does not appear anywhere in the opaque part of the panel.
 	* \sa oapiRegisterPanelArea
 	*/
-OAPIFUNC void oapiRegisterPanelBackground (HBITMAP hBmp, DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM,
+OAPIFUNC void oapiRegisterPanelBackground (QImage *hBmp, DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM,
 				                           DWORD ck = (DWORD)-1);
 
 	/**
@@ -5534,7 +5530,7 @@ OAPIFUNC void oapiReleaseBrush (oapi::Brush *brush);
  *   disabled between oapiGetDC and oapiReleaseDC, and should be avoided.
  * \sa oapiReleaseDC, oapiGetSketchpad
  */
-OAPIFUNC HDC oapiGetDC (SURFHANDLE surf);
+OAPIFUNC QPainter *oapiGetDC (SURFHANDLE surf);
 
 /**
  * \brief Release a GDI drawing device context handle.
@@ -5550,7 +5546,7 @@ OAPIFUNC HDC oapiGetDC (SURFHANDLE surf);
  *   oapiReleaseDC.
  * \sa oapiGetDC, oapiGetSketchpad, oapiReleaseSketchpad
  */
-OAPIFUNC void oapiReleaseDC (SURFHANDLE surf, HDC hDC);
+OAPIFUNC void oapiReleaseDC (SURFHANDLE surf, QPainter *hDC);
 //@}
 
 
@@ -5630,7 +5626,7 @@ OAPIFUNC bool oapiSaveSurface(const char* fname, SURFHANDLE hSrf, oapi::ImageFil
 	*  no longer needed.
 	* \sa oapiDestroySurface
 	*/
-OAPIFUNC SURFHANDLE oapiCreateSurface (HBITMAP hBmp, bool release_bmp = true);
+OAPIFUNC SURFHANDLE oapiCreateSurface (QImage *hBmp, bool release_bmp = true);
 
 	/**
 	* \brief Create a surface that can be used as a texture for a 3-D object.
@@ -6100,7 +6096,7 @@ OAPIFUNC void       oapiUnregisterCustomMenuCmd (int cmdId);
 	* \c WM_INITDIALOG message. In this case, the context pointer can be acessed via lParam instead.
 	* \sa oapiFindDialog, oapiCloseDialog, oapiOpenDialogEx
 	*/
-OAPIFUNC HWND       oapiOpenDialog (HINSTANCE hDLLInst, int resourceId, DLGPROC msgProc, void *context = 0);
+OAPIFUNC QWidget   *oapiOpenDialog (void *hDLLInst, int resourceId, DLGINIT msgProc, void *context = 0);
 
 	/**
 	* \brief Open a dialog box specified by an ImGuiDialog object.
@@ -6131,7 +6127,7 @@ OAPIFUNC void       oapiOpenDialog (ImGuiDialog *dlg);
 	* \note Additional buttons can be created by using the oapiAddTitleButton function.
 	* \sa oapiFindDialog, oapiCloseDialog, oapiGetDialogContext
 	*/
-OAPIFUNC HWND       oapiOpenDialogEx (HINSTANCE hDLLInst, int resourceId, DLGPROC msgProc, DWORD flag = 0, void *context = 0);
+OAPIFUNC QWidget   *oapiOpenDialogEx (void *hDLLInst, int resourceId, DLGINIT msgProc, DWORD flag = 0, void *context = 0);
 
 	/**
 	* \brief Returns the window handle of an open dialog box, or NULL if the specified dialog box is not open.
@@ -6139,7 +6135,7 @@ OAPIFUNC HWND       oapiOpenDialogEx (HINSTANCE hDLLInst, int resourceId, DLGPRO
 	* \param resourceId dialog resource identifier
 	* \return Window handle of dialog box, or NULL if the dialog was not found.
 	*/
-OAPIFUNC HWND       oapiFindDialog (HINSTANCE hDLLInst, int resourceId);
+OAPIFUNC QWidget   *oapiFindDialog (void *hDLLInst, int resourceId);
 
 	/**
 	* \brief Close a dialog box.
@@ -6147,7 +6143,7 @@ OAPIFUNC HWND       oapiFindDialog (HINSTANCE hDLLInst, int resourceId);
 	* \note This function should be called in response to an \c IDCANCEL message in the
 	*  dialog message handler to close a dialog which was opened by oapiOpenDialog().
 	*/
-OAPIFUNC void       oapiCloseDialog (HWND hDlg);
+OAPIFUNC void       oapiCloseDialog (QWidget *hDlg);
 
 	/**
 	* \brief Close a dialog box.
@@ -6182,9 +6178,9 @@ OAPIFUNC void      oapiAddNotification(int type, const char *title, const char *
 	* \endcode
 	* 
 	*/
-OAPIFUNC void      *oapiGetDialogContext (HWND hDlg);
+OAPIFUNC void      *oapiGetDialogContext (QWidget *hDlg);
 
-OAPIFUNC bool       oapiRegisterWindow (HINSTANCE hDLLInst, HWND hWnd, DWORD flag = 0);
+OAPIFUNC bool       oapiRegisterWindow (void *hDLLInst, QWidget *hWnd, DWORD flag = 0);
 
 	/**
 	* \brief Adds a custom button in the title bar of a dialog box.
@@ -6210,11 +6206,11 @@ OAPIFUNC bool       oapiRegisterWindow (HINSTANCE hDLLInst, HWND hWnd, DWORD fla
 	* \note If the \c DLG_CB_TWOSTATE flag is set, the button state (0 or 1) is passed in
 	*  the high-word of the WPARAM parameter whenever the dialog is notified of a button press.
 	*/
-OAPIFUNC bool       oapiAddTitleButton (DWORD msgid, HBITMAP hBmp, DWORD flag);
+OAPIFUNC bool       oapiAddTitleButton (DWORD msgid, QImage *hBmp, DWORD flag);
 
-OAPIFUNC DWORD      oapiGetTitleButtonState (HWND hDlg, DWORD msgid);
+OAPIFUNC DWORD      oapiGetTitleButtonState (QWidget *hDlg, DWORD msgid);
 
-OAPIFUNC bool       oapiSetTitleButtonState (HWND hDlg, DWORD msgid, DWORD state);
+OAPIFUNC bool       oapiSetTitleButtonState (QWidget *hDlg, DWORD msgid, DWORD state);
 
 	/**
 	* \brief Default Orbiter dialog message handler.
@@ -6245,7 +6241,7 @@ OAPIFUNC bool       oapiSetTitleButtonState (HWND hDlg, DWORD msgid, DWORD state
 	*  and always returns \e false.
 	* \sa oapiCloseDialog, oapiFindDialog, oapiOpenDialog
 	*/
-OAPIFUNC INT_PTR oapiDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+// oapiDefDialogProc left out: on Qt, oapiOpenDialog wires the default dialog behaviour itself
 
 	/**
 	 * \brief Opens the ingame help window on the specified help page.
@@ -6388,7 +6384,7 @@ OAPIFUNC void oapiWriteLogV (const char *format, ...);
 	* \param ... List of output parameters. Must match the parameter flags in the format string.
 	* \sa oapiWriteLog, oapiWriteLogV
 	*/
-#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format, __VA_ARGS__)
+#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format __VA_OPT__(,) __VA_ARGS__) // __VA_OPT__: MSVC drops the empty comma itself
 OAPIFUNC void __writeLogError(const char *func, const char *file, int line, const char *format, ...);
 
    /**

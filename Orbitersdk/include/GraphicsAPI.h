@@ -13,11 +13,7 @@
 
 #include "Orbitersdk.h"
 #include <stdio.h>
-#include <windows.h>
-
-#ifndef _WIN32
-typedef void *HDC;
-#endif
+// windows.h and the non-Windows HDC stub left out: OrbiterPlatform.h (via OrbiterAPI.h) supplies the types
 
 /// \defgroup cfgprm Configuration parameter identifiers
 /// Used by GraphicsClient::GetConfigParam()
@@ -365,7 +361,7 @@ struct FogParam {
 };
 
 class Orbiter;
-struct IWICImagingFactory;
+// IWICImagingFactory left out: image files go through QImage
 
 namespace oapi {
 
@@ -412,7 +408,7 @@ public:
 	 * with the Orbiter core via the oapiRegisterGraphicsClient function.
 	 * \param hInstance module instance handle (as passed to InitModule)
 	 */
-	GraphicsClient (HINSTANCE hInstance);
+	GraphicsClient (void *hInstance);
 
 	/**
 	 * \brief Destroy the graphics object.
@@ -788,7 +784,7 @@ public:
 	/**
 	 * \brief Returns the handle of the main render window.
 	 */
-	HWND GetRenderWindow () const { return hRenderWnd; }
+	QWindow *GetRenderWindow () const { return hRenderWnd; }
 
 	/**
 	 * \brief Render window message handler
@@ -806,7 +802,7 @@ public:
 	 *   messages, and passes everything else to the Orbiter core message
 	 *   handler.
 	 */
-	virtual LRESULT RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	virtual bool RenderWndProc (QWindow *hWnd, QEvent *event); // returns true if the event was handled
 
 	/**
 	 * \brief Message handler for 'video' tab in Orbiter Launchpad dialog
@@ -821,7 +817,7 @@ public:
 	 * \return The return value depends on the message type and the action taken.
 	 * \default Do nothing, return FALSE.
 	 */
-	virtual INT_PTR LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	virtual void LaunchpadVideoWndProc (QWidget *hWnd); // called once the video tab is built; connect its controls here
 
 	/**
 	 * \brief Structure containing default video options, as stored in
@@ -864,7 +860,7 @@ public:
 	 *   render modes, where the dialog contents may need to be blitted manually
 	 *   into the render surface.
 	 */
-	DWORD GetPopupList (const HWND **hPopupWnd) const;
+	DWORD GetPopupList (QWidget *const **hPopupWnd) const;
 
 	/**
 	 * \brief Fullscreen mode flag
@@ -1111,7 +1107,7 @@ public:
 	 * \note The reference counter for the new surface is set to 1.
 	 * \sa clbkIncrSurfaceRef, clbkReleaseSurface
 	 */
-	virtual SURFHANDLE clbkCreateSurface (HBITMAP hBmp);
+	virtual SURFHANDLE clbkCreateSurface (QImage *hBmp);
 
 	/**
 	 * \brief Increment the reference counter of a surface.
@@ -1323,7 +1319,7 @@ public:
 	 * \note The source bitmap area is stretched as required to fit the area of
 	 *   the target surface.
 	 */
-	virtual bool clbkCopyBitmap (SURFHANDLE pdds, HBITMAP hbm, int x, int y, int dx, int dy);
+	virtual bool clbkCopyBitmap (SURFHANDLE pdds, QImage *hbm, int x, int y, int dx, int dy);
 	// @}
 
 
@@ -1425,7 +1421,7 @@ public:
 	 * \note Clients which can obtain a Windows GDI handle for a surface should
 	 *   overload this method.
 	 */
-	virtual HDC clbkGetSurfaceDC (SURFHANDLE surf) { return NULL; }
+	virtual QPainter *clbkGetSurfaceDC (SURFHANDLE surf) { return NULL; }
 
 	/**
 	 * \brief Release a Windows graphics device interface
@@ -1435,7 +1431,7 @@ public:
 	 * \note Clients which can obtain a Windows GDI handle for a surface should
 	 *   overload this method to release an existing GDI.
 	 */
-	virtual void clbkReleaseSurfaceDC (SURFHANDLE surf, HDC hDC) {}
+	virtual void clbkReleaseSurfaceDC (SURFHANDLE surf, QPainter *hDC) {}
 	// @}
 
 	/**
@@ -1519,7 +1515,7 @@ protected:
 	 * \note Derived classes should perform any required per-session
 	 *   initialisation of the 3D render environment here.
 	 */
-	virtual HWND clbkCreateRenderWindow ();
+	virtual QWindow *clbkCreateRenderWindow ();
 
 	/**
 	 * \brief Simulation startup finalisation
@@ -1720,7 +1716,7 @@ protected:
 	 *   LoadResource, LockResource, SizeofResource)
 	 * \sa ReadImageFromFile, WriteImageDataToFile
 	 */
-	HBITMAP ReadImageFromMemory (BYTE *pBuf, DWORD nBuf, UINT w, UINT h);
+	QImage *ReadImageFromMemory (BYTE *pBuf, DWORD nBuf, UINT w, UINT h);
 
 	/**
 	 * \brief Read an image from a file into a bitmap
@@ -1731,17 +1727,17 @@ protected:
 	 * \note This function can read different image formats (bmp, jpg, png, tif)
 	 * \sa ReadImageFromMemory, WriteImageDataToFile
 	 */
-	HBITMAP ReadImageFromFile (const char *fname, UINT w=0, UINT h=0);
+	QImage *ReadImageFromFile (const char *fname, UINT w=0, UINT h=0);
 
 	/**
 	 * \brief Returns the graphics module instance handle
 	 */
-	inline HINSTANCE ModuleInstance () const { return hModule; }
+	inline void *ModuleInstance () const { return hModule; }
 
 	/**
 	 * \brief Returns the orbiter core instance handle
 	 */
-	inline HINSTANCE OrbiterInstance () const { return hOrbiterInst; }
+	inline void *OrbiterInstance () const { return hOrbiterInst; }
 
 	/**
 	 * \brief Returns the window handle of the 'video' tab of the Orbiter
@@ -1750,7 +1746,7 @@ protected:
 	 * If clbkUseLanuchpadVideoTab() is overloaded to return false, this
 	 * function will return NULL.
 	 */
-	HWND LaunchpadVideoTab() const { return hVid; }
+	QWidget *LaunchpadVideoTab() const { return hVid; }
 
 	// ==================================================================
 	// Functions for the celestial sphere
@@ -1824,7 +1820,7 @@ public:
 	DWORD GetSurfaceMarkerLegend (OBJHANDLE hObj, const LABELTYPE **lspec) const;
 	// @}
 
-	HWND hVid;              ///< Window handle of Launchpad video tab, if available
+	QWidget *hVid;          ///< Window handle of Launchpad video tab, if available
 
 protected:
 	SURFHANDLE surfBltTgt;  ///< target surface for a blitting group (-1=none, NULL=main window render surface)
@@ -1841,13 +1837,13 @@ private:
 	 * \return Render window handle
 	 * \note This is called after clbkCreateRenderWindow returns.
 	 */
-	HWND InitRenderWnd (HWND hWnd);
+	QWindow *InitRenderWnd (QWindow *hWnd);
 
-	HWND hRenderWnd;        // render window handle
-	HINSTANCE hOrbiterInst; // orbiter core instance handle
+	QWindow *hRenderWnd;    // render window handle
+	void *hOrbiterInst;     // orbiter core instance handle
 	VIDEODATA VideoData;    // the standard video options from config
 
-	IWICImagingFactory *m_pIWICFactory; // Windows Image Component factory instance
+	// m_pIWICFactory left out: image files go through QImage
 };
 
 

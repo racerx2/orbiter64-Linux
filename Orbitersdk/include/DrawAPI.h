@@ -23,9 +23,8 @@
 #include <assert.h>
 #include <xmmintrin.h>
 
-#if defined(_MSC_VER) && (_MSC_VER < 1920 ) // Microsoft Visual Studio Version 2017 and lower
+// g++ needs <algorithm> for std::max/min as well
 #include <algorithm>
-#endif
 
 #ifdef D3D9CLIENT_EXPORTS
 #include "d3dx9.h"
@@ -41,11 +40,12 @@ namespace oapi {
 	 * \brief Integer-valued 2-D vector type.
 	 * \note This structure is designed to be compatible with the Windows POINT type.
 	 */
+	// LONG: Windows long is 32-bit, LP64 long is 64-bit; this keeps the POINT layout
 	union IVECTOR2 {
-		long data[2];  ///< vector data array
+		LONG data[2];  ///< vector data array
 		struct {
-			long x;    ///< vector x coordinate
-			long y;    ///< vector y coordinate
+			LONG x;    ///< vector x coordinate
+			LONG y;    ///< vector y coordinate
 		};
 	};
 
@@ -184,6 +184,17 @@ namespace oapi {
 
 
 
+	// not upstream: trivial twins of FVECTOR3/FVECTOR4 (same layout) for FMATRIX4's row view,
+	// since g++ allows no members with constructors in an anonymous struct
+	struct FVECTOR3_T { float x, y, z; };
+	union alignas(16) FVECTOR4_T {
+		float data[4];
+		struct { float x, y, z, w; };
+		struct { float r, g, b, a; };
+		FVECTOR3_T xyz;
+		FVECTOR3_T rgb;
+	};
+
 	/**
 	* \brief 32-bit floating point 3D vector type.
 	* \note This structure is compatible with the D3DXVECTOR3 type.
@@ -212,6 +223,18 @@ namespace oapi {
 			x = float(v.x);
 			y = float(v.y);
 			z = float(v.z);
+		}
+
+		FVECTOR3(const FVECTOR3_T& v) // not upstream: FMATRIX4 row view
+		{
+			x = v.x;
+			y = v.y;
+			z = v.z;
+		}
+
+		inline operator FVECTOR3_T() const // not upstream: FMATRIX4 row view
+		{
+			return { x, y, z };
 		}
 
 #ifdef D3D9CLIENT_EXPORTS
@@ -359,7 +382,7 @@ namespace oapi {
 	* \brief 32-bit floating point 4D vector type.
 	* \note This structure is compatible with the D3DXVECTOR4 type.
 	*/
-	typedef union __declspec(align(16)) FVECTOR4
+	typedef union alignas(16) FVECTOR4
 	{
 		DWORD dword_abgr() const
 		{
@@ -450,6 +473,21 @@ namespace oapi {
 		{
 			rgb = v;
 			w = _w;
+		}
+
+		FVECTOR4(const FVECTOR4_T& v) // not upstream: FMATRIX4 row view
+		{
+			x = v.x;
+			y = v.y;
+			z = v.z;
+			w = v.w;
+		}
+
+		inline operator FVECTOR4_T() const // not upstream: FMATRIX4 row view
+		{
+			FVECTOR4_T v;
+			v.x = x; v.y = y; v.z = z; v.w = w;
+			return v;
 		}
 
 		FVECTOR4(float _x, float _y, float _z, float _w)
@@ -608,7 +646,7 @@ namespace oapi {
 	* \brief Float-valued 4x4 matrix.
 	* \note This structure is compatible with the D3DXMATRIX.
 	*/
-	typedef union __declspec(align(16)) FMATRIX4
+	typedef union alignas(16) FMATRIX4
 	{
 		FMATRIX4() {
 			m11 = m12 = m13, m14 = m21 = m22 = m23 = m24 = m31 = m32 = m33 = m34 = m41 = m42 = m43 = m44 = 0;
@@ -665,7 +703,7 @@ namespace oapi {
 		}
 
 		float data[16];
-		struct { FVECTOR4 _x, _y, _z, _p; };
+		struct { FVECTOR4_T _x, _y, _z, _p; }; // FVECTOR4_T: see above
 		struct { float m11, m12, m13, m14, m21, m22, m23, m24, m31, m32, m33, m34, m41, m42, m43, m44; };
 	} FMATRIX4;
 
@@ -909,7 +947,7 @@ public:
 	 * \return GDI font handle
 	 * \note Non-GDI clients should not overload this method.
 	 */
-	virtual HFONT GetGDIFont () const { return 0; }
+	virtual QFont *GetGDIFont () const { return 0; }
 };
 
 
@@ -1350,7 +1388,7 @@ public:
 	 * \brief Obsolete function. Will return NULL.
 	 * \return NULL
 	 */
-	virtual HDC GetDC() { return NULL; }
+	virtual QPainter *GetDC() { return NULL; }
 
 	/**
 	 * \brief Draw a text string using WCHAR.

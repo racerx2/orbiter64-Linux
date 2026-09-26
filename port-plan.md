@@ -81,6 +81,11 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 | `readme.txt` | Phase 8 |
 | `Extern/Htmlhelp`, `compileOrbiter.py`, `cmake/FindDXSDK.cmake`, `cmake/*.bat.in` | left in the tree, unused: Windows only |
 | `Src/Orbiter/Vecmat.h/.cpp` | ported (Phase 1), unit-tested |
+| `Orbitersdk/include/*.h` (OrbiterAPI, GraphicsAPI, DrawAPI, ModuleAPI, CelBodyAPI, VesselAPI, MFDAPI, CamAPI, CelSphereAPI, Orbitersdk) | ported (Phase 1), all compile with g++ 15 |
+| `Orbitersdk/include/OrbiterPlatform.h` | not upstream: the windows.h types the SDK uses |
+| `Orbitersdk/include/DlgCtrl.h`, `afxres.h` | Phase 4 (dialog controls, .rc support) |
+| `Src/Orbitersdk/Orbitersdk.cpp` + CMake | ported (Phase 1): builds `libOrbitersdk.a` |
+| `Orbitersdk/CMakeLists.txt` | ported; `samples`, `sample_build` not yet |
 | rest of `Src/`, `Orbitersdk/`, `OVP/`, `Sound/`, `Utils/`, `Html/`, `Doc/` | not started (not in the build yet) |
 
 ## Deviations (not upstream)
@@ -102,6 +107,31 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 - Tests: `add_unit_test()` for ported code that runs without the Orbiter exe; `Port.Harness` smoke test.
 - Presets: `linux-gcc-base` replaces the Windows and winegcc presets; build presets use `jobs: 3`;
   the asan preset sets `ORBITER_SANITIZER` (upstream's `ORBITER_ENABLE_ASAN` doesn't exist).
+
+### SDK (Phase 1)
+- `OrbiterPlatform.h` replaces `<windows.h>` in the SDK: fixed-width DWORD/WORD/BYTE/UINT/BOOL/LONG/INT16/COLORREF
+  and the *_PTR ints, RECT/POINT/SIZE (+LP*), RGB/Get*Value, `MAX_PATH` = 4096, Qt forward declarations.
+- Handle types: HWND → `QWidget*` (dialogs) / `QWindow*` (render window), HINSTANCE → `void*` dlopen handle,
+  HDC → `QPainter*`, HFONT → `QFont*`, HPEN → `QPen*`, HBITMAP → `QImage*`, window messages → `QEvent*`.
+- DLGPROC → `DLGINIT (QWidget *hDlg, void *context)`: called once after the dialog is built from its resource;
+  the module connects its controls' Qt signals. `oapiDefDialogProc` left out (oapiOpenDialog wires defaults).
+- MFD message procs: WPARAM/LPARAM → `uintptr_t`/`intptr_t`, `OAPI_MSGTYPE` → `intptr_t`.
+- `GraphicsClient::RenderWndProc (QWindow*, QEvent*)` → bool, `LaunchpadVideoWndProc (QWidget*)` called once
+  per video tab — provisional until Phases 4/5 port their callers. WIC factory left out (QImage does images).
+- DLLEXPORT/DLLCLBK → `__attribute__((visibility("default")))`; DLLIMPORT empty.
+- `#include <lua/lua.h>` → `<Lua/lua.h>` (the folder is `Lua`).
+- `oapiWriteLogError` uses `__VA_OPT__(,)` (MSVC drops the empty comma itself).
+- `__declspec(align(16))` → `alignas(16)`; `<algorithm>` included unconditionally (was MSVC<2019 only).
+- IVECTOR2 `long` → `LONG`: Windows long is 32-bit, LP64 long is 64-bit. General rule for all later files:
+  every `long` that touches a file format or a struct layout gets checked.
+- FMATRIX4's `_x/_y/_z/_p` row view: g++ allows no members with constructors in an anonymous struct, so the rows
+  are `FVECTOR4_T`, a trivial same-layout twin with conversions to/from FVECTOR4 (`.xyz` via `FVECTOR3_T`).
+- `class ATMOSPHERE;` / `class Instrument_User;` forward declarations: MSVC lets a friend declaration introduce
+  the name, g++ doesn't.
+- `Orbitersdk.cpp`: DllMain → ELF constructor/destructor; the module finds its own handle with
+  `dladdr` + `dlopen(RTLD_NOLOAD)` and skips the exe (which links the same static lib). Verify with the first
+  real module in Phase 2.
+- `libOrbitersdk.a` is built `-fPIC` (it is linked into .so modules).
 
 ## Left out (can't apply)
 
@@ -137,3 +167,5 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
   only works on a case-insensitive disk. Port uses `packages/ldoc`.
 - `lfs.so` couldn't find `liblua.so` (no RUNPATH) — fixed with `$ORIGIN`.
 - `Port.Harness` couldn't find `libCatch2Main.so` — fixed by building Catch2 static.
+- Upstream: `FMATRIX4()` writes `m11 = m12 = m13, m14 = ... = 0`, so m11/m12 copy an uninitialised m13 and m13
+  is never set. Kept as upstream; g++ warns.

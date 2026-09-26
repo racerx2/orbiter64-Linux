@@ -6,32 +6,35 @@
 // Contains standard module entry point and version information.
 // ========================================================================
 
-#include <windows.h>
+#include <dlfcn.h>
 #include <fstream>
 #include <stdio.h>
 
-#define DLLCLBK extern "C" __declspec(dllexport)
-#define OAPIFUNC __declspec(dllimport)
+#define DLLCLBK extern "C" __attribute__((visibility("default")))
+#define OAPIFUNC
 
-BOOL WINAPI DllMain (HINSTANCE hModule,
-					 DWORD ul_reason_for_call,
-					 LPVOID lpReserved)
+// DllMain counterpart: ELF constructor/destructor of the module (Windows calls DllMain only for DLLs, so the exe is skipped)
+OAPIFUNC void InitLib (void *hModule);
+typedef void (*DLLEXIT)(void*);
+static DLLEXIT DLLExit;
+static void *hThisModule;
+
+__attribute__((constructor)) static void DllMain_ProcessAttach ()
 {
-	OAPIFUNC void InitLib (HINSTANCE hModule);
-	typedef void (*DLLEXIT)(HINSTANCE);
-	static DLLEXIT DLLExit;
+	Dl_info self, core;
+	if (!dladdr ((void*)&DllMain_ProcessAttach, &self) || !dladdr ((void*)&InitLib, &core)) return;
+	if (self.dli_fbase == core.dli_fbase) return; // linked into the Orbiter executable itself
+	hThisModule = dlopen (self.dli_fname, RTLD_NOW | RTLD_NOLOAD); // same handle the loader's dlopen returns
+	if (!hThisModule) return;
+	dlclose (hThisModule); // drop the extra reference; the loader's one keeps the module mapped
+	InitLib (hThisModule);
+	DLLExit = (DLLEXIT)dlsym (hThisModule, "ExitModule");
+	if (!DLLExit) DLLExit = (DLLEXIT)dlsym (hThisModule, "opcDLLExit");
+}
 
-	switch (ul_reason_for_call) {
-	case DLL_PROCESS_ATTACH:
-		InitLib (hModule);
-		DLLExit = (DLLEXIT)GetProcAddress (hModule, "ExitModule");
-		if (!DLLExit) DLLExit = (DLLEXIT)GetProcAddress (hModule, "opcDLLExit");
-		break;
-	case DLL_PROCESS_DETACH:
-		if (DLLExit) (*DLLExit)(hModule);
-		break;
-	}
-	return TRUE;
+__attribute__((destructor)) static void DllMain_ProcessDetach ()
+{
+	if (DLLExit) (*DLLExit)(hThisModule);
 }
 
 int oapiGetModuleVersion ()
@@ -50,4 +53,3 @@ DLLCLBK int GetModuleVersion (void)
 }
 
 void dummy () {}
-

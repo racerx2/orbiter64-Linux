@@ -1,8 +1,9 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-add_subdirectory(samples)
-add_subdirectory(sample_build)
+# not ported yet: samples, sample_build
+#add_subdirectory(samples)
+#add_subdirectory(sample_build)
 
 file(GLOB_RECURSE includes
 	RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}

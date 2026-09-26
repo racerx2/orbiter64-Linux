@@ -1,13 +1,14 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-add_subdirectory(Orbiter)
+# not ported yet: Orbiter, DlgCtrl, Celbody, Vessel, Module, Plugin
+#add_subdirectory(Orbiter)
 add_subdirectory(Orbitersdk)
-add_subdirectory(DlgCtrl)
-add_subdirectory(Celbody)
-add_subdirectory(Vessel)
-add_subdirectory(Module)
-add_subdirectory(Plugin)
+#add_subdirectory(DlgCtrl)
+#add_subdirectory(Celbody)
+#add_subdirectory(Vessel)
+#add_subdirectory(Module)
+#add_subdirectory(Plugin)
 
 # ==========================================================================
 # SDK Sample Installation

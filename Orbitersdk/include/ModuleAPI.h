@@ -29,7 +29,7 @@ namespace oapi {
 		 * \brief Creates a new ModuleNV instance.
 		 * \param hDLL DLL library instance handle (see \ref InitModule)
 		 */
-		ModuleNV (HINSTANCE hDLL);
+		ModuleNV (void *hDLL);
 
 		/**
 		 * \brief Module interface version
@@ -41,7 +41,7 @@ namespace oapi {
 		 * \brief Returns the module instance handle.
 		 * \return Module instance handle.
 		 */
-		inline HINSTANCE GetModule() const { return hModule; }
+		inline void *GetModule() const { return hModule; }
 
 		/**
 		 * \brief Returns simulation time since session start.
@@ -78,7 +78,7 @@ namespace oapi {
 
 	protected:
 		int version;
-		HINSTANCE hModule;
+		void *hModule; // dlopen handle
 	}; // class ModuleNV
 
 	/**
@@ -95,7 +95,7 @@ namespace oapi {
 		 * \brief Creates a new Module instance.
 		 * \param hDLL DLL library instance handle (see \ref InitModule)
 		 */
-		Module (HINSTANCE hDLL);
+		Module (void *hDLL);
 		virtual ~Module();
 
 		/**

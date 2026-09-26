@@ -7,8 +7,8 @@
    comments kept), so `git diff upstream/main -- <file>` is the port of that file.
 2. **No wrappers. Pure Linux.** No Wine, DXVK or Win32 emulation layer. Every Win32/DirectX call gets a
    real Linux/Vulkan implementation of the same behaviour; missing counterparts are built, not stubbed.
-3. **Do not use long form comments.** One-liners only, no banners. Upstream Doxygen blocks are dropped
-   from ported files.
+3. **Do not use long form comments.** Our comments are one-liners, no banners. Upstream's own comments
+   (Doxygen included) stay untouched so diffs and upstream merges only show real changes.
 4. **Nothing dropped silently.** Where something truly can't apply, a one-line comment at that spot
    says what is left out and why. Anything upstream doesn't have is marked `not upstream: <why>`.
 5. **Don't use grep** (Desktop Commander refuses it). Use awk.
@@ -80,7 +80,8 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 | `README.md`, `COMPILE.md` | ported to Linux |
 | `readme.txt` | Phase 8 |
 | `Extern/Htmlhelp`, `compileOrbiter.py`, `cmake/FindDXSDK.cmake`, `cmake/*.bat.in` | left in the tree, unused: Windows only |
-| `Src/`, `Orbitersdk/`, `OVP/`, `Sound/`, `Utils/`, `Html/`, `Doc/` | not started (not in the build yet) |
+| `Src/Orbiter/Vecmat.h/.cpp` | ported (Phase 1), unit-tested |
+| rest of `Src/`, `Orbitersdk/`, `OVP/`, `Sound/`, `Utils/`, `Html/`, `Doc/` | not started (not in the build yet) |
 
 ## Deviations (not upstream)
 
@@ -125,6 +126,10 @@ Output: `out/build/linux-x64-release/`, upstream layout. Background builds log t
 
 ### 2026-09-26 — Phase 1 start
 - SDK types decision taken (see Decisions).
+- `Src/Orbiter/Vecmat.h/.cpp`: read top to bottom; only change is the `qrdcmp` default argument, which g++
+  rejects on a friend declaration — moved to a namespace-scope declaration before `Matrix`/`Matrix4`.
+  `asinh`/`acosh` inlines compile as is against glibc. `Tests/Vecmat.Test.cpp` (vectors, matrix inverse,
+  quaternion round trip, 3x3/4x4 QR solves, plane helpers) passes.
 
 ## Bugs
 

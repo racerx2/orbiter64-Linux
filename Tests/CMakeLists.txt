@@ -74,6 +74,8 @@ endfunction()
 
 # not upstream: proves the Catch2/ctest harness builds and runs
 add_unit_test(Port.Harness)
+# not upstream: Phase 1 core utilities
+add_unit_test(Vecmat.Test ${ORBITER_SOURCE_DIR}/Vecmat.cpp)
 
 if (BUILD_ORBITER_SERVER)
 

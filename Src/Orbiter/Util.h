@@ -93,6 +93,9 @@ DWORD GetCSSColor(const char *col);
 // not upstream: GetProcAddress counterpart; dlsym also searches a module's dependencies, only the module's own symbol counts
 void *ModuleProc (void *hModule, const char *name);
 
+// not upstream: FreeLibrary counterpart; runs the module's ExitModule now, as dlclose keeps a module with unique symbols loaded until exit
+void ModuleFree (void *hModule);
+
 // not upstream: GetModuleFileName counterpart; the path the module was loaded from
 const char *ModuleFileName (void *hModule);
 

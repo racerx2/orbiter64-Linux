@@ -262,6 +262,8 @@ private:
 	void CreateDevice ();
 	void ReplayState ();
 	void ReleaseFrame (int i);
+	void DrawCopy (VkTex *src, VkSurf *dst, const RECT &d); // StretchRect into a multisampled target
+	VkShaderEXT copyVS, copyFS;
 
 	struct Frame {
 		VkCommandPool pool;

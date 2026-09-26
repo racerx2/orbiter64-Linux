@@ -221,6 +221,7 @@ VkTex::VkTex (VkDev *_dev, UINT _w, UINT _h, UINT _levels, VkFormat _fmt, VkImag
 		return;
 	}
 
+	if (!(usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))) return; // transfer-only: no view
 	VkImageViewCreateInfo vi = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	vi.image = img;
 	vi.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : (layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D);
@@ -415,8 +416,8 @@ VkSurf::VkSurf (VkTex *_tex, UINT _level, UINT _layer)
 	w = std::max (1u, tex->w >> level);
 	h = std::max (1u, tex->h >> level);
 	view = VK_NULL_HANDLE;
-	if (!tex->img) return;
-	if (tex->levels == 1 && tex->layers == 1) { view = tex->view; return; }
+	if (!tex->img || !(tex->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT))) return;
+	// always an own view: attachments need the identity swizzle, and SetSwizzle may replace the texture's view
 	VkImageViewCreateInfo vi = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	vi.image = tex->img;
 	vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -486,6 +487,7 @@ VkDev::VkDev (QVulkanInstance *inst, VkPhysicalDevice _phys)
 	memset (frame, 0, sizeof(frame));
 	defTex[0] = defTex[1] = defTex[2] = NULL;
 	curVS = curFS = VK_NULL_HANDLE;
+	copyVS = copyFS = VK_NULL_HANDLE;
 	cbActive = NULL;
 	cbSlots = NULL;
 
@@ -550,6 +552,7 @@ void VkDev::CreateDevice ()
 	e2.features.depthClamp = features.depthClamp;
 	e2.features.depthBiasClamp = features.depthBiasClamp;
 	e2.features.shaderClipDistance = features.shaderClipDistance;
+	e2.features.largePoints = features.largePoints; // point sprites (beacons, stars) larger than 1 px
 	VkPhysicalDeviceVulkan12Features e12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 	e12.timelineSemaphore = VK_TRUE;
 	e12.scalarBlockLayout = VK_TRUE; // shader constants keep the client's tightly packed struct layout
@@ -557,6 +560,7 @@ void VkDev::CreateDevice ()
 	e13.dynamicRendering = VK_TRUE;
 	e13.synchronization2 = VK_TRUE;
 	e13.maintenance4 = f13.maintenance4;
+	e13.shaderDemoteToHelperInvocation = f13.shaderDemoteToHelperInvocation; // glslang emits discard as demote for SPIR-V 1.6
 	VkPhysicalDeviceVulkan14Features e14 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES };
 	e14.pushDescriptor = VK_TRUE;
 	VkPhysicalDeviceShaderObjectFeaturesEXT eso = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT };
@@ -671,6 +675,8 @@ VkDev::~VkDev ()
 	}
 	for (int i = 0; i < NFRAMES; i++) ReleaseFrame (i);
 	for (auto &s : samplers) vkDestroySampler (dev, s.second, NULL);
+	if (copyVS) vkx.DestroyShaderEXT (dev, copyVS, NULL);
+	if (copyFS) vkx.DestroyShaderEXT (dev, copyFS, NULL);
 	vkDestroyPipelineLayout (dev, pipeLayout, NULL);
 	vkDestroyDescriptorSetLayout (dev, setLayout, NULL);
 	for (int i = 0; i < NFRAMES; i++) vkDestroyCommandPool (dev, frame[i].pool, NULL);
@@ -1300,6 +1306,16 @@ void VkDev::StretchRect (VkSurf *src, const RECT *sr, VkSurf *dst, const RECT *d
 		TransferDone (cmd);
 		st = tmp;
 	}
+	VkTex *ms = NULL;
+	RECT bd = d;
+	UINT bl = dst->level, by = dst->layer;
+	if (dt->samples != VK_SAMPLE_COUNT_1_BIT) { // blits can't write a multisampled image: scale into a temp, then draw that
+		if (dt->IsDepth () || d.right <= d.left || d.bottom <= d.top) { delete tmp; return; }
+		ms = new VkTex (this, UINT(d.right - d.left), UINT(d.bottom - d.top), 1, dt->fmt, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		dt = ms;
+		bd = RECT{ 0, 0, d.right - d.left, d.bottom - d.top };
+		bl = by = 0;
+	}
 	bool same = (st == dt);
 	VkImageLayout sl = same ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	VkImageLayout dl = same ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -1309,9 +1325,9 @@ void VkDev::StretchRect (VkSurf *src, const RECT *sr, VkSurf *dst, const RECT *d
 	b.srcSubresource = { st->Aspect(), tmp ? 0 : src->level, tmp ? 0 : src->layer, 1 };
 	b.srcOffsets[0] = { s.left, s.top, 0 };
 	b.srcOffsets[1] = { s.right, s.bottom, 1 };
-	b.dstSubresource = { dt->Aspect(), dst->level, dst->layer, 1 };
-	b.dstOffsets[0] = { d.left, d.top, 0 };
-	b.dstOffsets[1] = { d.right, d.bottom, 1 };
+	b.dstSubresource = { dt->Aspect(), bl, by, 1 };
+	b.dstOffsets[0] = { bd.left, bd.top, 0 };
+	b.dstOffsets[1] = { bd.right, bd.bottom, 1 };
 	VkBlitImageInfo2 bi = { VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2 };
 	bi.srcImage = st->img;
 	bi.srcImageLayout = sl;
@@ -1322,7 +1338,71 @@ void VkDev::StretchRect (VkSurf *src, const RECT *sr, VkSurf *dst, const RECT *d
 	bi.filter = filter;
 	vkCmdBlitImage2 (cmd, &bi);
 	TransferDone (cmd);
+	if (ms) DrawCopy (ms, dst, d);
+	delete ms;
 	delete tmp;
+}
+
+void VkDev::DrawCopy (VkTex *src, VkSurf *dst, const RECT &d)
+{
+	if (!copyVS && !copyFS) {
+		static const char *vs = "layout(location = 0) out vec2 uv;\n"
+			"void main () { uv = vec2 ((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2); gl_Position = vec4 (uv * 2.0 - 1.0, 0.0, 1.0); }\n";
+		static const char *fs = "layout(binding = 4) uniform sampler2D src;\n"
+			"layout(location = 0) in vec2 uv;\n"
+			"layout(location = 0) out vec4 col;\n"
+			"void main () { col = texture (src, uv); }\n";
+		std::vector<uint32_t> spv;
+		if (VkCompileGLSL ("StretchRect", vs, NULL, VK_SHADER_STAGE_VERTEX_BIT, VkMacros(), spv, NULL)) copyVS = VkCreateShaderObject (this, spv, VK_SHADER_STAGE_VERTEX_BIT);
+		if (VkCompileGLSL ("StretchRect", fs, NULL, VK_SHADER_STAGE_FRAGMENT_BIT, VkMacros(), spv, NULL)) copyFS = VkCreateShaderObject (this, spv, VK_SHADER_STAGE_FRAGMENT_BIT);
+	}
+	if (!copyVS || !copyFS) return;
+	VkSurf *oc = rtColor, *od = rtDepth, *oe[3] = { rtExtra[0], rtExtra[1], rtExtra[2] };
+	VkViewport ov = viewport;
+	VkRect2D os = scissor;
+	bool oss = scissorSet;
+	EndRendering ();
+	src->Transition (Cmd(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	rtColor = dst;
+	rtDepth = rtExtra[0] = rtExtra[1] = rtExtra[2] = NULL;
+	viewport = { (float)d.left, (float)d.top, float(d.right - d.left), float(d.bottom - d.top), 0.0f, 1.0f }; // same size as src: one texel per pixel
+	scissor = { { d.left, d.top }, { UINT(d.right - d.left), UINT(d.bottom - d.top) } };
+	scissorSet = true;
+	BeginRendering ();
+	VkCommandBuffer cmd = Cmd ();
+	VkShaderStageFlagBits stages[2] = { VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT };
+	VkShaderEXT sh[2] = { copyVS, copyFS };
+	vkx.CmdBindShadersEXT (cmd, 2, stages, sh);
+	vkCmdSetCullMode (cmd, VK_CULL_MODE_NONE);
+	vkCmdSetDepthTestEnable (cmd, VK_FALSE);
+	vkCmdSetDepthWriteEnable (cmd, VK_FALSE);
+	vkCmdSetDepthBiasEnable (cmd, VK_FALSE);
+	vkCmdSetStencilTestEnable (cmd, VK_FALSE);
+	vkCmdSetPrimitiveTopology (cmd, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	vkx.CmdSetPolygonModeEXT (cmd, VK_POLYGON_MODE_FILL);
+	vkx.CmdSetVertexInputEXT (cmd, 0, NULL, 0, NULL);
+	VkBool32 be = VK_FALSE;
+	VkColorComponentFlags wm = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	vkx.CmdSetColorBlendEnableEXT (cmd, 0, 1, &be);
+	vkx.CmdSetColorWriteMaskEXT (cmd, 0, 1, &wm);
+	VkSamplerDesc sd = { VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 0.0f, 0.0f, true };
+	VkDescriptorImageInfo ii = { Sampler (sd), src->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	VkWriteDescriptorSet w = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+	w.dstBinding = 4;
+	w.descriptorCount = 1;
+	w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	w.pImageInfo = &ii;
+	vkCmdPushDescriptorSet (cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeLayout, 0, 1, &w);
+	vkCmdDraw (cmd, 3, 1, 0, 0);
+	EndRendering ();
+	rtColor = oc;
+	rtDepth = od;
+	for (int i = 0; i < 3; i++) rtExtra[i] = oe[i];
+	viewport = ov;
+	scissor = os;
+	scissorSet = oss;
+	ReplayState (); // back to the client's shaders and states
 }
 
 void VkDev::CopySurface (VkSurf *src, const RECT *sr, VkSurf *dst, const POINT *dp)

@@ -587,7 +587,7 @@ void *Orbiter::LoadModule (const char *path, const char *name)
 			if (gclient->clbkInitialise() == false) {
 				// If graphics initialization fails remove client
 				RemoveGraphicsClient(gclient);
-				dlclose(hDLL); // FreeLibrary
+				ModuleFree(hDLL); // FreeLibrary
 				LOGOUT_ERR("Client Initialization Failed. Unloading  %s", name);
 				hDLL = NULL;		
 				return NULL;
@@ -618,7 +618,7 @@ bool Orbiter::UnloadModule (const std::string &name)
 			LOGOUT("Unloading module %s", it->sName.c_str());
 			if (it->bLocalAlloc)
 				delete it->pModule;
-			dlclose(it->hDLL); // FreeLibrary
+			ModuleFree(it->hDLL); // FreeLibrary
 			m_Plugin.erase(it);
 			return true;
 		}
@@ -637,7 +637,7 @@ bool Orbiter::UnloadModule (void *hDLL)
 			LOGOUT("Unloading module %s", it->sName.c_str());
 			if (it->bLocalAlloc)
 				delete it->pModule;
-			dlclose(it->hDLL); // FreeLibrary
+			ModuleFree(it->hDLL); // FreeLibrary
 			m_Plugin.erase(it);
 			return true;
 		}

@@ -321,6 +321,13 @@ void *ModuleProc (void *hModule, const char *name)
 	return proc;
 }
 
+void ModuleFree (void *hModule)
+{
+	void (*detach)() = (void(*)())ModuleProc (hModule, "ModuleDetach");
+	if (detach) detach ();
+	dlclose (hModule);
+}
+
 const char *ModuleFileName (void *hModule)
 {
 	struct link_map *lm;

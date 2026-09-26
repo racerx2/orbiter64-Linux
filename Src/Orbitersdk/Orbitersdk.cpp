@@ -41,9 +41,17 @@ __attribute__((constructor)) static void DllMain_ProcessAttach ()
 	if (!DLLExit) DLLExit = (DLLEXIT)OwnProc (hThisModule, "opcDLLExit", self.dli_fbase);
 }
 
+// not upstream: DLL_PROCESS_DETACH as FreeLibrary sends it; the core calls this before dlclose, which may keep the module loaded until exit
+DLLCLBK void ModuleDetach ()
+{
+	DLLEXIT f = DLLExit;
+	DLLExit = 0;
+	if (f) (*f)(hThisModule);
+}
+
 __attribute__((destructor)) static void DllMain_ProcessDetach ()
 {
-	if (DLLExit) (*DLLExit)(hThisModule);
+	ModuleDetach ();
 }
 
 int oapiGetModuleVersion ()

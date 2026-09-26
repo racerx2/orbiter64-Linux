@@ -771,7 +771,7 @@ void CelestialBody::ClearModule ()
 			}
 			module = 0;
 		}
-		dlclose (hMod);
+		ModuleFree (hMod); // FreeLibrary
 		hMod = 0;
 	}
 	memset (&modIntf, 0, sizeof (modIntf)); // old interface

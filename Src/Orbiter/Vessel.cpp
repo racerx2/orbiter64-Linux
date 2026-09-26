@@ -5988,7 +5988,7 @@ bool Vessel::RegisterModule (const char *dllname)
 void Vessel::ClearModule ()
 {
 	if (hMod) {
-		dlclose (hMod);
+		ModuleFree (hMod); // FreeLibrary
 		hMod = 0;
 	}
 	memset (&modIntf, 0, sizeof (modIntf));

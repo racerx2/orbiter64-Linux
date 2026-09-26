@@ -1,6 +1,8 @@
 #ifndef TIMEDATA_H
 #define TIMEDATA_H
 
+#include <cstddef> // size_t: MSVC's headers bring it in implicitly
+
 //-----------------------------------------------------------------------------
 // Name: class TimeData
 // Desc: stores timing information for current time step

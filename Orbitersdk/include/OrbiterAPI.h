@@ -6335,6 +6335,9 @@ OAPIFUNC FILEHANDLE oapiOpenFile (const char *fname, FileAccessMode mode, PathRo
 	*/
 OAPIFUNC void       oapiCloseFile (FILEHANDLE file, FileAccessMode mode);
 
+// not upstream: on-disk spelling of a '\'-separated, any-case path; an unmatched tail is kept so new files work too
+OAPIFUNC std::string oapiResolvePath (const char *path);
+
 	/**
 	* \brief Writes the current simulation state to a scenario file.
 	* \param fname scenario file name

@@ -84,6 +84,12 @@ add_unit_test(Celbody.Test ${ORBITER_SOURCE_DIR}/PathResolve.cpp)
 set_target_properties(Celbody.Test PROPERTIES ENABLE_EXPORTS ON)
 add_dependencies(Celbody.Test Sol Sun Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune Moon Io Europa Ganymede Callisto
 	Mimas Enceladus Tethys Dione Rhea Titan Hyperion Iapetus EarthAtm2006 EarthAtmJ71G EarthAtmNRLMSISE00 MarsAtm2006 VenusAtm2006)
+# not upstream: Phase 4 dialog builder on Orbiter.rc, rendered offscreen
+add_unit_test(ResDialog.Test ${ORBITER_SOURCE_DIR}/ResDialog.cpp ${ORBITER_SOURCE_DIR}/ResDialog.h)
+set_target_properties(ResDialog.Test PROPERTIES AUTOMOC ON)
+target_link_libraries(ResDialog.Test Qt6::Widgets)
+orbiter_rc_resources(ResDialog.Test ${ORBITER_SOURCE_DIR}/Orbiter.rc EXE SYMBOL OrbiterResources)
+set_tests_properties(ResDialog.Test PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
 
 if (BUILD_ORBITER_SERVER)
 

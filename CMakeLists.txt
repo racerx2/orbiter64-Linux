@@ -201,6 +201,9 @@ if (ORBITER_MAKE_DOC)
 	find_package(Doxygen REQUIRED)
 endif()
 
+# not upstream: .rc scripts compile to C++ resource tables
+include(cmake/rcresources.cmake)
+
 # Enable Address SANitizer
 include(cmake/sanitizer.cmake)
 # the option is ON/OFF, so the sanitizer name is passed here

@@ -73,9 +73,11 @@ OAPIFUNC QWidget *oapiResDlgItem (QWidget *hDlg, int id);
 // resource id of a dialog or control widget (GetDlgCtrlID counterpart), 0 if none
 OAPIFUNC int oapiResId (const QWidget *hWnd);
 
-// custom control classes (RegisterClass counterpart for controls the .rc names by class)
+// custom control classes (RegisterClass/UnregisterClass counterparts for controls the .rc names by class);
+// a dialog looks the class up for its own module first, then for any module
 typedef QWidget *(*RESCTRLFACTORY)(const RESCONTROL *ctrl, QWidget *parent);
-OAPIFUNC void oapiRegisterResControl (const char *cls, RESCTRLFACTORY create);
+OAPIFUNC void oapiRegisterResControl (void *hModule, const char *cls, RESCTRLFACTORY create);
+OAPIFUNC void oapiUnregisterResControl (void *hModule, const char *cls);
 
 #ifdef QT_WIDGETS_LIB
 #include <QWidget>

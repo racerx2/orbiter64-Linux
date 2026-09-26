@@ -66,9 +66,11 @@ namespace rs {
 	constexpr DWORD PBS_VERTICAL = 0x4;
 }
 
-static std::map<std::string, RESCTRLFACTORY> &CtrlClasses ()
+struct CtrlClass { void *hModule; RESCTRLFACTORY create; };
+
+static std::map<std::string, std::vector<CtrlClass>> &CtrlClasses ()
 {
-	static std::map<std::string, RESCTRLFACTORY> classes;
+	static std::map<std::string, std::vector<CtrlClass>> classes;
 	return classes;
 }
 
@@ -120,9 +122,27 @@ QImage *oapiLoadResImage (void *hModule, int resId)
 	return new QImage (img);
 }
 
-void oapiRegisterResControl (const char *cls, RESCTRLFACTORY create)
+void oapiRegisterResControl (void *hModule, const char *cls, RESCTRLFACTORY create)
 {
-	CtrlClasses()[Lower (cls)] = create;
+	oapiUnregisterResControl (hModule, cls);
+	CtrlClasses()[Lower (cls)].push_back ({hModule, create});
+}
+
+void oapiUnregisterResControl (void *hModule, const char *cls)
+{
+	auto it = CtrlClasses().find (Lower (cls));
+	if (it == CtrlClasses().end()) return;
+	std::erase_if (it->second, [hModule](const CtrlClass &c) { return c.hModule == hModule; });
+	if (it->second.empty()) CtrlClasses().erase (it);
+}
+
+static RESCTRLFACTORY FindCtrlClass (void *hModule, const char *cls)
+{
+	auto it = CtrlClasses().find (Lower (cls));
+	if (it == CtrlClasses().end()) return nullptr;
+	for (auto &c : it->second)
+		if (c.hModule == hModule) return c.create;
+	return it->second.back().create;
 }
 
 QWidget *oapiResDlgItem (QWidget *hDlg, int id)
@@ -379,8 +399,8 @@ static QWidget *CreateControl (const RESCONTROL *c, QWidget *dlg, void *hModule,
 		w = lv;
 		} break;
 	default: {
-		auto it = CtrlClasses().find (Lower (c->cls));
-		if (it != CtrlClasses().end()) w = it->second (c, dlg);
+		RESCTRLFACTORY create = FindCtrlClass (hModule, c->cls);
+		if (create) w = create (c, dlg);
 		if (!w) {
 			LOGOUT_WARN ("Dialog control class %s is not registered; showing an empty area", c->cls ? c->cls : "(none)");
 			w = new QWidget (dlg);

@@ -4,12 +4,15 @@
 #ifndef __DLGCTRLLOCAL_H
 #define __DLGCTRLLOCAL_H
 
+#include <QColor>
+
+// pen and brush colours the controls draw with
 typedef struct {
-	HPEN hPen1, hPen2;
-	HBRUSH hBrush1, hBrush2;
+	QColor hPen1, hPen2;
+	QColor hBrush1, hBrush2;
 } GDIRES;
 
-void RegisterPropertyList (HINSTANCE hInst);
-void UnregisterPropertyList (HINSTANCE hInst);
+void RegisterPropertyList (void *hInst);
+void UnregisterPropertyList (void *hInst);
 
 #endif // !__DLGCTRLLOCAL_H

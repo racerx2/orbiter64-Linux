@@ -295,8 +295,16 @@ VkTex::VkTex (VkDev *_dev, VkFormat _fmt, UINT _w, UINT _h, UINT _d, VkImageUsag
 	VKCHECK(vkCreateImageView (dev->dev, &vi, NULL, &view));
 }
 
+void (*VkTex::uiRelease) (uint64_t set, DWORD gen) = NULL;
+
 VkTex::~VkTex ()
 {
+	if (uiSet && uiRelease) {
+		auto f = uiRelease;
+		uint64_t s = uiSet;
+		DWORD g = uiGen;
+		dev->Defer ([f, s, g]() { f (s, g); });
+	}
 	VkDevice d = dev->dev;
 	VmaAllocator vma = dev->vma;
 	VkImageView v = view;

@@ -104,6 +104,12 @@ public:
 	UINT depth;            // 1 unless a volume texture
 	VkDev *Device () const { return dev; }
 
+	// ImGui descriptor set of this texture (ImTextureID), made by the client and kept while the texture lives
+	uint64_t uiSet = 0;
+	VkImageView uiView = VK_NULL_HANDLE; // the view uiSet was made with
+	DWORD uiGen = 0;                     // ImGui backend generation uiSet belongs to
+	static void (*uiRelease) (uint64_t set, DWORD gen);
+
 private:
 	VkDev *dev;
 	VmaAllocation alloc;

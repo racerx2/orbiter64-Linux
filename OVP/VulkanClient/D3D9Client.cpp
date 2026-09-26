@@ -135,8 +135,8 @@ static oapi::Font *pLargeFont = NULL;
 static QImage GDIImage;
 
 // not upstream: ImGui descriptor sets of this frame's surfaces (D3D9 passed the texture pointer), and a guard for their release
-static std::vector<VkDescriptorSet> ImDescSets;
-static DWORD ImGuiGeneration = 0;
+static DWORD ImGuiGeneration = 0; // not upstream: descriptor sets of an ImGui backend that was shut down are gone with its pool
+static void ReleaseImSet (uint64_t s, DWORD gen) { if (gen == ImGuiGeneration) ImGui_ImplVulkan_RemoveTexture ((VkDescriptorSet)s); }
 
 // not upstream: CreateFont for the client's own GDI fonts (a positive height is the cell height, as in GDI)
 static QFont *CreateGDIFont(int height, int weight, const char *face)
@@ -2777,13 +2777,6 @@ void D3D9Client::clbkImGuiRenderDrawData()
 		clbkReleaseSurface(surf);
 	}
 	ImTextures.clear();
-
-	// not upstream: the frame's descriptor sets go once the GPU is done with the frame (unless the backend is shut down by then)
-	for (VkDescriptorSet ds : ImDescSets) {
-		DWORD gen = ImGuiGeneration;
-		pDevice->Defer([ds, gen]() { if (gen == ImGuiGeneration) ImGui_ImplVulkan_RemoveTexture(ds); });
-	}
-	ImDescSets.clear();
 }
 void D3D9Client::clbkImGuiInit()
 {
@@ -2805,6 +2798,7 @@ void D3D9Client::clbkImGuiInit()
 	info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
 	info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &pBackBuffer->tex->fmt;
 	ImGui_ImplVulkan_Init(&info);
+	VkTex::uiRelease = ReleaseImSet; // not upstream: a texture's ImGui descriptor set goes with the texture
 }
 void D3D9Client::clbkImGuiShutdown()
 {
@@ -2814,8 +2808,7 @@ void D3D9Client::clbkImGuiShutdown()
 		clbkReleaseSurface(surf);
 	}
 	ImTextures.clear();
-	ImDescSets.clear(); // not upstream: freed with the backend's pool
-	ImGuiGeneration++;
+	ImGuiGeneration++; // not upstream: the textures' descriptor sets are freed with the backend's pool
 	pDevice->Flush(); // not upstream: the recorded ImGui draws run before the backend frees its pipeline and buffers
 	ImGui_ImplVulkan_Shutdown(); // ImGui_ImplDX9_Shutdown
 }
@@ -2825,10 +2818,19 @@ uint64_t D3D9Client::clbkImGuiSurfaceTexture(SURFHANDLE surf)
 	clbkIncrSurfaceRef(surf);
 	VkTex *pTxt = SURFACE(surf)->GetTexture();
 	if (!pTxt) return 0; // not upstream: no descriptor set without a texture (upstream passed the NULL pointer on)
+	// not upstream: one descriptor set per texture and view, valid as long as the texture (callers keep the ID, as they kept the D3D9 pointer)
+	if (pTxt->uiSet && pTxt->uiView == pTxt->view && pTxt->uiGen == ImGuiGeneration) return pTxt->uiSet;
+	if (pTxt->uiSet) {
+		uint64_t s = pTxt->uiSet;
+		DWORD g = pTxt->uiGen;
+		pDevice->Defer([s, g]() { ReleaseImSet(s, g); });
+	}
 	VkSamplerDesc sd = { VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 0.0f, 0.0f, true }; // the DX9 backend's sampler states
 	VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(pDevice->Sampler(sd), pTxt->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-	ImDescSets.push_back(ds);
+	pTxt->uiSet = (uint64_t)ds;
+	pTxt->uiView = pTxt->view;
+	pTxt->uiGen = ImGuiGeneration;
 	return (uint64_t)ds; // ImTextureID: the descriptor set (the D3D9 texture pointer upstream)
 }
 // =======================================================================

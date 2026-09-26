@@ -13,10 +13,13 @@
 #ifndef __OPTIONSPAGES_H
 #define __OPTIONSPAGES_H
 
-#include <windows.h>
-#include <CommCtrl.h>
+#include "OrbiterPlatform.h"
 #include "CustomControls.h"
 #include "OrbiterAPI.h"
+#include <string>
+#include <vector>
+
+class QTreeWidgetItem;
 
 class OptionsPage;
 class Config;
@@ -43,7 +46,7 @@ public:
 
 	Config* Cfg() { return m_cfg; }
 
-	void SetWindowHandles(HWND hDlg, HWND hSplitter, HWND hPane1, HWND hPane2);
+	void SetWindowHandles(QWidget *hDlg, QWidget *hSplitter, QWidget *hPane1, QWidget *hPane2);
 
 	const GenericCtrl* ContainerControl() const { return &m_container; }
 
@@ -59,7 +62,8 @@ public:
 
 	void SwitchPage(const char* name);
 
-	void OnNotifyPagelist(LPNMHDR pnmh);
+	void OnNotifyPagelist(QTreeWidgetItem *itemNew);
+	// TVN_SELCHANGED of the page list
 
 protected:
 	/**
@@ -67,7 +71,7 @@ protected:
      * \param hDlg dialog handle
      * \param pPage pointer to new page
      */
-	HTREEITEM AddPage(OptionsPage* pPage, HTREEITEM parent = 0);
+	QTreeWidgetItem *AddPage(OptionsPage* pPage, QTreeWidgetItem *parent = 0);
 
 	const OptionsPage* FindPage(const char* name) const;
 
@@ -78,11 +82,12 @@ protected:
 
 	void ExpandAll();
 
-	void SetPageSize(HWND hDlg);
+	void SetPageSize(QWidget *hDlg);
 
 	void Clear();
 
-	BOOL VScroll(HWND hDlg, WORD request, WORD curpos, HWND hControl);
+	BOOL VScroll(QWidget *hDlg, int pos, QWidget *hControl);
+	// the page scroll bar moved to pos
 
 	const HELPCONTEXT* HelpContext() const { return m_contextHelp; }
 
@@ -93,9 +98,9 @@ private:
 	GenericCtrl m_container;
 	std::vector<OptionsPage*> m_pPage;
 	size_t m_pageIdx;
-	HWND m_hDlg;
-	HWND m_hPageList;
-	HWND m_hContainer;
+	QWidget *m_hDlg;
+	QWidget *m_hPageList;
+	QWidget *m_hContainer;
 	int m_vScrollPos;
 	int m_vScrollRange;
 	int m_vScrollPage;
@@ -139,18 +144,18 @@ public:
 	 * \brief Returns the parent dialog handle.
 	 * \return Parent dialog handle
 	 */
-	HWND HParent() const;
+	QWidget *HParent() const;
 
 	/**
 	 * \brief Returns the page window handle.
 	 * \return Page window handle
 	 */
-	HWND HPage() const { return m_hPage; }
+	QWidget *HPage() const { return m_hPage; }
 
 	/**
 	 * \brief Creates the page window and assigns \ref m_hPage.
 	 */
-	HTREEITEM CreatePage(HWND hDlg, HTREEITEM parent = 0);
+	QTreeWidgetItem *CreatePage(QWidget *hDlg, QTreeWidgetItem *parent = 0);
 
 	/**
 	 * \brief Show/hide the page.
@@ -162,14 +167,14 @@ public:
 	 * \brief Update the dialog controls from config settings.
 	 * \param hPage dialog page handle
 	 */
-	virtual void UpdateControls(HWND hPage) {}
+	virtual void UpdateControls(QWidget *hPage) {}
 
 	/**
 	 * \brief Update config object from dialog control states.
 	 *    Only required for pages which don't react directly to controls
 	 *    being modified.
 	 */
-	virtual void UpdateConfig(HWND hPage) {}
+	virtual void UpdateConfig(QWidget *hPage) {}
 
 	/**
 	 * \brief Returns the name of the option page's help page, if applicable.
@@ -181,58 +186,49 @@ protected:
 	 * \brief Default handler for WM_INITDIALOG messages.
 	 * \default Nothing, returns TRUE
 	 */
-	virtual BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
+	virtual BOOL OnInitDialog(QWidget *hPage);
 
 	/**
-	 * \brief Default handler for WM_COMMAND messages.
+	 * \brief Default handler for control commands (WM_COMMAND).
 	 * \param hPage dialog window handle
-	 * \param ctrlId resource identifier of the control (LOWORD(wParam))
-	 * \param notification code (HIWORD(wParam))
-	 * \param hCtrl control window handle (lParam)
+	 * \param ctrlId resource identifier of the control
+	 * \param notification RESNOTIFY code
+	 * \param hCtrl control window handle
 	 * \default Nothing, returns FALSE
 	 */
-	virtual BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl) { return FALSE; }
+	virtual BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl) { return FALSE; }
 
 	/**
-	 * \brief Default handler for WM_HSCROLL messages.
-	 * \default Nothing, returns FALSE
-	 * \note This message is called by gauge controls on slider position change.
-	 */
-	virtual BOOL OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam) { return FALSE; }
-
-	/**
-	 * \brief Default handler for WM_NOTIFY messages.
-	 * \param hPage dialog window handle
-	 * \param ctrlId resource identifier of the control (wParam)
-	 * \param pNmHdr pointer to a NMHDR structure with details of the notification
+	 * \brief Default handler for gauge control position changes (WM_HSCROLL).
+	 * \param request GAUGEREQUEST code
+	 * \param pos new gauge position
 	 * \default Nothing, returns FALSE
 	 */
-	virtual BOOL OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmHdr) { return FALSE; }
+	virtual BOOL OnHScroll(QWidget *hPage, int ctrlId, int request, int pos) { return FALSE; }
 
 	/**
-	 * \brief Default generic message handler.
+	 * \brief Default handler for up-down control clicks (WM_NOTIFY UDN_DELTAPOS).
+	 * \param iDelta requested change of the up-down position
 	 * \default Nothing, returns FALSE
-	 * \note This method is called for any messages which don't have an associated
-	 *    specific callback function.
 	 */
-	virtual BOOL OnMessage(HWND hPage, UINT uMsg, WPARAM wParam, LPARAM lParam) { return FALSE; }
+	virtual BOOL OnDeltaPos(QWidget *hPage, int ctrlId, int iDelta) { return FALSE; }
 
 	/**
-	 * \Brief page message loop.
+	 * \brief Default generic event handler.
+	 * \default Nothing, returns FALSE
+	 * \note This method is called for any events of the page window.
 	 */
-	virtual INT_PTR DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	virtual BOOL OnMessage(QWidget *hPage, QEvent *event) { return FALSE; }
+
+	/**
+	 * \Brief connects the page's controls and events to the handlers above (page message loop).
+	 */
+	virtual void DlgProc(QWidget *hWnd);
 
 private:
-	/**
-	 * \brief Message loop hook for all options page.
-	 * \note This function dereferences the page instance and then calls
-	 *    the specific page's DlgProc method.
-	 */
-	static INT_PTR CALLBACK s_DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
 	OptionsPageContainer* m_container; ///< container owning the page
-	HWND m_hPage;      ///< page window handle (0 before MakePage has been called)
-	HTREEITEM m_hItem; ///< page title in the tree view control
+	QWidget *m_hPage;      ///< page window handle (0 before MakePage has been called)
+	QTreeWidgetItem *m_hItem; ///< page title in the tree view control
 };
 
 /************************************************************************
@@ -244,13 +240,13 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
-	void UpdateConfig(HWND hPage);
+	void UpdateControls(QWidget *hPage);
+	void UpdateConfig(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	void VisualsChanged(HWND hPage);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	void VisualsChanged(QWidget *hPage);
 
 };
 
@@ -263,12 +259,12 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
-	void UpdateConfig(HWND hPage);
+	void UpdateControls(QWidget *hPage);
+	void UpdateConfig(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand( HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl );
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
 };
 
 /************************************************************************
@@ -280,12 +276,12 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	BOOL OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmHdr);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	BOOL OnDeltaPos(QWidget *hPage, int ctrlId, int iDelta);
 };
 
 /************************************************************************
@@ -297,11 +293,11 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
 };
 
 /************************************************************************
@@ -313,11 +309,11 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
 };
 
 /************************************************************************
@@ -329,12 +325,12 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	BOOL OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	BOOL OnHScroll(QWidget *hPage, int ctrlId, int request, int pos);
 };
 
 /************************************************************************
@@ -346,21 +342,21 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	BOOL OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam);
-	BOOL OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmHdr);
-	void PopulateStarmapList(HWND hPage);
-	void PopulateBgImageList(HWND hPage);
-	void StarPixelActivationChanged(HWND hPage);
-	void StarmapActivationChanged(HWND hPage);
-	void StarmapImageChanged(HWND hPage);
-	void BackgroundActivationChanged(HWND hPage);
-	void BackgroundImageChanged(HWND hPage);
-	void BackgroundBrightnessChanged(HWND hPage, double level);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	BOOL OnHScroll(QWidget *hTab, int ctrlId, int request, int pos);
+	BOOL OnDeltaPos(QWidget *hPage, int ctrlId, int iDelta);
+	void PopulateStarmapList(QWidget *hPage);
+	void PopulateBgImageList(QWidget *hPage);
+	void StarPixelActivationChanged(QWidget *hPage);
+	void StarmapActivationChanged(QWidget *hPage);
+	void StarmapImageChanged(QWidget *hPage);
+	void BackgroundActivationChanged(QWidget *hPage);
+	void BackgroundImageChanged(QWidget *hPage);
+	void BackgroundBrightnessChanged(QWidget *hPage, double level);
 
 private:
 	std::vector<std::pair<std::string, std::string>> m_pathStarmap;
@@ -376,11 +372,11 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
 };
 
 /************************************************************************
@@ -392,14 +388,14 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	void RescanMarkerList(HWND hPage);
-	void OnItemClicked(HWND hPage, WORD ctrlId);
-	BOOL OnMarkerSelectionChanged(HWND hPage);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	void RescanMarkerList(QWidget *hPage);
+	void OnItemClicked(QWidget *hPage, WORD ctrlId);
+	BOOL OnMarkerSelectionChanged(QWidget *hPage);
 };
 
 /************************************************************************
@@ -411,15 +407,15 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	void OnItemClicked(HWND hPage, WORD ctrlId);
-	void ScanPsysBodies(HWND hPage);
-	void UpdateFeatureList(HWND hPage);
-	void RescanFeatures(HWND hPage);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	void OnItemClicked(QWidget *hPage, WORD ctrlId);
+	void ScanPsysBodies(QWidget *hPage);
+	void UpdateFeatureList(QWidget *hPage);
+	void RescanFeatures(QWidget *hPage);
 };
 
 /************************************************************************
@@ -431,13 +427,13 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	void OnItemClicked(HWND hPage, WORD ctrlId);
-	BOOL OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	void OnItemClicked(QWidget *hPage, WORD ctrlId);
+	BOOL OnHScroll(QWidget *hTab, int ctrlId, int request, int pos);
 };
 
 /************************************************************************
@@ -449,13 +445,13 @@ public:
 	int ResourceId() const;
 	const char* Name() const;
 	const HELPCONTEXT* HelpContext() const;
-	void UpdateControls(HWND hPage);
+	void UpdateControls(QWidget *hPage);
 
 protected:
-	BOOL OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam);
-	BOOL OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl);
-	void OnItemClicked(HWND hPage, WORD ctrlId);
-	BOOL OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam);
+	BOOL OnInitDialog(QWidget *hPage);
+	BOOL OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl);
+	void OnItemClicked(QWidget *hPage, WORD ctrlId);
+	BOOL OnHScroll(QWidget *hTab, int ctrlId, int request, int pos);
 };
 
 #endif // !__OPTIONSPAGES_H

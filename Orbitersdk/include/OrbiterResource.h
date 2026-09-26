@@ -4,6 +4,7 @@
 #define __ORBITERRESOURCE_H
 
 #include "OrbiterAPI.h"
+#include <functional>
 
 // control kinds (rc2cpp.py classifies each .rc control into one of these)
 enum RESKIND {
@@ -46,11 +47,30 @@ struct RESIMAGE {
 	int size;
 };
 
+// resource of a user-defined type (TEXT, IMAGE, RCDATA, ...) read from a file; data is zero-terminated after size bytes
+struct RESDATA {
+	const char *type;
+	int id;
+	const char *name;
+	const unsigned char *data;
+	int size;
+};
+
+// STRINGTABLE entry (UTF-8)
+struct RESSTRING {
+	int id;
+	const char *text;
+};
+
 struct RESTABLE {
 	size_t ndlg;
 	const RESDIALOG *dlg;
 	size_t nimg;
 	const RESIMAGE *img;
+	size_t ndata;
+	const RESDATA *data;
+	size_t nstr;
+	const RESSTRING *str;
 };
 
 class QWidget;
@@ -63,6 +83,13 @@ OAPIFUNC const RESIMAGE *oapiFindResImage (void *hModule, int resId);
 
 // image resource as a QImage (LoadBitmap/LoadIcon counterpart); caller owns the image
 OAPIFUNC QImage *oapiLoadResImage (void *hModule, int resId);
+
+// resource of a user-defined type (FindResource/LoadResource counterpart), type compared case-insensitively
+OAPIFUNC const RESDATA *oapiFindResData (void *hModule, const char *type, int resId);
+
+// STRINGTABLE string (LoadString counterpart): copies at most buflen-1 bytes plus a terminating zero,
+// returns the number of bytes copied, 0 if there is no such string
+OAPIFUNC int oapiLoadResString (void *hModule, int id, char *buf, int buflen);
 
 // builds the Qt widgets of a dialog template (CreateDialogParam counterpart, without the message procedure)
 OAPIFUNC QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent);
@@ -78,6 +105,35 @@ OAPIFUNC int oapiResId (const QWidget *hWnd);
 typedef QWidget *(*RESCTRLFACTORY)(const RESCONTROL *ctrl, QWidget *parent);
 OAPIFUNC void oapiRegisterResControl (void *hModule, const char *cls, RESCTRLFACTORY create);
 OAPIFUNC void oapiUnregisterResControl (void *hModule, const char *cls);
+
+class QComboBox;
+
+// command notifications of dialog controls (WM_COMMAND notification code counterparts)
+enum RESNOTIFY {
+	RESN_CLICKED,    // button clicked by the user (BN_CLICKED)
+	RESN_CHANGE,     // edit box text changed, also when set by the program (EN_CHANGE)
+	RESN_KILLFOCUS,  // edit box left, or Return pressed (EN_KILLFOCUS)
+	RESN_SELCHANGE,  // combo box selection changed by the user (CBN_SELCHANGE); list box selection changed (LBN_SELCHANGE)
+	RESN_DBLCLK,     // list box item double-clicked (LBN_DBLCLK)
+	RESN_EDITCHANGE  // editable combo box text changed by the user (CBN_EDITCHANGE)
+};
+
+// connects the command signals of a dialog's controls to one handler, called with the control's resource id,
+// the RESNOTIFY code and the control (the WM_COMMAND switch of a dialog procedure)
+typedef std::function<void (int id, int code, QWidget *hCtrl)> RESCOMMAND;
+OAPIFUNC void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler);
+
+// SetWindowText / GetWindowText counterparts for dialogs and their controls (labels, edit boxes, buttons, group boxes,
+// editable combo boxes, window titles). Text is UTF-8; text that is not valid UTF-8 is taken as Latin-1.
+// "\r\n" line ends become "\n". The getter returns the number of bytes copied (buf is zero-terminated).
+OAPIFUNC void oapiSetDlgText (QWidget *hWnd, const char *text);
+OAPIFUNC int  oapiGetDlgText (QWidget *hWnd, char *buf, int buflen);
+OAPIFUNC void oapiSetDlgItemText (QWidget *hDlg, int id, const char *text);
+OAPIFUNC int  oapiGetDlgItemText (QWidget *hDlg, int id, char *buf, int buflen);
+
+// CB_ADDSTRING counterpart: appends the string, or inserts it in case-insensitive order in a sorted (CBS_SORT)
+// combo box; returns the index of the new item
+OAPIFUNC int oapiComboAddString (QComboBox *cb, const char *str);
 
 #ifdef QT_WIDGETS_LIB
 #include <QWidget>

@@ -4,14 +4,13 @@
 #ifndef __HELP_H
 #define __HELP_H
 
-#define STRICT 1
-#include <windows.h>
+class QWidget;
 
-void OpenHelp (HWND hWnd, const char *file, const char *topic);
+void OpenHelp (QWidget *hWnd, const char *file, const char *topic);
 
-void OpenDefaultHelp (HWND hWnd, const char *topic);
+void OpenDefaultHelp (QWidget *hWnd, const char *topic);
 // use this only for opening a help window outside the simulation,
 // e.g. from the Launchpad dialog. For in-game help, use the mechanism in
 // Dialogs.cpp instead.
 
-#endif __HELP_H
+#endif // !__HELP_H

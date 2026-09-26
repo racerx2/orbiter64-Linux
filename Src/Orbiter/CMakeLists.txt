@@ -1,8 +1,6 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-# SAFESEH linker flag must be turned off because the DX7 libraries don't support it'
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 FetchContent_MakeAvailable(imgui)
 FetchContent_MakeAvailable(implot)
 
@@ -56,7 +54,9 @@ set(common_src
 	DlgOptions.cpp
 	DlgRecorder.cpp
 	DlgTacc.cpp
-	htmlctrl.c
+	htmlctrl.cpp
+	HtmlHelp.cpp
+	ResDialog.cpp
 	Select.cpp
 	OptionsPages.cpp
 # Body classes
@@ -114,11 +114,10 @@ set(common_src
 	Log.cpp
 	Memstat.cpp
 	Util.cpp
+	PathResolve.cpp
 	ZTreeMgr.cpp
-# Resources
-	Orbiter.rc
-	Orbiter.ico
-	${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+# ImGui platform backend
+	imgui_impl_qt.cpp
 )
 
 set(Orbiter_includes
@@ -126,23 +125,17 @@ set(Orbiter_includes
 	${CMAKE_SOURCE_DIR}/Orbitersdk/include
 	${CMAKE_SOURCE_DIR}/OVP
 	${CMAKE_CURRENT_BINARY_DIR}
-	${HTMLHELP_INCLUDE_DIR}
 )
 
+# Qt Widgets carries the Launchpad and dialogs; libdl the module loading
 set(Orbiter_common_libs
-	Winmm.dll
-	comctl32.lib
-	UxTheme.lib
-	version.lib
-	${HTML_HELP_LIBRARY}
 	zlib
-	${HTMLHELP_LIB}
-	$<TARGET_FILE:Orbitersdk>
-	$<TARGET_FILE:DlgCtrl>
+	Orbitersdk
+	DlgCtrl
+	Qt6::Widgets
+	${CMAKE_DL_LIBS}
 )
 set(Orbiter_libs
-	dxguid.lib
-	dinput8.lib
 )
 
 set(Orbiter_depends
@@ -150,39 +143,48 @@ set(Orbiter_depends
 	DlgCtrl
 )
 
-# Orbiter executable (graphics server version)
-add_executable(Orbiter ${common_src})
+# not upstream: until every Src/Orbiter file is ported, the exe target is OrbiterPort (built on request only)
+# and Orbiter is an empty target the modules depend on
+if(ORBITER_PORT_COMPLETE)
+	set(OrbiterExe Orbiter)
+else()
+	set(OrbiterExe OrbiterPort)
+	add_custom_target(Orbiter)
+endif()
 
-set_target_properties(Orbiter
+# Orbiter executable (graphics server version)
+add_executable(${OrbiterExe} ${common_src})
+
+# the dialog templates, bitmaps, icons and strings of Orbiter.rc as a C++ resource table
+orbiter_rc_resources(${OrbiterExe} Orbiter.rc EXE SYMBOL OrbiterResources)
+
+set_target_properties(${OrbiterExe}
 	PROPERTIES
-	LINK_FLAGS "/SUBSYSTEM:CONSOLE /ENTRY:WinMainCRTStartup"
 	RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
 	OUTPUT_NAME Orbiter
-	VS_DEBUGGER_WORKING_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
-	COMPILE_DEFINITIONS "NOGRAPHICS;DIRECTINPUT_VERSION=0x0800"
+	COMPILE_DEFINITIONS "NOGRAPHICS"
 	FOLDER Core
+	AUTOMOC ON
 )
+if(NOT ORBITER_PORT_COMPLETE)
+	set_target_properties(${OrbiterExe} PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
 
-target_include_directories(Orbiter PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
+target_include_directories(${OrbiterExe} PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
 
-target_link_libraries(Orbiter ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
+target_link_libraries(${OrbiterExe} ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
 
-add_dependencies(Orbiter ${Orbiter_depends})
+add_dependencies(${OrbiterExe} ${Orbiter_depends})
 
 # Installation: Orbiter executable (graphics-server versions)
-install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
+if(ORBITER_PORT_COMPLETE)
+	install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
+endif()
 
 # If the standard Orbiter executable is not built...
-set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
+set_target_properties(${OrbiterExe} PROPERTIES ENABLE_EXPORTS 1)
 
-# ...we have to use the NG version to export the API links
-install(FILES $<TARGET_LINKER_FILE:Orbiter>	DESTINATION ${ORBITER_INSTALL_SDK_DIR}/lib)
-
-# Copy library to its Orbitersdk/lib location so that external project integrated into the build can find it
-add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
-	COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/ 
-)
+# no import library on ELF: modules bind the exe's exported oapi* symbols when they are loaded
 
 string(TIMESTAMP DATE "%d %b %Y")
 string(TIMESTAMP VERSION "%y%m%d")

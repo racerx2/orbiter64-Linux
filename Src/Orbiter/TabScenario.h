@@ -9,11 +9,14 @@
 #ifndef __TABSCENARIO_H
 #define __TABSCENARIO_H
 
-#include <CommCtrl.h>
 #include "LpadTab.h"
 #include "CustomControls.h"
 #include <filesystem>
 namespace fs = std::filesystem;
+
+class QIcon;
+class QTreeWidgetItem;
+class QFileSystemWatcher;
 
 namespace orbiter {
 
@@ -39,15 +42,13 @@ namespace orbiter {
 
 		void LaunchpadShowing(bool show);
 
-		BOOL OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh);
-
-		BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 
 	protected:
 		void RefreshList(bool preserveSelection);
 		// refresh the scenario list
 
-		void ScanDirectory(const fs::path &path, HTREEITEM hti);
+		void ScanDirectory(const fs::path &path, QTreeWidgetItem *hti);
 		// scan scenario files from a subdirectory
 
 		void ScenarioChanged();
@@ -67,15 +68,14 @@ namespace orbiter {
 		// open the help file associated with the current scenario
 
 	private:
-		static INT_PTR CALLBACK SaveProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		// callback function for "scenario save" dialog
+		static void SaveProc(QWidget *hWnd, ScenarioTab *pTab);
+		// set-up function for "scenario save" dialog
 
-		static DWORD WINAPI threadWatchScnList(LPVOID pPrm);
-		// thread function for scenario list watcher
+		void WatchScnList();
+		// (re)registers the scenario directory tree with the scenario list watcher
 
 		SplitterCtrl splitListDesc;  // splitter control for scenario list(left) and description(right)
-		HIMAGELIST imglist;      // image list for scenario icons
-		int treeicon_idx[4];     // icon indices for scenario tree
+		QIcon *treeicon[2];      // icons for scenario tree: folder, scenario (with its selected image)
 		char scnhelp[128];       // scenario help string, if available
 		RECT r_list0;            // initial position of scenario list - REMOVE!
 		RECT r_desc0;            // initial position of description block - REMOVE!
@@ -86,7 +86,7 @@ namespace orbiter {
 		RECT r_pause0;           // initial position of "start paused" button
 		int infoId;              // IDC_SCN_HTML or IDC_SCN_INFO, depending on which is active
 		bool htmldesc;           // Use embedded html viewer for scenario description
-		HANDLE hThread;          // scenario directory tree watcher
+		QFileSystemWatcher *hWatch; // scenario directory tree watcher
 	};
 
 }

@@ -13,6 +13,8 @@
 #include "OrbiterAPI.h"
 #include "CustomControls.h"
 
+class QTreeWidgetItem;
+
 namespace orbiter {
 
 	class ExtraTab : public LaunchpadTab {
@@ -33,12 +35,10 @@ namespace orbiter {
 
 		BOOL OnSize(int w, int h);
 
-		BOOL OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh);
-
-		BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 
 	protected:
-		HTREEITEM RegisterExtraParam(LaunchpadItem* item, HTREEITEM parent = 0);
+		QTreeWidgetItem *RegisterExtraParam(LaunchpadItem* item, QTreeWidgetItem *parent = 0);
 		// Register an item in the "Extra" list. If parent=0, the item is registered
 		// as a root (top level) item. Otherwise it appears as a sub-item under
 		// the parent item.
@@ -50,10 +50,10 @@ namespace orbiter {
 		bool UnregisterExtraParam(LaunchpadItem* item);
 		// Unregister an item in the "Extra" list.
 
-		HTREEITEM FindExtraParam(const char* name, const HTREEITEM parent = 0);
+		QTreeWidgetItem *FindExtraParam(const char* name, QTreeWidgetItem *parent = 0);
 		// Return item 'name' below parent 'parent', or NULL if not found
 
-		HTREEITEM FindExtraParamChild(const HTREEITEM parent = 0);
+		QTreeWidgetItem *FindExtraParamChild(QTreeWidgetItem *parent = 0);
 		// Return first child of entry 'parent' (or first root item if root==0)
 		// or 0 if parent has no children
 
@@ -81,8 +81,8 @@ namespace orbiter {
 class BuiltinLaunchpadItem: public LaunchpadItem {
 public:
 	BuiltinLaunchpadItem (const orbiter::ExtraTab *tab);
-	bool OpenDialog (HWND hParent, int resid, DLGPROC pDlg);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	bool OpenDialog (QWidget *hParent, int resid, DLGINIT pDlg);
+	static void DlgProc (QWidget *hWnd, void *context);
 
 protected:
 	void Error (const char *msg);
@@ -109,16 +109,16 @@ public:
 	ExtraDynamics (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm);
-	void Activate (HWND hWnd, int which);
-	bool StoreParams (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm);
+	void Activate (QWidget *hWnd, int which);
+	bool StoreParams (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 	static int PropId[NPROP_METHOD];
 };
 
@@ -132,16 +132,16 @@ public:
 	ExtraAngDynamics (const ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm);
-	void Activate (HWND hWnd, int which);
-	bool StoreParams (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm);
+	void Activate (QWidget *hWnd, int which);
+	bool StoreParams (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 	static int PropId[NAPROP_METHOD];
 };
 #endif
@@ -155,16 +155,16 @@ public:
 	ExtraStabilisation (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm);
-	bool StoreParams (HWND hWnd);
-	void ToggleEnable (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	void ToggleEnable (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 
@@ -188,16 +188,16 @@ public:
 	ExtraMfdConfig (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_INSTRUMENTPRM &prm);
-	bool StoreParams (HWND hWnd);
-	void ToggleEnable (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_INSTRUMENTPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	void ToggleEnable (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 
@@ -243,15 +243,15 @@ public:
 	ExtraShutdown (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 //-----------------------------------------------------------------------------
@@ -263,16 +263,16 @@ public:
 	ExtraFixedStep (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	void ToggleEnable (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	void ToggleEnable (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 //-----------------------------------------------------------------------------
@@ -284,14 +284,14 @@ public:
 	ExtraRenderingOptions (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 //-----------------------------------------------------------------------------
@@ -303,15 +303,15 @@ public:
 	ExtraPerformanceSettings (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	bool OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	bool OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 //-----------------------------------------------------------------------------
@@ -323,14 +323,14 @@ public:
 	ExtraLaunchpadOptions (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 //-----------------------------------------------------------------------------
@@ -342,14 +342,14 @@ public:
 	ExtraLogfileOptions (const orbiter::ExtraTab *tab): BuiltinLaunchpadItem (tab) {}
 	char *Name ();
 	char *Description ();
-	bool clbkOpen (HWND hParent);
+	bool clbkOpen (QWidget *hParent);
 
 private:
-	void InitDialog (HWND hWnd);
-	void ResetDialog (HWND hWnd);
-	void SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm);
-	bool StoreParams (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void InitDialog (QWidget *hWnd);
+	void ResetDialog (QWidget *hWnd);
+	void SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm);
+	bool StoreParams (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 #endif // !__TABEXTRA_H

@@ -26,6 +26,7 @@
 #include <QScreen>
 #include <QScrollBar>
 #include <QSlider>
+#include <QStringDecoder>
 #include <QStyleOption>
 #include <QTextBrowser>
 #include <QTextEdit>
@@ -39,6 +40,8 @@
 #include <vector>
 #include <strings.h>
 #include <dlfcn.h>
+#include <elf.h>
+#include <fstream>
 
 // Win32 style bits as they come from the .rc
 namespace rs {
@@ -111,6 +114,163 @@ const RESIMAGE *oapiFindResImage (void *hModule, int resId)
 		for (size_t i = 0; i < t->nimg; i++)
 			if (t->img[i].id == resId) return t->img + i;
 	return nullptr;
+}
+
+const RESDATA *oapiFindResData (void *hModule, const char *type, int resId)
+{
+	const RESTABLE *t = oapiResourceTable (hModule);
+	if (t)
+		for (size_t i = 0; i < t->ndata; i++)
+			if (t->data[i].id == resId && !strcasecmp (t->data[i].type, type)) return t->data + i;
+	return nullptr;
+}
+
+int oapiLoadResString (void *hModule, int id, char *buf, int buflen)
+{
+	const RESTABLE *t = oapiResourceTable (hModule);
+	if (!t || !buf || buflen < 1) return 0;
+	for (size_t i = 0; i < t->nstr; i++)
+		if (t->str[i].id == id) {
+			int n = std::min ((int)strlen (t->str[i].text), buflen-1);
+			memcpy (buf, t->str[i].text, n);
+			buf[n] = '\0';
+			return n;
+		}
+	buf[0] = '\0';
+	return 0;
+}
+
+int LoadModuleString (const char *modulefile, int id, char *buf, int buflen)
+{
+	if (!buf || buflen < 1) return 0;
+	buf[0] = '\0';
+	std::ifstream f (modulefile, std::ios::binary);
+	if (!f) return 0;
+	Elf64_Ehdr eh;
+	if (!f.read ((char*)&eh, sizeof(eh)) || memcmp (eh.e_ident, ELFMAG, SELFMAG) || eh.e_ident[EI_CLASS] != ELFCLASS64 ||
+		eh.e_shentsize != sizeof(Elf64_Shdr) || eh.e_shstrndx >= eh.e_shnum) return 0;
+	std::vector<Elf64_Shdr> sh (eh.e_shnum);
+	f.seekg (eh.e_shoff);
+	if (!f.read ((char*)sh.data(), eh.e_shnum * sizeof(Elf64_Shdr))) return 0;
+	std::string names (sh[eh.e_shstrndx].sh_size, '\0');
+	f.seekg (sh[eh.e_shstrndx].sh_offset);
+	if (!f.read (names.data(), names.size())) return 0;
+	for (const Elf64_Shdr &s : sh) {
+		if (s.sh_name >= names.size() || strcmp (names.c_str() + s.sh_name, ".oapi_strtab") || s.sh_type == SHT_NOBITS) continue;
+		std::string data (s.sh_size, '\0');
+		f.seekg (s.sh_offset);
+		if (!f.read (data.data(), data.size()) || data.compare (0, 8, "OAPISTR1")) return 0;
+		auto u32 = [&data](size_t p) {
+			return (uint32_t)(unsigned char)data[p] | (uint32_t)(unsigned char)data[p+1] << 8 |
+				(uint32_t)(unsigned char)data[p+2] << 16 | (uint32_t)(unsigned char)data[p+3] << 24;
+		};
+		for (size_t p = 8; p + 8 <= data.size(); ) {
+			uint32_t sid = u32 (p), len = u32 (p+4);
+			p += 8;
+			if (p + len > data.size()) break;
+			if ((int)sid == id) {
+				int n = std::min ((int)len, buflen-1);
+				memcpy (buf, data.data() + p, n);
+				buf[n] = '\0';
+				return n;
+			}
+			p += len;
+		}
+		return 0;
+	}
+	return 0;
+}
+
+void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler)
+{
+	for (QObject *o : hDlg->children()) {
+		QWidget *w = qobject_cast<QWidget*> (o);
+		if (!w || !w->property ("resId").isValid()) continue;
+		int id = w->property ("resId").toInt();
+		if (QAbstractButton *b = qobject_cast<QAbstractButton*> (w)) {
+			QObject::connect (b, &QAbstractButton::clicked, hDlg, [handler, id, w]() { handler (id, RESN_CLICKED, w); });
+		} else if (QLineEdit *e = qobject_cast<QLineEdit*> (w)) {
+			QObject::connect (e, &QLineEdit::textChanged, hDlg, [handler, id, w]() { handler (id, RESN_CHANGE, w); });
+			QObject::connect (e, &QLineEdit::editingFinished, hDlg, [handler, id, w]() { handler (id, RESN_KILLFOCUS, w); });
+		} else if (QPlainTextEdit *e = qobject_cast<QPlainTextEdit*> (w)) {
+			QObject::connect (e, &QPlainTextEdit::textChanged, hDlg, [handler, id, w]() { handler (id, RESN_CHANGE, w); });
+		} else if (QComboBox *c = qobject_cast<QComboBox*> (w)) {
+			QObject::connect (c, &QComboBox::activated, hDlg, [handler, id, w]() { handler (id, RESN_SELCHANGE, w); });
+			if (c->isEditable())
+				QObject::connect (c, &QComboBox::editTextChanged, hDlg, [handler, id, w]() { handler (id, RESN_EDITCHANGE, w); });
+		} else if (QListWidget *l = qobject_cast<QListWidget*> (w)) {
+			QObject::connect (l, &QListWidget::itemSelectionChanged, hDlg, [handler, id, w]() { handler (id, RESN_SELCHANGE, w); });
+			QObject::connect (l, &QListWidget::itemDoubleClicked, hDlg, [handler, id, w]() { handler (id, RESN_DBLCLK, w); });
+		}
+	}
+}
+
+// UTF-8, or Latin-1 if the bytes are not valid UTF-8 (Windows-era files)
+static QString DlgString (const char *text)
+{
+	QByteArray b (text ? text : "");
+	QStringDecoder dec (QStringDecoder::Utf8);
+	QString s = dec (b);
+	if (dec.hasError()) s = QString::fromLatin1 (b);
+	s.remove ('\r');
+	return s;
+}
+
+void oapiSetDlgText (QWidget *hWnd, const char *text)
+{
+	if (!hWnd) return;
+	QString s = DlgString (text);
+	if (QLabel *w = qobject_cast<QLabel*> (hWnd)) w->setText (s);
+	else if (QLineEdit *w = qobject_cast<QLineEdit*> (hWnd)) w->setText (s);
+	else if (QPlainTextEdit *w = qobject_cast<QPlainTextEdit*> (hWnd)) w->setPlainText (s);
+	else if (QTextEdit *w = qobject_cast<QTextEdit*> (hWnd)) w->setPlainText (s);
+	else if (QAbstractButton *w = qobject_cast<QAbstractButton*> (hWnd)) w->setText (s);
+	else if (QGroupBox *w = qobject_cast<QGroupBox*> (hWnd)) w->setTitle (s);
+	else if (QComboBox *w = qobject_cast<QComboBox*> (hWnd)) { if (w->isEditable()) w->setEditText (s); }
+	else if (hWnd->isWindow()) hWnd->setWindowTitle (s);
+}
+
+int oapiGetDlgText (QWidget *hWnd, char *buf, int buflen)
+{
+	if (!buf || buflen < 1) return 0;
+	buf[0] = '\0';
+	if (!hWnd) return 0;
+	QString s;
+	if (QLabel *w = qobject_cast<QLabel*> (hWnd)) s = w->text();
+	else if (QLineEdit *w = qobject_cast<QLineEdit*> (hWnd)) s = w->text();
+	else if (QPlainTextEdit *w = qobject_cast<QPlainTextEdit*> (hWnd)) s = w->toPlainText();
+	else if (QTextEdit *w = qobject_cast<QTextEdit*> (hWnd)) s = w->toPlainText();
+	else if (QAbstractButton *w = qobject_cast<QAbstractButton*> (hWnd)) s = w->text();
+	else if (QGroupBox *w = qobject_cast<QGroupBox*> (hWnd)) s = w->title();
+	else if (QComboBox *w = qobject_cast<QComboBox*> (hWnd)) s = w->currentText();
+	else if (hWnd->isWindow()) s = hWnd->windowTitle();
+	QByteArray b = s.toUtf8();
+	int n = std::min ((int)b.size(), buflen-1);
+	memcpy (buf, b.constData(), n);
+	buf[n] = '\0';
+	return n;
+}
+
+void oapiSetDlgItemText (QWidget *hDlg, int id, const char *text)
+{
+	oapiSetDlgText (oapiResDlgItem (hDlg, id), text);
+}
+
+int oapiGetDlgItemText (QWidget *hDlg, int id, char *buf, int buflen)
+{
+	return oapiGetDlgText (oapiResDlgItem (hDlg, id), buf, buflen);
+}
+
+int oapiComboAddString (QComboBox *cb, const char *str)
+{
+	QString s = DlgString (str);
+	int idx = cb->count();
+	if (cb->property ("resSort").toBool()) {
+		for (idx = 0; idx < cb->count(); idx++)
+			if (QString::compare (s, cb->itemText (idx), Qt::CaseInsensitive) < 0) break;
+	}
+	cb->insertItem (idx, s);
+	return idx;
 }
 
 QImage *oapiLoadResImage (void *hModule, int resId)
@@ -502,10 +662,13 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
 		w->setGeometry (r);
 		if (c->style & WS_DISABLED) w->setEnabled (false);
 		if (!(c->style & WS_VISIBLE)) w->hide();
-		if (c->kind == RES_GROUPBOX) w->lower();
 		ctl.push_back ({c, w});
 		prev = w;
 	}
+	// Win32 stacks the first control of a template on top; group boxes only frame their siblings
+	for (auto it = ctl.rbegin(); it != ctl.rend(); ++it) it->second->raise();
+	for (auto &[c, w] : ctl)
+		if (c->kind == RES_GROUPBOX) w->lower();
 
 	QSize size (px(d->cx), py(d->cy));
 	if (popup) {
@@ -576,6 +739,7 @@ void ResUpDown::Step (int dir)
 		if (ok) pos = v;
 	}
 	int delta = (hi >= lo ? dir : -dir);
+	emit deltaPos (delta);
 	int mn = std::min (lo, hi), mx = std::max (lo, hi);
 	int p = pos + delta;
 	if (p > mx) p = (wrap ? mn : mx);

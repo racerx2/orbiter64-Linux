@@ -27,9 +27,8 @@ namespace orbiter {
 
 		bool OpenHelp();
 
-		BOOL OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 		BOOL OnSize(int w, int h);
-		BOOL OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh);
 	};
 }
 

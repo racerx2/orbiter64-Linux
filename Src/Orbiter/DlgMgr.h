@@ -4,8 +4,7 @@
 #ifndef __DLGMGR_H
 #define __DLGMGR_H
 
-#define STRICT 1
-#include <windows.h>
+#include "OrbiterPlatform.h"
 
 #include "DialogWin.h"
 #include "Orbiter.h"
@@ -14,7 +13,7 @@
 #include "imgui_extras.h"
 class ImGuiDialog;
 
-class oapi::GraphicsClient;
+namespace oapi { class GraphicsClient; }
 extern Orbiter *g_pOrbiter;
 
 struct DIALOGENTRY {
@@ -24,41 +23,41 @@ struct DIALOGENTRY {
 
 class DialogManager {
 public:
-	DialogManager(Orbiter *orbiter, HWND hAppWnd);
+	DialogManager(Orbiter *orbiter, QWindow *hAppWnd);
 	~DialogManager();
 
-	void Init (HWND hAppWnd);
+	void Init (QWindow *hAppWnd);
 	void Clear ();
 
-	inline HWND OpenDialog (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, void *context)
+	inline QWidget *OpenDialog (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, void *context)
 	{ return OpenDialogEx (hInst, id, hParent, pDlg, 0, context); }
 
-	HWND OpenDialogEx (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context);
+	QWidget *OpenDialogEx (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context);
 
-	bool CloseDialog (HWND hDlg);
+	bool CloseDialog (QWidget *hDlg);
 
-	void *GetDialogContext (HWND hDlg);
+	void *GetDialogContext (QWidget *hDlg);
 	inline DWORD Size() const { return nEntry; }
-	HWND GetNextEntry (HWND hWnd) const;
+	QWidget *GetNextEntry (QWidget *hWnd) const;
 
-	bool AddTitleButton (DWORD msg, HBITMAP hBmp, DWORD flag);
-	DWORD GetTitleButtonState (HWND hDlg, DWORD msg);
-	bool SetTitleButtonState (HWND hDlg, DWORD msg, DWORD state);
+	bool AddTitleButton (DWORD msg, QImage *hBmp, DWORD flag);
+	DWORD GetTitleButtonState (QWidget *hDlg, DWORD msg);
+	bool SetTitleButtonState (QWidget *hDlg, DWORD msg, DWORD state);
 
-	DIALOGENTRY *AddWindow (HINSTANCE hInst, HWND hWnd, HWND hParent, DWORD flag);
+	DIALOGENTRY *AddWindow (void *hInst, QWidget *hWnd, QWindow *hParent, DWORD flag);
 
-	HWND AddEntry (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context);
-	HWND AddEntry (DialogWin *dlg);
+	QWidget *AddEntry (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context);
+	QWidget *AddEntry (DialogWin *dlg);
 
-	bool DelEntry (HWND hDlg, HINSTANCE hInst, int id);
+	bool DelEntry (QWidget *hDlg, void *hInst, int id);
 	// remove dialog entry. If either 'hDlg' or 'id' is 0,
 	// only the other component is checked
 
-	HWND IsEntry (HINSTANCE hInst, int id);
+	QWidget *IsEntry (void *hInst, int id);
 	// Returns window handle of dialog with identifier 'id' if it is in the list
 	// Otherwise returns 0
 
-	inline DWORD GetDlgList (const HWND **hDlgList) const
+	inline DWORD GetDlgList (QWidget *const **hDlgList) const
 	{ *hDlgList = DlgList; return nList; }
 	// Returns current dialog window list
 
@@ -69,30 +68,27 @@ public:
 	// broadcast a message to all open dialog windows, using the WM_USER+10 channel
 
 private:
-	void AddList (HWND hWnd);
-	void DelList (HWND hWnd);
+	void AddList (QWidget *hWnd);
+	void DelList (QWidget *hWnd);
 	// add/remove window handle from window list
 
 	DWORD nEntry;
 	DIALOGENTRY *firstEntry, *lastEntry;
 	mutable DIALOGENTRY *searchEntry;
 
-	HWND *DlgList;
+	QWidget **DlgList;
 	DWORD nList, nListBuf;
 
 	Orbiter *pOrbiter;
 	oapi::GraphicsClient *gc;
-	HWND hWnd;
-
-	static LRESULT FAR PASCAL OrbiterCtrl_Level_MsgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	// MessageHandler for slider custom control
+	QWindow *hWnd;
 
 	// ====================================================================
 	// Tread management for dialog thread
 	// ====================================================================
 
 public:
-	void OpenDialogAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context);
+	void OpenDialogAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context);
 
 protected:
 	void StartDialogThread ();
@@ -101,11 +97,7 @@ protected:
 	void DestroyDialogThread ();
 	// kill the dialog handler thread (during render window destruction)
 
-	void AddEntryAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context);
-
-private:
-	HANDLE hThread;          // thread handle
-	DWORD thid;              // dialog thread id
+	void AddEntryAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context);
 
 	// ====================================================================
 	// End tread management
@@ -191,6 +183,6 @@ private:
 	ImFont *manuscriptFont;
 };
 
-INT_PTR OrbiterDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+bool OrbiterDefDialogProc (QWidget *hDlg, QEvent *event);
 
 #endif // !__DLGMGR_H

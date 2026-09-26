@@ -5,15 +5,24 @@
 // Template for simulation options pages
 // ======================================================================
 
-#include <windows.h>
 #include <array>
+#include <fstream>
+#include <iterator>
+#include <strings.h>
 #include "OptionsPages.h"
 #include "DlgCtrl.h"
 #include "Orbiter.h"
 #include "Psys.h"
 #include "Camera.h"
 #include "resource.h"
-#include "Uxtheme.h"
+#include "ResDialog.h"
+#include "Util.h"
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QListWidget>
+#include <QScrollBar>
+#include <QSignalBlocker>
+#include <QTreeWidget>
 
 using std::min;
 using std::max;
@@ -21,6 +30,28 @@ using std::max;
 extern Orbiter* g_pOrbiter;
 extern PlanetarySystem* g_psys;
 extern Camera* g_camera;
+
+// BM_SETCHECK / BM_GETCHECK / EnableWindow / ShowWindow on a page control
+static void SetCheck(QWidget *hPage, int id, bool check)
+{
+	if (QAbstractButton *b = DlgItem<QAbstractButton>(hPage, id)) b->setChecked(check);
+}
+
+static bool IsChecked(QWidget *hPage, int id)
+{
+	QAbstractButton *b = DlgItem<QAbstractButton>(hPage, id);
+	return (b && b->isChecked());
+}
+
+static void EnableItem(QWidget *hPage, int id, bool enable)
+{
+	if (QWidget *w = oapiResDlgItem(hPage, id)) w->setEnabled(enable);
+}
+
+static void ShowItem(QWidget *hPage, int id, bool show)
+{
+	if (QWidget *w = oapiResDlgItem(hPage, id)) w->setVisible(show);
+}
 
 // ======================================================================
 
@@ -52,7 +83,7 @@ OptionsPage* OptionsPageContainer::CurrentPage()
 
 // ----------------------------------------------------------------------
 
-void OptionsPageContainer::SetWindowHandles(HWND hDlg, HWND hSplitter, HWND hPane1, HWND hPane2)
+void OptionsPageContainer::SetWindowHandles(QWidget *hDlg, QWidget *hSplitter, QWidget *hPane1, QWidget *hPane2)
 {
 	m_hDlg = hDlg;
 	m_hPageList = hPane1;
@@ -60,13 +91,20 @@ void OptionsPageContainer::SetWindowHandles(HWND hDlg, HWND hSplitter, HWND hPan
 	m_splitter.SetHwnd(hSplitter, m_hPageList, m_hContainer);
 	m_container.SetHwnd(m_hContainer);
 	m_splitter.SetStaticPane(SplitterCtrl::PANE1, 120);
+
+	// WM_NOTIFY of the page list
+	if (QTreeWidget *hTree = qobject_cast<QTreeWidget*>(m_hPageList))
+		QObject::connect(hTree, &QTreeWidget::currentItemChanged, hDlg, [this](QTreeWidgetItem *itemNew) { OnNotifyPagelist(itemNew); });
+	// WM_VSCROLL of the page scroll bar, if the dialog has one
+	if (QScrollBar *sb = DlgItem<QScrollBar>(hDlg, IDC_SCROLLBAR1))
+		QObject::connect(sb, &QScrollBar::valueChanged, hDlg, [this, hDlg, sb](int pos) { VScroll(hDlg, pos, sb); });
 }
 
 // ----------------------------------------------------------------------
 
 void OptionsPageContainer::CreatePages()
 {
-	HTREEITEM parent;
+	QTreeWidgetItem *parent;
 	if (m_orig == LAUNCHPAD) {
 		AddPage(new OptionsPage_Visual(this));
 		AddPage(new OptionsPage_Physics(this));
@@ -81,7 +119,8 @@ void OptionsPageContainer::CreatePages()
 	AddPage(new OptionsPage_Labels(this), parent);
 	AddPage(new OptionsPage_Forces(this), parent);
 	AddPage(new OptionsPage_Axes(this), parent);
-	TreeView_SelectItem(m_hPageList, TreeView_GetRoot(m_hPageList));
+	QTreeWidget *hTree = qobject_cast<QTreeWidget*>(m_hPageList);
+	hTree->setCurrentItem(hTree->topLevelItem(0));
 }
 
 // ----------------------------------------------------------------------
@@ -89,53 +128,47 @@ void OptionsPageContainer::CreatePages()
 void OptionsPageContainer::ExpandAll()
 {
 	bool expand = true;
-	HWND hTree = GetDlgItem(m_hDlg, IDC_OPT_PAGELIST);
-	UINT code = (expand ? TVE_EXPAND : TVE_COLLAPSE);
-	TVITEM catitem;
-	catitem.mask = NULL;
-	catitem.hItem = TreeView_GetRoot(hTree);
-	while (TreeView_GetItem(hTree, &catitem)) {
-		TreeView_Expand(hTree, catitem.hItem, code);
-		catitem.hItem = TreeView_GetNextSibling(hTree, catitem.hItem);
-	}
+	QTreeWidget *hTree = DlgItem<QTreeWidget>(m_hDlg, IDC_OPT_PAGELIST);
+	for (int i = 0; i < hTree->topLevelItemCount(); i++)
+		hTree->topLevelItem(i)->setExpanded(expand);
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPageContainer::SetPageSize(HWND hDlg)
+void OptionsPageContainer::SetPageSize(QWidget *hDlg)
 {
 	if (m_pageIdx >= m_pPage.size()) return; // sanity check
 
-	RECT r0, r1;
-	GetClientRect(m_container.HWnd(), &r0);
-	GetClientRect(m_pPage[m_pageIdx]->HPage(), &r1);
-	bool bVscroll = r1.bottom > r0.bottom;
-	ShowWindow(GetDlgItem(hDlg, IDC_SCROLLBAR1), bVscroll ? SW_SHOW : SW_HIDE);
+	int h0 = m_container.HWnd()->height();
+	int h1 = m_pPage[m_pageIdx]->HPage()->height();
+	bool bVscroll = h1 > h0;
+	QScrollBar *sb = DlgItem<QScrollBar>(hDlg, IDC_SCROLLBAR1);
+	ShowItem(hDlg, IDC_SCROLLBAR1, bVscroll);
 
 	if (bVscroll) {
-		m_vScrollRange = (r1.bottom - r0.bottom);
-		SCROLLINFO scrollinfo;
-		scrollinfo.cbSize = sizeof(SCROLLINFO);
-		scrollinfo.nMin = 0;
-		scrollinfo.nMax = r1.bottom;
-		scrollinfo.nPage = m_vScrollPage = r0.bottom;
-		scrollinfo.nPos = min(m_vScrollPos, m_vScrollRange);
-		scrollinfo.fMask = SIF_PAGE | SIF_RANGE | SIF_POS;
-		SetScrollInfo(GetDlgItem(hDlg, IDC_SCROLLBAR1), SB_CTL, &scrollinfo, TRUE);
-		int dy = m_vScrollPos - scrollinfo.nPos;
-		m_vScrollPos = scrollinfo.nPos;
+		m_vScrollRange = (h1 - h0);
+		int nPos = min(m_vScrollPos, m_vScrollRange);
+		m_vScrollPage = h0;
+		if (sb) {
+			QSignalBlocker block(sb);
+			sb->setRange(0, m_vScrollRange);
+			sb->setPageStep(m_vScrollPage);
+			sb->setValue(nPos);
+		}
+		int dy = m_vScrollPos - nPos;
+		m_vScrollPos = nPos;
 		if (dy)
-			ScrollWindow(m_pPage[m_pageIdx]->HPage(), 0, dy, NULL, NULL);
+			m_pPage[m_pageIdx]->HPage()->scroll(0, dy);
 	}
 	else if (m_vScrollPos) {
-		ScrollWindow(m_pPage[m_pageIdx]->HPage(), 0, m_vScrollPos, NULL, NULL);
+		m_pPage[m_pageIdx]->HPage()->scroll(0, m_vScrollPos);
 		m_vScrollPos = 0;
 	}
 }
 
 // ----------------------------------------------------------------------
 
-HTREEITEM OptionsPageContainer::AddPage(OptionsPage* pPage, HTREEITEM parent)
+QTreeWidgetItem *OptionsPageContainer::AddPage(OptionsPage* pPage, QTreeWidgetItem *parent)
 {
 	m_pPage.push_back(pPage);
 	return pPage->CreatePage(m_hDlg, parent);
@@ -155,34 +188,20 @@ const OptionsPage* OptionsPageContainer::FindPage(const char* name) const
 
 void OptionsPageContainer::SwitchPage(const char* name)
 {
-	char cbuf[256];
-	TVITEM tvi;
-	tvi.hItem = TreeView_GetRoot(m_hPageList);
-	tvi.pszText = cbuf;
-	tvi.cchTextMax = 256;
-	tvi.cChildren = 0;
-	tvi.mask = TVIF_HANDLE | TVIF_TEXT | TVIF_CHILDREN;
-	while (tvi.hItem) {
-		TreeView_GetItem(m_hPageList, &tvi);
-		if (!stricmp(cbuf, name)) {
-			TreeView_SelectItem(m_hPageList, tvi.hItem);
+	QTreeWidget *hTree = qobject_cast<QTreeWidget*>(m_hPageList);
+	for (int i = 0; i < hTree->topLevelItemCount(); i++) {
+		QTreeWidgetItem *item = hTree->topLevelItem(i);
+		if (!strcasecmp(item->text(0).toUtf8().constData(), name)) {
+			hTree->setCurrentItem(item);
 			break;
 		}
-		TVITEM tvi_child;
-		tvi_child.hItem = TreeView_GetChild(m_hPageList, tvi.hItem);
-		tvi_child.pszText = cbuf;
-		tvi_child.cchTextMax = 256;
-		tvi_child.cChildren = 0;
-		tvi_child.mask = TVIF_HANDLE | TVIF_TEXT | TVIF_CHILDREN;
-		while (tvi_child.hItem) {
-			TreeView_GetItem(m_hPageList, &tvi_child);
-			if (!stricmp(cbuf, name)) {
-				TreeView_SelectItem(m_hPageList, tvi_child.hItem);
+		for (int j = 0; j < item->childCount(); j++) {
+			QTreeWidgetItem *child = item->child(j);
+			if (!strcasecmp(child->text(0).toUtf8().constData(), name)) {
+				hTree->setCurrentItem(child);
 				break;
 			}
-			tvi_child.hItem = TreeView_GetNextSibling(m_hPageList, tvi_child.hItem);
 		}
-		tvi.hItem = TreeView_GetNextSibling(m_hPageList, tvi.hItem);
 	}
 }
 
@@ -191,7 +210,7 @@ void OptionsPageContainer::SwitchPage(const char* name)
 
 void OptionsPageContainer::SwitchPage(size_t page)
 {
-	if (page < 0 || page >= m_pPage.size())
+	if (page >= m_pPage.size())
 		return;
 	m_pageIdx = page;
 	for (size_t pg = 0; pg < m_pPage.size(); pg++)
@@ -204,7 +223,7 @@ void OptionsPageContainer::SwitchPage(size_t page)
 	m_contextHelp = m_pPage[m_pageIdx]->HelpContext();
 
 	SetPageSize(m_hDlg);
-	InvalidateRect(m_hDlg, NULL, TRUE);
+	m_hDlg->update();
 }
 
 // ----------------------------------------------------------------------
@@ -227,58 +246,26 @@ void OptionsPageContainer::Clear()
 	m_pPage.clear();
 }
 
-void OptionsPageContainer::OnNotifyPagelist(LPNMHDR pnmh)
+void OptionsPageContainer::OnNotifyPagelist(QTreeWidgetItem *itemNew)
 {
-	NM_TREEVIEW* pnmtv = (NM_TREEVIEW FAR*)pnmh;
-	if (pnmtv->hdr.code == TVN_SELCHANGED) {
-		OptionsPage* page = (OptionsPage*)pnmtv->itemNew.lParam;
-		SwitchPage(page);
-		TreeView_Expand(GetDlgItem(m_hDlg, IDC_OPT_PAGELIST), pnmtv->itemNew.hItem, TVE_EXPAND);
-	}
+	// TVN_SELCHANGED
+	if (!itemNew) return;
+	OptionsPage* page = (OptionsPage*)itemNew->data(0, Qt::UserRole).value<void*>();
+	SwitchPage(page);
+	itemNew->setExpanded(true);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPageContainer::VScroll(HWND hDlg, WORD request, WORD curpos, HWND hControl)
+BOOL OptionsPageContainer::VScroll(QWidget *hDlg, int pos, QWidget *hControl)
 {
-	HWND hPage = CurrentPage()->HPage();
+	// the scroll bar handles the line/page/thumb requests itself and reports the new position
+	QWidget *hPage = CurrentPage()->HPage();
 
-	SCROLLINFO scrollinfo;
-	scrollinfo.cbSize = sizeof(SCROLLINFO);
-	GetScrollInfo(hControl, SB_CTL, &scrollinfo);
-	int pos = -1;
-
-	switch (request) {
-	case SB_BOTTOM:
-		pos = m_vScrollRange;
-		break;
-	case SB_TOP:
-		pos = 0;
-		break;
-	case SB_LINEDOWN:
-		pos = min(m_vScrollPos + 10, m_vScrollRange);
-		break;
-	case SB_LINEUP:
-		pos = max(m_vScrollPos - 10, 0);
-		break;
-	case SB_PAGEDOWN:
-		pos = min(m_vScrollPos + m_vScrollPage, m_vScrollRange);
-		break;
-	case SB_PAGEUP:
-		pos = max(m_vScrollPos - m_vScrollPage, 0);
-		break;
-	case SB_THUMBPOSITION:
-	case SB_THUMBTRACK:
-		pos = curpos;
-		break;
-	}
 	if (pos >= 0 && pos != m_vScrollPos) {
 		int dy = -(pos - m_vScrollPos);
-		scrollinfo.nPos = m_vScrollPos = pos;
-		scrollinfo.fMask = SIF_POS;
-		SetScrollInfo(hControl, SB_CTL, &scrollinfo, TRUE);
-		ScrollWindow(hPage, 0, dy, NULL, NULL);
-		UpdateWindow(hPage);
+		m_vScrollPos = pos;
+		hPage->scroll(0, dy);
 	}
 	return FALSE;
 }
@@ -289,8 +276,10 @@ void OptionsPageContainer::UpdatePages(bool resetView)
 {
 	for (auto pPage : m_pPage)
 		pPage->UpdateControls(pPage->HPage());
-	if (resetView)
-		TreeView_SelectItem(m_hPageList, TreeView_GetRoot(m_hPageList));
+	if (resetView) {
+		QTreeWidget *hTree = qobject_cast<QTreeWidget*>(m_hPageList);
+		hTree->setCurrentItem(hTree->topLevelItem(0));
+	}
 }
 
 // ----------------------------------------------------------------------
@@ -315,53 +304,50 @@ OptionsPage::OptionsPage(OptionsPageContainer* container)
 OptionsPage::~OptionsPage()
 {
 	// Remove the object reference from the window.
-	// This is so that object methods will no longer be called from the message loop
-	// while the window hasn't been destroyed.
+	// The page window is owned by the container control and goes with it; its connections name the window
+	// as context, so they end with it.
 	if (m_hPage)
-		SetWindowLongPtr(m_hPage, DWLP_USER, 0);
+		m_hPage->setProperty("OptionsPage", QVariant());
 }
 
 // ----------------------------------------------------------------------
 
 void OptionsPage::Show(bool bShow)
 {
-	ShowWindow(m_hPage, bShow ? SW_SHOW : SW_HIDE);
+	m_hPage->setVisible(bShow);
 }
 
 // ----------------------------------------------------------------------
 
-HWND OptionsPage::HParent() const
+QWidget *OptionsPage::HParent() const
 {
 	return m_container->ContainerControl()->HWnd();
 }
 
 // ----------------------------------------------------------------------
 
-HTREEITEM OptionsPage::CreatePage(HWND hDlg, HTREEITEM parent)
+QTreeWidgetItem *OptionsPage::CreatePage(QWidget *hDlg, QTreeWidgetItem *parent)
 {
 	int winId = ResourceId();
-	m_hPage = CreateDialogParam(g_pOrbiter->GetInstance(), MAKEINTRESOURCE(winId), HParent(), s_DlgProc, (LPARAM)this);
-	if (!m_hPage) {
-		DWORD err = GetLastError();
-		int i = 1;
+	m_hPage = oapiCreateResDialog(g_pOrbiter->GetInstance(), winId, HParent());
+	if (m_hPage) {
+		m_hPage->setProperty("OptionsPage", QVariant::fromValue((void*)this)); // DWLP_USER
+		DlgProc(m_hPage);
+		OnInitDialog(m_hPage); // WM_INITDIALOG
 	}
 
-	char cbuf[256];
-	strcpy(cbuf, Name());
-	TV_INSERTSTRUCT tvis;
-	tvis.item.mask = TVIF_TEXT | TVIF_PARAM;
-	tvis.item.pszText = cbuf;
-	tvis.item.lParam = (LPARAM)this;
-	tvis.hInsertAfter = TVI_LAST;
-	tvis.hParent = parent;
-	HTREEITEM hti = TreeView_InsertItem(GetDlgItem(hDlg, IDC_OPT_PAGELIST), &tvis);
+	QTreeWidgetItem *hti = new QTreeWidgetItem();
+	hti->setText(0, QString::fromUtf8(Name()));
+	hti->setData(0, Qt::UserRole, QVariant::fromValue((void*)this));
+	if (parent) parent->addChild(hti);
+	else DlgItem<QTreeWidget>(hDlg, IDC_OPT_PAGELIST)->addTopLevelItem(hti);
 	m_hItem = hti;
 	return hti;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage::OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage::OnInitDialog(QWidget *hWnd)
 {
 	UpdateControls(hWnd);
 	return TRUE;
@@ -369,38 +355,21 @@ BOOL OptionsPage::OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam)
 
 // ----------------------------------------------------------------------
 
-INT_PTR OptionsPage::DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void OptionsPage::DlgProc(QWidget *hWnd)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		return OnInitDialog(hWnd, wParam, lParam);
-	case WM_COMMAND:
-		return OnCommand(hWnd, LOWORD(wParam), HIWORD(wParam), (HWND)lParam);
-	case WM_HSCROLL:
-		return OnHScroll(hWnd, wParam, lParam);
-	case WM_NOTIFY:
-		return OnNotify(hWnd, (DWORD)wParam, (NMHDR*)lParam);
-	default:
-		return OnMessage(hWnd, uMsg, wParam, lParam);
+	// WM_COMMAND
+	oapiConnectDlgCommands(hWnd, [this, hWnd](int id, int code, QWidget *hCtrl) { OnCommand(hWnd, id, code, hCtrl); });
+	for (QObject *o : hWnd->children()) {
+		int id = oapiResId(qobject_cast<QWidget*>(o));
+		// WM_HSCROLL of gauge controls
+		if (GaugeCtrl *g = qobject_cast<GaugeCtrl*>(o))
+			QObject::connect(g, &GaugeCtrl::scrolled, hWnd, [this, hWnd, id](int request, int pos) { OnHScroll(hWnd, id, request, pos); });
+		// WM_NOTIFY UDN_DELTAPOS of up-down controls
+		else if (ResUpDown *ud = qobject_cast<ResUpDown*>(o))
+			QObject::connect(ud, &ResUpDown::deltaPos, hWnd, [this, hWnd, id](int iDelta) { OnDeltaPos(hWnd, id, iDelta); });
 	}
-}
-
-// ----------------------------------------------------------------------
-
-INT_PTR CALLBACK OptionsPage::s_DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	OptionsPage* pPage;
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		EnableThemeDialogTexture(hWnd, ETDT_ENABLE);
-		SetWindowLongPtr(hWnd, DWLP_USER, lParam);
-		pPage = (OptionsPage*)lParam;
-		break;
-	default:
-		pPage = (OptionsPage*)GetWindowLongPtr(hWnd, DWLP_USER);
-		break;
-	}
-	return (pPage ? pPage->DlgProc(hWnd, uMsg, wParam, lParam) : DefWindowProc(hWnd, uMsg, wParam, lParam));
+	// other window events
+	new EventHook(hWnd, [this, hWnd](QObject *obj, QEvent *event) { return obj == hWnd && OnMessage(hWnd, event); });
 }
 
 // ======================================================================
@@ -435,165 +404,151 @@ const HELPCONTEXT* OptionsPage_Visual::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Visual::UpdateControls(HWND hPage)
+void OptionsPage_Visual::UpdateControls(QWidget *hPage)
 {
 	char cbuf[256];
 
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_CLOUD, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bClouds ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_CSHADOW, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bCloudShadows ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_HAZE, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bHaze ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_FOG, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bFog ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_REFWATER, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bWaterreflect ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_RIPPLE, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bSpecularRipple ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_LIGHTS, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bNightlights ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_VIS_CLOUD, Cfg()->CfgVisualPrm.bClouds);
+	SetCheck(hPage, IDC_OPT_VIS_CSHADOW, Cfg()->CfgVisualPrm.bCloudShadows);
+	SetCheck(hPage, IDC_OPT_VIS_HAZE, Cfg()->CfgVisualPrm.bHaze);
+	SetCheck(hPage, IDC_OPT_VIS_FOG, Cfg()->CfgVisualPrm.bFog);
+	SetCheck(hPage, IDC_OPT_VIS_REFWATER, Cfg()->CfgVisualPrm.bWaterreflect);
+	SetCheck(hPage, IDC_OPT_VIS_RIPPLE, Cfg()->CfgVisualPrm.bSpecularRipple);
+	SetCheck(hPage, IDC_OPT_VIS_LIGHTS, Cfg()->CfgVisualPrm.bNightlights);
 	sprintf(cbuf, "%0.2f", Cfg()->CfgVisualPrm.LightBrightness);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_LTLEVEL), cbuf);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEV, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.ElevMode ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEVMODE, CB_SETCURSEL, Cfg()->CfgVisualPrm.ElevMode < 2 ? 0 : 1, 0);
+	oapiSetDlgItemText(hPage, IDC_OPT_VIS_LTLEVEL, cbuf);
+	SetCheck(hPage, IDC_OPT_VIS_ELEV, Cfg()->CfgVisualPrm.ElevMode);
+	DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE)->setCurrentIndex(Cfg()->CfgVisualPrm.ElevMode < 2 ? 0 : 1);
 	sprintf(cbuf, "%d", Cfg()->CfgVisualPrm.PlanetMaxLevel);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_MAXLEVEL), cbuf);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_VSHADOW, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bVesselShadows ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_REENTRY, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bReentryFlames ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_SHADOW, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bShadows ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_PARTICLE, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bParticleStreams ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_SPECULAR, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bSpecular ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_LOCALLIGHT, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.bLocalLight ? BST_CHECKED : BST_UNCHECKED, 0);
+	oapiSetDlgItemText(hPage, IDC_OPT_VIS_MAXLEVEL, cbuf);
+	SetCheck(hPage, IDC_OPT_VIS_VSHADOW, Cfg()->CfgVisualPrm.bVesselShadows);
+	SetCheck(hPage, IDC_OPT_VIS_REENTRY, Cfg()->CfgVisualPrm.bReentryFlames);
+	SetCheck(hPage, IDC_OPT_VIS_SHADOW, Cfg()->CfgVisualPrm.bShadows);
+	SetCheck(hPage, IDC_OPT_VIS_PARTICLE, Cfg()->CfgVisualPrm.bParticleStreams);
+	SetCheck(hPage, IDC_OPT_VIS_SPECULAR, Cfg()->CfgVisualPrm.bSpecular);
+	SetCheck(hPage, IDC_OPT_VIS_LOCALLIGHT, Cfg()->CfgVisualPrm.bLocalLight);
 	sprintf(cbuf, "%d", Cfg()->CfgVisualPrm.AmbientLevel);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_AMBIENT), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_VIS_AMBIENT, cbuf);
 
 	VisualsChanged(hPage);
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Visual::UpdateConfig(HWND hPage)
+void OptionsPage_Visual::UpdateConfig(QWidget *hPage)
 {
 	char cbuf[256];
 	DWORD i;
 	double d;
 
-	Cfg()->CfgVisualPrm.bClouds = (SendDlgItemMessage(hPage, IDC_OPT_VIS_CLOUD, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bCloudShadows = (SendDlgItemMessage(hPage, IDC_OPT_VIS_CSHADOW, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bHaze = (SendDlgItemMessage(hPage, IDC_OPT_VIS_HAZE, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bFog = (SendDlgItemMessage(hPage, IDC_OPT_VIS_FOG, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bWaterreflect = (SendDlgItemMessage(hPage, IDC_OPT_VIS_REFWATER, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bSpecularRipple = (SendDlgItemMessage(hPage, IDC_OPT_VIS_RIPPLE, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bNightlights = (SendDlgItemMessage(hPage, IDC_OPT_VIS_LIGHTS, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	GetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_LTLEVEL), cbuf, 255);
+	Cfg()->CfgVisualPrm.bClouds = (IsChecked(hPage, IDC_OPT_VIS_CLOUD));
+	Cfg()->CfgVisualPrm.bCloudShadows = (IsChecked(hPage, IDC_OPT_VIS_CSHADOW));
+	Cfg()->CfgVisualPrm.bHaze = (IsChecked(hPage, IDC_OPT_VIS_HAZE));
+	Cfg()->CfgVisualPrm.bFog = (IsChecked(hPage, IDC_OPT_VIS_FOG));
+	Cfg()->CfgVisualPrm.bWaterreflect = (IsChecked(hPage, IDC_OPT_VIS_REFWATER));
+	Cfg()->CfgVisualPrm.bSpecularRipple = (IsChecked(hPage, IDC_OPT_VIS_RIPPLE));
+	Cfg()->CfgVisualPrm.bNightlights = (IsChecked(hPage, IDC_OPT_VIS_LIGHTS));
+	oapiGetDlgItemText(hPage, IDC_OPT_VIS_LTLEVEL, cbuf, 255);
 	if (!sscanf(cbuf, "%lf", &d)) d = 0.5; else if (d < 0) d = 0.0; else if (d > 1) d = 1.0;
 	Cfg()->CfgVisualPrm.LightBrightness = d;
-	Cfg()->CfgVisualPrm.ElevMode = (SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEV, BM_GETCHECK, 0, 0) != BST_CHECKED ?
-		0 : SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEVMODE, CB_GETCURSEL, 0, 0) + 1);
-	GetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_MAXLEVEL), cbuf, 127);
-	if (!sscanf(cbuf, "%lu", &i)) i = SURF_MAX_PATCHLEVEL2;
+	Cfg()->CfgVisualPrm.ElevMode = (!IsChecked(hPage, IDC_OPT_VIS_ELEV) ?
+		0 : DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE)->currentIndex() + 1);
+	oapiGetDlgItemText(hPage, IDC_OPT_VIS_MAXLEVEL, cbuf, 127);
+	if (!sscanf(cbuf, "%u", &i)) i = SURF_MAX_PATCHLEVEL2;
 	Cfg()->CfgVisualPrm.PlanetMaxLevel = max((DWORD)1, min((DWORD)SURF_MAX_PATCHLEVEL2, i));
-	Cfg()->CfgVisualPrm.bVesselShadows = (SendDlgItemMessage(hPage, IDC_OPT_VIS_VSHADOW, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bReentryFlames = (SendDlgItemMessage(hPage, IDC_OPT_VIS_REENTRY, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bShadows = (SendDlgItemMessage(hPage, IDC_OPT_VIS_SHADOW, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bParticleStreams = (SendDlgItemMessage(hPage, IDC_OPT_VIS_PARTICLE, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bSpecular = (SendDlgItemMessage(hPage, IDC_OPT_VIS_SPECULAR, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgVisualPrm.bLocalLight = (SendDlgItemMessage(hPage, IDC_OPT_VIS_LOCALLIGHT, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	GetWindowText(GetDlgItem(hPage, IDC_OPT_VIS_AMBIENT), cbuf, 255);
-	if (!sscanf(cbuf, "%lu", &i)) i = 15; else if (i > 255) i = 255;
+	Cfg()->CfgVisualPrm.bVesselShadows = (IsChecked(hPage, IDC_OPT_VIS_VSHADOW));
+	Cfg()->CfgVisualPrm.bReentryFlames = (IsChecked(hPage, IDC_OPT_VIS_REENTRY));
+	Cfg()->CfgVisualPrm.bShadows = (IsChecked(hPage, IDC_OPT_VIS_SHADOW));
+	Cfg()->CfgVisualPrm.bParticleStreams = (IsChecked(hPage, IDC_OPT_VIS_PARTICLE));
+	Cfg()->CfgVisualPrm.bSpecular = (IsChecked(hPage, IDC_OPT_VIS_SPECULAR));
+	Cfg()->CfgVisualPrm.bLocalLight = (IsChecked(hPage, IDC_OPT_VIS_LOCALLIGHT));
+	oapiGetDlgItemText(hPage, IDC_OPT_VIS_AMBIENT, cbuf, 255);
+	if (!sscanf(cbuf, "%u", &i)) i = 15; else if (i > 255) i = 255;
 	Cfg()->SetAmbientLevel(i);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Visual::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Visual::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEVMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEVMODE, CB_ADDSTRING, 0, (LPARAM)"linear interpolation");
-	SendDlgItemMessage(hPage, IDC_OPT_VIS_ELEVMODE, CB_ADDSTRING, 0, (LPARAM)"cubic interpolation");
+	OptionsPage::OnInitDialog(hPage);
+	DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE), "linear interpolation");
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE), "cubic interpolation");
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Visual::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Visual::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId)
 	{
 		case IDC_OPT_VIS_CLOUD:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_CLOUD, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_CLOUD));
 				Cfg()->CfgVisualPrm.bClouds = check;
 				VisualsChanged( hPage );
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_CSHADOW:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_CSHADOW, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_CSHADOW));
 				Cfg()->CfgVisualPrm.bCloudShadows = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_HAZE:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_HAZE, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_HAZE));
 				Cfg()->CfgVisualPrm.bHaze = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_FOG:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_FOG, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_FOG));
 				Cfg()->CfgVisualPrm.bFog = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_REFWATER:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_REFWATER, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_REFWATER));
 				Cfg()->CfgVisualPrm.bWaterreflect = check;
 				VisualsChanged( hPage );
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_RIPPLE:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_RIPPLE, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_RIPPLE));
 				Cfg()->CfgVisualPrm.bSpecularRipple = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_LIGHTS:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_LIGHTS, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_LIGHTS));
 				Cfg()->CfgVisualPrm.bNightlights = check;
 				VisualsChanged( hPage );
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_LTLEVEL:
-			if (notification == EN_CHANGE)
+			if (notification == RESN_CHANGE)
 			{
 				char cbuf[16];
 				double d;
-				GetWindowText( GetDlgItem( hPage, IDC_OPT_VIS_LTLEVEL ), cbuf, 16 );
+				oapiGetDlgItemText(hPage, IDC_OPT_VIS_LTLEVEL, cbuf, 16);
 				if (!sscanf( cbuf, "%lf", &d )) d = 0.5;
 				else if (d < 0) d = 0.0;
 				else if (d > 1) d = 1.0;
@@ -602,88 +557,88 @@ BOOL OptionsPage_Visual::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 			}
 			break;
 		case IDC_OPT_VIS_ELEV:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				int elevmode = SendDlgItemMessage( hPage, IDC_OPT_VIS_ELEV, BM_GETCHECK, 0, 0 ) != BST_CHECKED ? 0 : (SendDlgItemMessage( hPage, IDC_OPT_VIS_ELEVMODE, CB_GETCURSEL, 0, 0 ) + 1);
+				int elevmode = !IsChecked(hPage, IDC_OPT_VIS_ELEV) ? 0 : (DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE)->currentIndex() + 1);
 				Cfg()->CfgVisualPrm.ElevMode = elevmode;
 				VisualsChanged( hPage );
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_ELEVMODE:
-			if (notification == CBN_SELCHANGE)
+			if (notification == RESN_SELCHANGE)
 			{
-				int elevmode = SendDlgItemMessage( hPage, IDC_OPT_VIS_ELEV, BM_GETCHECK, 0, 0 ) != BST_CHECKED ? 0 : (SendDlgItemMessage( hPage, IDC_OPT_VIS_ELEVMODE, CB_GETCURSEL, 0, 0 ) + 1);
+				int elevmode = !IsChecked(hPage, IDC_OPT_VIS_ELEV) ? 0 : (DlgItem<QComboBox>(hPage, IDC_OPT_VIS_ELEVMODE)->currentIndex() + 1);
 				Cfg()->CfgVisualPrm.ElevMode = elevmode;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_MAXLEVEL:
-			if (notification == EN_CHANGE)
+			if (notification == RESN_CHANGE)
 			{
 				char cbuf[16];
 				DWORD i;
-				GetWindowText( GetDlgItem( hPage, IDC_OPT_VIS_MAXLEVEL ), cbuf, 16 );
-				if (!sscanf( cbuf, "%lu", &i )) i = SURF_MAX_PATCHLEVEL2;
+				oapiGetDlgItemText(hPage, IDC_OPT_VIS_MAXLEVEL, cbuf, 16);
+				if (!sscanf( cbuf, "%u", &i )) i = SURF_MAX_PATCHLEVEL2;
 				Cfg()->CfgVisualPrm.PlanetMaxLevel = max((DWORD)1, min((DWORD)SURF_MAX_PATCHLEVEL2, i));
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_VSHADOW:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_VSHADOW, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_VSHADOW));
 				Cfg()->CfgVisualPrm.bVesselShadows = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_REENTRY:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_REENTRY, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_REENTRY));
 				Cfg()->CfgVisualPrm.bReentryFlames = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_SHADOW:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_SHADOW, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_SHADOW));
 				Cfg()->CfgVisualPrm.bShadows = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_PARTICLE:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_PARTICLE, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_PARTICLE));
 				Cfg()->CfgVisualPrm.bParticleStreams = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_SPECULAR:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_SPECULAR, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_SPECULAR));
 				Cfg()->CfgVisualPrm.bSpecular = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_LOCALLIGHT:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_VIS_LOCALLIGHT, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_VIS_LOCALLIGHT));
 				Cfg()->CfgVisualPrm.bLocalLight = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_VIS_AMBIENT:
-			if (notification == EN_CHANGE)
+			if (notification == RESN_CHANGE)
 			{
 				char cbuf[16];
 				DWORD i;
-				GetWindowText( GetDlgItem(hPage, IDC_OPT_VIS_AMBIENT ), cbuf, 16 );
-				if (!sscanf( cbuf, "%lu", &i )) i = 15;
+				oapiGetDlgItemText(hPage, IDC_OPT_VIS_AMBIENT, cbuf, 16);
+				if (!sscanf( cbuf, "%u", &i )) i = 15;
 				else if (i > 255) i = 255;
 				Cfg()->SetAmbientLevel( i );
 				return FALSE;
@@ -695,14 +650,12 @@ BOOL OptionsPage_Visual::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 
 //-----------------------------------------------------------------------------
 
-void OptionsPage_Visual::VisualsChanged(HWND hPage)
+void OptionsPage_Visual::VisualsChanged(QWidget *hPage)
 {
-	EnableWindow(GetDlgItem(hPage, IDC_OPT_VIS_CSHADOW),
-		SendDlgItemMessage(hPage, IDC_OPT_VIS_CLOUD, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	EnableWindow(GetDlgItem(hPage, IDC_OPT_VIS_RIPPLE),
-		SendDlgItemMessage(hPage, IDC_OPT_VIS_REFWATER, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	EnableWindow( GetDlgItem( hPage, IDC_OPT_VIS_ELEVMODE ), SendDlgItemMessage( hPage, IDC_OPT_VIS_ELEV, BM_GETCHECK, 0, 0 ) == BST_CHECKED );
-	EnableWindow( GetDlgItem( hPage, IDC_OPT_VIS_LTLEVEL ), SendDlgItemMessage( hPage, IDC_OPT_VIS_LIGHTS, BM_GETCHECK, 0, 0 ) == BST_CHECKED );
+	EnableItem(hPage, IDC_OPT_VIS_CSHADOW, IsChecked(hPage, IDC_OPT_VIS_CLOUD));
+	EnableItem(hPage, IDC_OPT_VIS_RIPPLE, IsChecked(hPage, IDC_OPT_VIS_REFWATER));
+	EnableItem(hPage, IDC_OPT_VIS_ELEVMODE, IsChecked(hPage, IDC_OPT_VIS_ELEV));
+	EnableItem(hPage, IDC_OPT_VIS_LTLEVEL, IsChecked(hPage, IDC_OPT_VIS_LIGHTS));
 	return;
 }
 
@@ -738,70 +691,66 @@ const HELPCONTEXT* OptionsPage_Physics::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Physics::UpdateControls(HWND hPage)
+void OptionsPage_Physics::UpdateControls(QWidget *hPage)
 {
-	SendDlgItemMessage(hPage, IDC_OPT_PHYS_COMPLEXGRAV, BM_SETCHECK,
-		Cfg()->CfgPhysicsPrm.bNonsphericalGrav ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PHYS_RPRESSURE, BM_SETCHECK,
-		Cfg()->CfgPhysicsPrm.bRadiationPressure ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PHYS_DISTMASS, BM_SETCHECK,
-		Cfg()->CfgPhysicsPrm.bDistributedMass ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PHYS_WIND, BM_SETCHECK,
-		Cfg()->CfgPhysicsPrm.bAtmWind ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_PHYS_COMPLEXGRAV, Cfg()->CfgPhysicsPrm.bNonsphericalGrav);
+	SetCheck(hPage, IDC_OPT_PHYS_RPRESSURE, Cfg()->CfgPhysicsPrm.bRadiationPressure);
+	SetCheck(hPage, IDC_OPT_PHYS_DISTMASS, Cfg()->CfgPhysicsPrm.bDistributedMass);
+	SetCheck(hPage, IDC_OPT_PHYS_WIND, Cfg()->CfgPhysicsPrm.bAtmWind);
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Physics::UpdateConfig(HWND hPage)
+void OptionsPage_Physics::UpdateConfig(QWidget *hPage)
 {
-	Cfg()->CfgPhysicsPrm.bDistributedMass = (SendDlgItemMessage(hPage, IDC_OPT_PHYS_DISTMASS, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgPhysicsPrm.bNonsphericalGrav = (SendDlgItemMessage(hPage, IDC_OPT_PHYS_COMPLEXGRAV, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgPhysicsPrm.bRadiationPressure = (SendDlgItemMessage(hPage, IDC_OPT_PHYS_RPRESSURE, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	Cfg()->CfgPhysicsPrm.bAtmWind = (SendDlgItemMessage(hPage, IDC_OPT_PHYS_WIND, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	Cfg()->CfgPhysicsPrm.bDistributedMass = (IsChecked(hPage, IDC_OPT_PHYS_DISTMASS));
+	Cfg()->CfgPhysicsPrm.bNonsphericalGrav = (IsChecked(hPage, IDC_OPT_PHYS_COMPLEXGRAV));
+	Cfg()->CfgPhysicsPrm.bRadiationPressure = (IsChecked(hPage, IDC_OPT_PHYS_RPRESSURE));
+	Cfg()->CfgPhysicsPrm.bAtmWind = (IsChecked(hPage, IDC_OPT_PHYS_WIND));
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Physics::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Physics::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Physics::OnCommand( HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl )
+BOOL OptionsPage_Physics::OnCommand( QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl )
 {
 	switch (ctrlId)
 	{
 		case IDC_OPT_PHYS_DISTMASS:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_PHYS_DISTMASS, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_PHYS_DISTMASS));
 				Cfg()->CfgPhysicsPrm.bDistributedMass = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_PHYS_COMPLEXGRAV:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_PHYS_COMPLEXGRAV, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_PHYS_COMPLEXGRAV));
 				Cfg()->CfgPhysicsPrm.bNonsphericalGrav = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_PHYS_RPRESSURE:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_PHYS_RPRESSURE, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_PHYS_RPRESSURE));
 				Cfg()->CfgPhysicsPrm.bRadiationPressure = check;
 				return FALSE;
 			}
 			break;
 		case IDC_OPT_PHYS_WIND:
-			if (notification == BN_CLICKED)
+			if (notification == RESN_CLICKED)
 			{
-				bool check = (SendDlgItemMessage( hPage, IDC_OPT_PHYS_WIND, BM_GETCHECK, 0, 0 ) == BST_CHECKED);
+				bool check = (IsChecked(hPage, IDC_OPT_PHYS_WIND));
 				Cfg()->CfgPhysicsPrm.bAtmWind = check;
 				return FALSE;
 			}
@@ -842,50 +791,50 @@ const HELPCONTEXT* OptionsPage_Instrument::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Instrument::UpdateControls(HWND hPage)
+void OptionsPage_Instrument::UpdateControls(QWidget *hPage)
 {
 	char cbuf[256];
 	double mfdUpdDt = Cfg()->CfgLogicPrm.InstrUpdDT;
 	sprintf(cbuf, "%0.2f", mfdUpdDt);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_MFD_INTERVAL), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_MFD_INTERVAL, cbuf);
 	int mfdSize = Cfg()->CfgLogicPrm.MFDSize;
 	sprintf(cbuf, "%d", mfdSize);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_MFD_SIZE), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_MFD_SIZE, cbuf);
 	bool enable = Cfg()->CfgLogicPrm.bMfdTransparent;
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_TRANSP, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_MFD_TRANSP, enable);
 	int vcmfdsize = Cfg()->CfgInstrumentPrm.VCMFDSize;
 	int idx = (vcmfdsize == 1024 ? 2 : vcmfdsize == 512 ? 1 : 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_SETCURSEL, idx, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE)->setCurrentIndex(idx);
 	double scrollSpeed = Cfg()->CfgLogicPrm.PanelScrollSpeed;
 	sprintf(cbuf, "%0.0f", scrollSpeed * 0.1);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_PANEL_SCROLLSPEED), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_PANEL_SCROLLSPEED, cbuf);
 	double panelSize = Cfg()->CfgLogicPrm.PanelScale;
 	sprintf(cbuf, "%0.2f", panelSize);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_PANEL_SCALE), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_PANEL_SCALE, cbuf);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Instrument::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Instrument::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_ADDSTRING, 0, (LPARAM)"256 x 256");
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_ADDSTRING, 0, (LPARAM)"512 x 512");
-	SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_ADDSTRING, 0, (LPARAM)"1024 x 1024");
+	OptionsPage::OnInitDialog(hPage);
+	DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE), "256 x 256");
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE), "512 x 512");
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE), "1024 x 1024");
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Instrument::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Instrument::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_MFD_INTERVAL:
-		if (notification == EN_CHANGE) {
+		if (notification == RESN_CHANGE) {
 			char cbuf[256];
 			double updDt;
-			GetWindowText(GetDlgItem(hPage, IDC_OPT_MFD_INTERVAL), cbuf, 255);
+			oapiGetDlgItemText(hPage, IDC_OPT_MFD_INTERVAL, cbuf, 255);
 			if (sscanf(cbuf, "%lf", &updDt)) {
 				Cfg()->CfgLogicPrm.InstrUpdDT = max(0.01, updDt);
 				g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_MFDUPDATEINTERVAL);
@@ -894,10 +843,10 @@ BOOL OptionsPage_Instrument::OnCommand(HWND hPage, WORD ctrlId, WORD notificatio
 		}
 		break;
 	case IDC_OPT_MFD_SIZE:
-		if (notification == EN_CHANGE) {
+		if (notification == RESN_CHANGE) {
 			char cbuf[256];
 			int size;
-			GetWindowText(GetDlgItem(hPage, IDC_OPT_MFD_SIZE), cbuf, 256);
+			oapiGetDlgItemText(hPage, IDC_OPT_MFD_SIZE, cbuf, 256);
 			if (sscanf(cbuf, "%d", &size)) {
 				Cfg()->CfgLogicPrm.MFDSize = max(1, min(10, size));
 				g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_MFDGENERICSIZE);
@@ -906,26 +855,26 @@ BOOL OptionsPage_Instrument::OnCommand(HWND hPage, WORD ctrlId, WORD notificatio
 		}
 		break;
 	case IDC_OPT_MFD_TRANSP:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_MFD_TRANSP, BM_GETCHECK, 0, 0) == TRUE);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_MFD_TRANSP));
 			Cfg()->CfgLogicPrm.bMfdTransparent = check;
 			g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_MFDGENERICTRANSP);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_MFD_VCTEXSIZE:
-		if (notification == CBN_SELCHANGE) {
+		if (notification == RESN_SELCHANGE) {
 			int vcmfdsize[3] = { 256, 512, 1024 };
-			DWORD idx = (DWORD)SendDlgItemMessage(hPage, IDC_OPT_MFD_VCTEXSIZE, CB_GETCURSEL, 0, 0);
+			DWORD idx = DlgItem<QComboBox>(hPage, IDC_OPT_MFD_VCTEXSIZE)->currentIndex();
 			Cfg()->CfgInstrumentPrm.VCMFDSize = vcmfdsize[idx];
 			g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_MFDVCSIZE);
 		}
 		break;
 	case IDC_OPT_PANEL_SCROLLSPEED:
-		if (notification == EN_CHANGE) {
+		if (notification == RESN_CHANGE) {
 			char cbuf[256];
 			double speed;
-			GetWindowText(GetDlgItem(hPage, IDC_OPT_PANEL_SCROLLSPEED), cbuf, 256);
+			oapiGetDlgItemText(hPage, IDC_OPT_PANEL_SCROLLSPEED, cbuf, 256);
 			if (sscanf(cbuf, "%lf", &speed)) {
 				Cfg()->CfgLogicPrm.PanelScrollSpeed = 10.0 * max(-100.0, min(100.0, speed));
 				g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_PANELSCROLLSPEED);
@@ -934,10 +883,10 @@ BOOL OptionsPage_Instrument::OnCommand(HWND hPage, WORD ctrlId, WORD notificatio
 		}
 		break;
 	case IDC_OPT_PANEL_SCALE:
-		if (notification == EN_CHANGE) {
+		if (notification == RESN_CHANGE) {
 			char cbuf[256];
 			double scale;
-			GetWindowText(GetDlgItem(hPage, IDC_OPT_PANEL_SCALE), cbuf, 256);
+			oapiGetDlgItemText(hPage, IDC_OPT_PANEL_SCALE, cbuf, 256);
 			if (sscanf(cbuf, "%lf", &scale)) {
 				Cfg()->CfgLogicPrm.PanelScale = max(0.25, min(4.0, scale));
 				g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_PANELSCALE);
@@ -951,12 +900,11 @@ BOOL OptionsPage_Instrument::OnCommand(HWND hPage, WORD ctrlId, WORD notificatio
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Instrument::OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmHdr)
+BOOL OptionsPage_Instrument::OnDeltaPos(QWidget *hPage, int ctrlId, int iDelta)
 {
-	if (pNmHdr->code == UDN_DELTAPOS) {
-		NMUPDOWN* nmud = (NMUPDOWN*)pNmHdr;
-		int delta = -nmud->iDelta;
-		switch (pNmHdr->idFrom) {
+	{ // UDN_DELTAPOS
+		int delta = -iDelta;
+		switch (ctrlId) {
 		case IDC_OPT_MFD_INTERVALSPIN:
 			Cfg()->CfgLogicPrm.InstrUpdDT = max(0.01, Cfg()->CfgLogicPrm.InstrUpdDT + delta * 0.01);
 			g_pOrbiter->OnOptionChanged(OPTCAT_INSTRUMENT, OPTITEM_INSTRUMENT_MFDUPDATEINTERVAL);
@@ -977,7 +925,6 @@ BOOL OptionsPage_Instrument::OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNm
 		UpdateControls(hPage);
 		return TRUE;
 	}
-	return FALSE;
 }
 
 // ======================================================================
@@ -1012,62 +959,58 @@ const HELPCONTEXT* OptionsPage_Vessel::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Vessel::UpdateControls(HWND hPage)
+void OptionsPage_Vessel::UpdateControls(QWidget *hPage)
 {
-	SendDlgItemMessage(hPage, IDC_OPT_VESSEL_FUELLIMIT, BM_SETCHECK,
-		Cfg()->CfgLogicPrm.bLimitedFuel ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VESSEL_PADFUEL, BM_SETCHECK,
-		Cfg()->CfgLogicPrm.bPadRefuel ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VESSEL_COMPLEXMODEL, BM_SETCHECK,
-		Cfg()->CfgLogicPrm.FlightModelLevel ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VESSEL_DAMAGE, BM_SETCHECK,
-		Cfg()->CfgLogicPrm.DamageSetting ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_VESSEL_FUELLIMIT, Cfg()->CfgLogicPrm.bLimitedFuel);
+	SetCheck(hPage, IDC_OPT_VESSEL_PADFUEL, Cfg()->CfgLogicPrm.bPadRefuel);
+	SetCheck(hPage, IDC_OPT_VESSEL_COMPLEXMODEL, Cfg()->CfgLogicPrm.FlightModelLevel);
+	SetCheck(hPage, IDC_OPT_VESSEL_DAMAGE, Cfg()->CfgLogicPrm.DamageSetting);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Vessel::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Vessel::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 	if (Container()->Environment() == OptionsPageContainer::INLINE) {
 		UpdateControls(hPage);
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_VESSEL_COMPLEXMODEL), FALSE);
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_VESSEL_DAMAGE), FALSE);
+		EnableItem(hPage, IDC_OPT_VESSEL_COMPLEXMODEL, FALSE);
+		EnableItem(hPage, IDC_OPT_VESSEL_DAMAGE, FALSE);
 	}
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Vessel::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Vessel::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_VESSEL_FUELLIMIT:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_VESSEL_FUELLIMIT, BM_GETCHECK, 0, 0) == TRUE);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_VESSEL_FUELLIMIT));
 			Cfg()->CfgLogicPrm.bLimitedFuel = check;
 			g_pOrbiter->OnOptionChanged(OPTCAT_VESSEL, OPTITEM_VESSEL_LIMITEDFUEL);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_VESSEL_PADFUEL:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_VESSEL_PADFUEL, BM_GETCHECK, 0, 0) == TRUE);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_VESSEL_PADFUEL));
 			Cfg()->CfgLogicPrm.bPadRefuel = check;
 			g_pOrbiter->OnOptionChanged(OPTCAT_VESSEL, OPTITEM_VESSEL_PADREFUEL);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_VESSEL_COMPLEXMODEL:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_VESSEL_COMPLEXMODEL, BM_GETCHECK, 0, 0) == TRUE);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_VESSEL_COMPLEXMODEL));
 			Cfg()->CfgLogicPrm.FlightModelLevel = check;
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_VESSEL_DAMAGE:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_VESSEL_DAMAGE, BM_GETCHECK, 0, 0) == TRUE);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_VESSEL_DAMAGE));
 			Cfg()->CfgLogicPrm.DamageSetting = check;
 			return FALSE;
 		}
@@ -1108,34 +1051,34 @@ const HELPCONTEXT* OptionsPage_UI::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_UI::UpdateControls(HWND hPage)
+void OptionsPage_UI::UpdateControls(QWidget *hPage)
 {
 	DWORD mode = Cfg()->CfgUIPrm.MouseFocusMode;
-	SendDlgItemMessage(hPage, IDC_OPT_UI_MOUSEFOCUSMODE, CB_SETCURSEL, mode, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_UI_MOUSEFOCUSMODE)->setCurrentIndex(mode);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_UI::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_UI::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 
-	SendDlgItemMessage(hPage, IDC_OPT_UI_MOUSEFOCUSMODE, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_UI_MOUSEFOCUSMODE)->clear();
 	const char* strMouseMode[3] = { "Focus requires click", "Hybrid: Click required only for child windows", "Focus follows mouse" };
 	for (int i = 0; i < 3; i++)
-		SendDlgItemMessage(hPage, IDC_OPT_UI_MOUSEFOCUSMODE, CB_ADDSTRING, 0, (LPARAM)strMouseMode[i]);
+		oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_UI_MOUSEFOCUSMODE), strMouseMode[i]);
 
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_UI::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_UI::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_UI_MOUSEFOCUSMODE:
-		if (notification == CBN_SELCHANGE) {
-			DWORD mode = (DWORD)SendDlgItemMessage(hPage, IDC_OPT_UI_MOUSEFOCUSMODE, CB_GETCURSEL, 0, 0);
+		if (notification == RESN_SELCHANGE) {
+			DWORD mode = DlgItem<QComboBox>(hPage, IDC_OPT_UI_MOUSEFOCUSMODE)->currentIndex();
 			Cfg()->CfgUIPrm.MouseFocusMode = mode;
 			return FALSE;
 		}
@@ -1176,69 +1119,69 @@ const HELPCONTEXT* OptionsPage_Joystick::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Joystick::UpdateControls(HWND hPage)
+void OptionsPage_Joystick::UpdateControls(QWidget *hPage)
 {
 	char cbuf[256];
 
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_DEVICE, CB_SETCURSEL, (WPARAM)Cfg()->CfgJoystickPrm.Joy_idx, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_THROTTLE, CB_SETCURSEL, (WPARAM)Cfg()->CfgJoystickPrm.ThrottleAxis, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_INIT, BM_SETCHECK, Cfg()->CfgJoystickPrm.bThrottleIgnore ? BST_CHECKED : BST_UNCHECKED, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_JOY_DEVICE)->setCurrentIndex((int)Cfg()->CfgJoystickPrm.Joy_idx);
+	DlgItem<QComboBox>(hPage, IDC_OPT_JOY_THROTTLE)->setCurrentIndex((int)Cfg()->CfgJoystickPrm.ThrottleAxis);
+	SetCheck(hPage, IDC_OPT_JOY_INIT, Cfg()->CfgJoystickPrm.bThrottleIgnore);
 
 	int sat = Cfg()->CfgJoystickPrm.ThrottleSaturation / 10;
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_JOY_SAT), sat);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_JOY_SAT), sat);
 	sprintf(cbuf, "%d", sat);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_JOY_STATIC1), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_JOY_STATIC1, cbuf);
 
 	int dz = Cfg()->CfgJoystickPrm.Deadzone / 10;
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_JOY_DEAD), dz);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_JOY_DEAD), dz);
 	sprintf(cbuf, "%d", dz);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_JOY_STATIC2), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_JOY_STATIC2, cbuf);
 
 	int residJoystick[] = {
 		IDC_OPT_JOY_THROTTLE, IDC_OPT_JOY_INIT, IDC_OPT_JOY_SAT, IDC_OPT_JOY_DEAD,
 		IDC_OPT_JOY_STATIC1, IDC_OPT_JOY_STATIC2, IDC_OPT_JOY_STATIC3, IDC_OPT_JOY_STATIC4
 	};
 	bool enable = Cfg()->CfgJoystickPrm.Joy_idx > 0;
-	for (int i = 0; i < ARRAYSIZE(residJoystick); i++) {
-		EnableWindow(GetDlgItem(hPage, residJoystick[i]), enable);
+	for (int i = 0; i < std::size(residJoystick); i++) {
+		EnableItem(hPage, residJoystick[i], enable);
 	}
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Joystick::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Joystick::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 
 	DWORD ndev;
-	DIDEVICEINSTANCE* joylist;
+	JoyDeviceInstance* joylist;
 	g_pOrbiter->GetDInput()->GetJoysticks(&joylist, &ndev);
 
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_DEVICE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_DEVICE, CB_ADDSTRING, 0, (LPARAM)"<Disabled>");
-	for (int i = 0; i < ndev; i++)
-		SendDlgItemMessage(hPage, IDC_OPT_JOY_DEVICE, CB_ADDSTRING, 0, (LPARAM)(joylist[i].tszProductName));
+	DlgItem<QComboBox>(hPage, IDC_OPT_JOY_DEVICE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_JOY_DEVICE), "<Disabled>");
+	for (DWORD i = 0; i < ndev; i++)
+		oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_JOY_DEVICE), (joylist[i].tszProductName));
 
 	const char* thmode[4] = { "<Keyboard only>", "Z-axis", "Slider 0", "Slider 1" };
-	SendDlgItemMessage(hPage, IDC_OPT_JOY_THROTTLE, CB_RESETCONTENT, 0, 0);
-	for (int i = 0; i < ARRAYSIZE(thmode); i++)
-		SendDlgItemMessage(hPage, IDC_OPT_JOY_THROTTLE, CB_ADDSTRING, 0, (LPARAM)thmode[i]);
+	DlgItem<QComboBox>(hPage, IDC_OPT_JOY_THROTTLE)->clear();
+	for (int i = 0; i < std::size(thmode); i++)
+		oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_JOY_THROTTLE), thmode[i]);
 
 	GAUGEPARAM gp = { 0, 1000, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_JOY_SAT), &gp);
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_JOY_DEAD), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_JOY_SAT), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_JOY_DEAD), &gp);
 
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Joystick::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Joystick::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_JOY_DEVICE:
-		if (notification == CBN_SELCHANGE) {
-			DWORD idx = (DWORD)SendDlgItemMessage(hPage, IDC_OPT_JOY_DEVICE, CB_GETCURSEL, 0, 0);
+		if (notification == RESN_SELCHANGE) {
+			DWORD idx = DlgItem<QComboBox>(hPage, IDC_OPT_JOY_DEVICE)->currentIndex();
 			Cfg()->CfgJoystickPrm.Joy_idx = idx;
 			g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_DEVICE);
 			UpdateControls(hPage);
@@ -1246,16 +1189,16 @@ BOOL OptionsPage_Joystick::OnCommand(HWND hPage, WORD ctrlId, WORD notification,
 		}
 		break;
 	case IDC_OPT_JOY_THROTTLE:
-		if (notification == CBN_SELCHANGE) {
-			DWORD axis = (DWORD)SendDlgItemMessage(hPage, IDC_OPT_JOY_THROTTLE, CB_GETCURSEL, 0, 0);
+		if (notification == RESN_SELCHANGE) {
+			DWORD axis = DlgItem<QComboBox>(hPage, IDC_OPT_JOY_THROTTLE)->currentIndex();
 			Cfg()->CfgJoystickPrm.ThrottleAxis = axis;
 			g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_PARAM);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_JOY_INIT:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, IDC_OPT_JOY_INIT, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, IDC_OPT_JOY_INIT));
 			Cfg()->CfgJoystickPrm.bThrottleIgnore = check;
 			break;
 		}
@@ -1266,16 +1209,16 @@ BOOL OptionsPage_Joystick::OnCommand(HWND hPage, WORD ctrlId, WORD notification,
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Joystick::OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Joystick::OnHScroll(QWidget *hPage, int ctrlId, int request, int pos)
 {
 	int val;
-	switch (GetDlgCtrlID((HWND)lParam)) {
+	switch (ctrlId) {
 	case IDC_OPT_JOY_SAT:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			val = HIWORD(wParam);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			val = pos;
 			Cfg()->CfgJoystickPrm.ThrottleSaturation = val * 10;
 			UpdateControls(hPage);
 			g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_PARAM);
@@ -1283,11 +1226,11 @@ BOOL OptionsPage_Joystick::OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case IDC_OPT_JOY_DEAD:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			val = HIWORD(wParam);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			val = pos;
 			Cfg()->CfgJoystickPrm.Deadzone = val * 10;
 			UpdateControls(hPage);
 			g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_PARAM);
@@ -1330,12 +1273,12 @@ const HELPCONTEXT* OptionsPage_CelSphere::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_CelSphere::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_CelSphere::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 
 	GAUGEPARAM gp = { 0, 100, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS), &gp);
 
 	PopulateStarmapList(hPage);
 	PopulateBgImageList(hPage);
@@ -1346,42 +1289,42 @@ BOOL OptionsPage_CelSphere::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lPara
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_CelSphere::OnCommand(HWND hPage, WORD id, WORD code, HWND hControl)
+BOOL OptionsPage_CelSphere::OnCommand(QWidget *hPage, WORD id, WORD code, QWidget *hControl)
 {
 	switch (id) {
 	case IDC_OPT_CSP_ENABLESTARPIX:
-		if (code == BN_CLICKED) {
+		if (code == RESN_CLICKED) {
 			StarPixelActivationChanged(hPage);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_CSP_ENABLESTARMAP:
-		if (code == BN_CLICKED) {
+		if (code == RESN_CLICKED) {
 			StarmapActivationChanged(hPage);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_CSP_ENABLEBKGMAP:
-		if (code == BN_CLICKED) {
+		if (code == RESN_CLICKED) {
 			BackgroundActivationChanged(hPage);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_CSP_STARMAPIMAGE:
-		if (code == LBN_SELCHANGE) {
+		if (code == RESN_SELCHANGE) {
 			StarmapImageChanged(hPage);
 			return false;
 		}
 		break;
 	case IDC_OPT_CSP_BKGIMAGE:
-		if (code == LBN_SELCHANGE) {
+		if (code == RESN_SELCHANGE) {
 			BackgroundImageChanged(hPage);
 			return FALSE;
 		}
 		break;
 	case IDC_OPT_CSP_STARMAPLIN:
 	case IDC_OPT_CSP_STARMAPEXP:
-		if (code == BN_CLICKED) {
+		if (code == RESN_CLICKED) {
 			Cfg()->CfgVisualPrm.StarPrm.map_log = (id == IDC_OPT_CSP_STARMAPEXP);
 			g_pOrbiter->OnOptionChanged(OPTCAT_CELSPHERE, OPTITEM_CELSPHERE_STARDISPLAYPARAM);
 			return FALSE;
@@ -1393,15 +1336,15 @@ BOOL OptionsPage_CelSphere::OnCommand(HWND hPage, WORD id, WORD code, HWND hCont
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_CelSphere::OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_CelSphere::OnHScroll(QWidget *hPage, int ctrlId, int request, int pos)
 {
-	switch (GetDlgCtrlID((HWND)lParam)) {
+	switch (ctrlId) {
 	case IDC_OPT_CSP_BGBRIGHTNESS:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			BackgroundBrightnessChanged(hPage, 0.01 * HIWORD(wParam));
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			BackgroundBrightnessChanged(hPage, 0.01 * pos);
 			return 0;
 		}
 		break;
@@ -1411,13 +1354,12 @@ BOOL OptionsPage_CelSphere::OnHScroll(HWND hPage, WPARAM wParam, LPARAM lParam)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_CelSphere::OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmHdr)
+BOOL OptionsPage_CelSphere::OnDeltaPos(QWidget *hPage, int ctrlId, int iDelta)
 {
-	if (pNmHdr->code == UDN_DELTAPOS) {
-		NMUPDOWN* nmud = (NMUPDOWN*)pNmHdr;
-		int delta = -nmud->iDelta;
+	{ // UDN_DELTAPOS
+		int delta = -iDelta;
 		StarRenderPrm& prm = Cfg()->CfgVisualPrm.StarPrm;
-		switch (pNmHdr->idFrom) {
+		switch (ctrlId) {
 		case IDC_OPT_CSP_STARMAGHISPIN:
 			prm.mag_hi = min(prm.mag_lo, max(-2.0, prm.mag_hi + delta * 0.1));
 			break;
@@ -1432,70 +1374,67 @@ BOOL OptionsPage_CelSphere::OnNotify(HWND hPage, DWORD ctrlId, const NMHDR* pNmH
 		g_pOrbiter->OnOptionChanged(OPTCAT_CELSPHERE, OPTITEM_CELSPHERE_STARDISPLAYPARAM);
 		return TRUE;
 	}
-	return FALSE;
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::UpdateControls(HWND hPage)
+void OptionsPage_CelSphere::UpdateControls(QWidget *hPage)
 {
 	char cbuf[256];
 
 	std::string starpath = std::string(Cfg()->CfgVisualPrm.StarImagePath);
 	for (int idx = 0; idx < m_pathStarmap.size(); idx++)
 		if (!starpath.compare(m_pathStarmap[idx].second)) {
-			SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPIMAGE, CB_SETCURSEL, idx, 0);
+			DlgItem<QComboBox>(hPage, IDC_OPT_CSP_STARMAPIMAGE)->setCurrentIndex(idx);
 			break;
 		}
 
 	std::string bgpath = std::string(Cfg()->CfgVisualPrm.CSphereBgPath);
 	for (int idx = 0; idx < m_pathBgImage.size(); idx++)
 		if (!bgpath.compare(m_pathBgImage[idx].second)) {
-			SendDlgItemMessage(hPage, IDC_OPT_CSP_BKGIMAGE, CB_SETCURSEL, idx, 0);
+			DlgItem<QComboBox>(hPage, IDC_OPT_CSP_BKGIMAGE)->setCurrentIndex(idx);
 			break;
 		}
 
 	bool checked = Cfg()->CfgVisualPrm.bUseStarImage;
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLESTARMAP, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
-	EnableWindow(GetDlgItem(hPage, IDC_OPT_CSP_STARMAPIMAGE), checked ? TRUE : FALSE);
+	SetCheck(hPage, IDC_OPT_CSP_ENABLESTARMAP, checked);
+	EnableItem(hPage, IDC_OPT_CSP_STARMAPIMAGE, checked ? TRUE : FALSE);
 
 	checked = Cfg()->CfgVisualPrm.bUseBgImage;
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLEBKGMAP, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_CSP_ENABLEBKGMAP, checked);
 	int brt = (int)(Cfg()->CfgVisualPrm.CSphereBgIntens * 100.0);
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS), brt);
-	EnableWindow(GetDlgItem(hPage, IDC_OPT_CSP_BKGIMAGE), checked ? TRUE : FALSE);
-	EnableWindow(GetDlgItem(hPage, IDC_STATIC1), checked ? TRUE : FALSE);
-	EnableWindow(GetDlgItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS), checked ? TRUE : FALSE);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS), brt);
+	EnableItem(hPage, IDC_OPT_CSP_BKGIMAGE, checked ? TRUE : FALSE);
+	EnableItem(hPage, IDC_STATIC1, checked ? TRUE : FALSE);
+	EnableItem(hPage, IDC_OPT_CSP_BGBRIGHTNESS, checked ? TRUE : FALSE);
 
 	checked = Cfg()->CfgVisualPrm.bUseStarDots;
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLESTARPIX, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_CSP_ENABLESTARPIX, checked);
 	sprintf(cbuf, "%0.1f", Cfg()->CfgVisualPrm.StarPrm.mag_hi);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_CSP_STARMAGHI), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_CSP_STARMAGHI, cbuf);
 	sprintf(cbuf, "%0.1f", Cfg()->CfgVisualPrm.StarPrm.mag_lo);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_CSP_STARMAGLO), cbuf);
+	oapiSetDlgItemText(hPage, IDC_OPT_CSP_STARMAGLO, cbuf);
 	sprintf(cbuf, "%0.2f", Cfg()->CfgVisualPrm.StarPrm.brt_min);
-	SetWindowText(GetDlgItem(hPage, IDC_OPT_CSP_STARMINBRT), cbuf);
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPLIN, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.StarPrm.map_log ? BST_UNCHECKED : BST_CHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPEXP, BM_SETCHECK,
-		Cfg()->CfgVisualPrm.StarPrm.map_log ? BST_CHECKED : BST_UNCHECKED, 0);
+	oapiSetDlgItemText(hPage, IDC_OPT_CSP_STARMINBRT, cbuf);
+	SetCheck(hPage, IDC_OPT_CSP_STARMAPLIN, !(Cfg()->CfgVisualPrm.StarPrm.map_log));
+	SetCheck(hPage, IDC_OPT_CSP_STARMAPEXP, Cfg()->CfgVisualPrm.StarPrm.map_log);
 	std::vector<int> ctrlStarPix{
 		IDC_STATIC2, IDC_STATIC3, IDC_STATIC4, IDC_STATIC5, IDC_STATIC6,
 		IDC_OPT_CSP_STARMAGHISPIN, IDC_OPT_CSP_STARMAGLOSPIN, IDC_OPT_CSP_STARMINBRTSPIN,
 		IDC_OPT_CSP_STARMAGHI, IDC_OPT_CSP_STARMAGLO, IDC_OPT_CSP_STARMINBRT, IDC_OPT_CSP_STARMAPLIN, IDC_OPT_CSP_STARMAPEXP
 	};
 	for (auto ctrl : ctrlStarPix)
-		EnableWindow(GetDlgItem(hPage, ctrl), checked ? TRUE : FALSE);
+		EnableItem(hPage, ctrl, checked ? TRUE : FALSE);
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::PopulateStarmapList(HWND hPage)
+void OptionsPage_CelSphere::PopulateStarmapList(QWidget *hPage)
 {
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPIMAGE, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_CSP_STARMAPIMAGE)->clear();
 	m_pathStarmap.clear();
 
-	std::ifstream ifs(Cfg()->ConfigPath("CSphere\\bkgimage"));
+	std::ifstream ifs(oapiResolvePath(Cfg()->ConfigPath("CSphere/bkgimage")));
 	if (ifs) {
 		char* c;
 		char cbuf[256];
@@ -1510,7 +1449,7 @@ void OptionsPage_CelSphere::PopulateStarmapList(HWND hPage)
 				break;
 			c = strtok(cbuf, "|");
 			if (c) {
-				SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPIMAGE, CB_ADDSTRING, 0, (LPARAM)c);
+				oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_CSP_STARMAPIMAGE), c);
 				std::string label(c);
 				c = strtok(NULL, "\n");
 				std::string path(c);
@@ -1522,12 +1461,12 @@ void OptionsPage_CelSphere::PopulateStarmapList(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::PopulateBgImageList(HWND hPage)
+void OptionsPage_CelSphere::PopulateBgImageList(QWidget *hPage)
 {
-	SendDlgItemMessage(hPage, IDC_OPT_CSP_BKGIMAGE, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_CSP_BKGIMAGE)->clear();
 	m_pathBgImage.clear();
 
-	std::ifstream ifs(Cfg()->ConfigPath("CSphere\\bkgimage"));
+	std::ifstream ifs(oapiResolvePath(Cfg()->ConfigPath("CSphere/bkgimage")));
 	if (ifs) {
 		char* c;
 		char cbuf[256];
@@ -1542,7 +1481,7 @@ void OptionsPage_CelSphere::PopulateBgImageList(HWND hPage)
 				break;
 			c = strtok(cbuf, "|");
 			if (c) {
-				SendDlgItemMessage(hPage, IDC_OPT_CSP_BKGIMAGE, CB_ADDSTRING, 0, (LPARAM)c);
+				oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_CSP_BKGIMAGE), c);
 				std::string label(c);
 				c = strtok(NULL, "\n");
 				std::string path(c);
@@ -1554,9 +1493,9 @@ void OptionsPage_CelSphere::PopulateBgImageList(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::StarPixelActivationChanged(HWND hPage)
+void OptionsPage_CelSphere::StarPixelActivationChanged(QWidget *hPage)
 {
-	bool activated = SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLESTARPIX, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	bool activated = IsChecked(hPage, IDC_OPT_CSP_ENABLESTARPIX);
 	bool active = Cfg()->CfgVisualPrm.bUseStarDots;
 
 	if (activated != active) {
@@ -1568,9 +1507,9 @@ void OptionsPage_CelSphere::StarPixelActivationChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::StarmapActivationChanged(HWND hPage)
+void OptionsPage_CelSphere::StarmapActivationChanged(QWidget *hPage)
 {
-	bool activated = SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLESTARMAP, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	bool activated = IsChecked(hPage, IDC_OPT_CSP_ENABLESTARMAP);
 	bool active = Cfg()->CfgVisualPrm.bUseStarImage;
 
 	if (activated != active) {
@@ -1582,9 +1521,9 @@ void OptionsPage_CelSphere::StarmapActivationChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::StarmapImageChanged(HWND hPage)
+void OptionsPage_CelSphere::StarmapImageChanged(QWidget *hPage)
 {
-	int idx = SendDlgItemMessage(hPage, IDC_OPT_CSP_STARMAPIMAGE, CB_GETCURSEL, 0, 0);
+	int idx = DlgItem<QComboBox>(hPage, IDC_OPT_CSP_STARMAPIMAGE)->currentIndex();
 	std::string& path = m_pathStarmap[idx].second;
 	strncpy(Cfg()->CfgVisualPrm.StarImagePath, path.c_str(), 128);
 	g_pOrbiter->OnOptionChanged(OPTCAT_CELSPHERE, OPTITEM_CELSPHERE_STARIMAGECHANGED);
@@ -1592,9 +1531,9 @@ void OptionsPage_CelSphere::StarmapImageChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::BackgroundActivationChanged(HWND hPage)
+void OptionsPage_CelSphere::BackgroundActivationChanged(QWidget *hPage)
 {
-	bool activated = SendDlgItemMessage(hPage, IDC_OPT_CSP_ENABLEBKGMAP, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	bool activated = IsChecked(hPage, IDC_OPT_CSP_ENABLEBKGMAP);
 	bool active = Cfg()->CfgVisualPrm.bUseBgImage;
 
 	if (activated != active) {
@@ -1606,9 +1545,9 @@ void OptionsPage_CelSphere::BackgroundActivationChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::BackgroundImageChanged(HWND hPage)
+void OptionsPage_CelSphere::BackgroundImageChanged(QWidget *hPage)
 {
-	int idx = SendDlgItemMessage(hPage, IDC_OPT_CSP_BKGIMAGE, CB_GETCURSEL, 0, 0);
+	int idx = DlgItem<QComboBox>(hPage, IDC_OPT_CSP_BKGIMAGE)->currentIndex();
 	std::string& path = m_pathBgImage[idx].second;
 	strncpy(Cfg()->CfgVisualPrm.CSphereBgPath, path.c_str(), 128);
 	g_pOrbiter->OnOptionChanged(OPTCAT_CELSPHERE, OPTITEM_CELSPHERE_BGIMAGECHANGED);
@@ -1616,7 +1555,7 @@ void OptionsPage_CelSphere::BackgroundImageChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_CelSphere::BackgroundBrightnessChanged(HWND hPage, double level)
+void OptionsPage_CelSphere::BackgroundBrightnessChanged(QWidget *hPage, double level)
 {
 	if (level != Cfg()->CfgVisualPrm.CSphereBgIntens) {
 		Cfg()->CfgVisualPrm.CSphereBgIntens = level;
@@ -1656,38 +1595,38 @@ const HELPCONTEXT* OptionsPage_VisHelper::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_VisHelper::UpdateControls(HWND hPage)
+void OptionsPage_VisHelper::UpdateControls(QWidget *hPage)
 {
 	int& plnFlag = Cfg()->CfgVisHelpPrm.flagPlanetarium;
 	bool enable = plnFlag & PLN_ENABLE;
-	SendDlgItemMessage(hPage, IDC_OPT_PLN, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_PLN, enable);
 	int& mkrFlag = Cfg()->CfgVisHelpPrm.flagMarkers;
 	enable = mkrFlag & MKR_ENABLE;
-	SendDlgItemMessage(hPage, IDC_OPT_MKR, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_MKR, enable);
 	int vecFlag = Cfg()->CfgVisHelpPrm.flagBodyForce;
 	enable = (vecFlag & BFV_ENABLE);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_VEC, enable);
 	int crdFlag = Cfg()->CfgVisHelpPrm.flagFrameAxes;
 	enable = (crdFlag & FAV_ENABLE);
-	SendDlgItemMessage(hPage, IDC_OPT_CRD, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_CRD, enable);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_VisHelper::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_VisHelper::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 	return TRUE;
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_VisHelper::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_VisHelper::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_PLN:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, ctrlId));
 			DWORD flag = PLN_ENABLE;
 			int& plnFlag = Cfg()->CfgVisHelpPrm.flagPlanetarium;
 			if (check) plnFlag |= flag;
@@ -1696,8 +1635,8 @@ BOOL OptionsPage_VisHelper::OnCommand(HWND hPage, WORD ctrlId, WORD notification
 		}
 		break;
 	case IDC_OPT_MKR:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, ctrlId));
 			DWORD flag = MKR_ENABLE;
 			int& mkrFlag = Cfg()->CfgVisHelpPrm.flagMarkers;
 			if (check) mkrFlag |= flag;
@@ -1706,8 +1645,8 @@ BOOL OptionsPage_VisHelper::OnCommand(HWND hPage, WORD ctrlId, WORD notification
 		}
 		break;
 	case IDC_OPT_VEC:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, ctrlId));
 			DWORD flag = BFV_ENABLE;
 			int& vecFlag = Cfg()->CfgVisHelpPrm.flagBodyForce;
 			if (check) vecFlag |= flag;
@@ -1715,8 +1654,8 @@ BOOL OptionsPage_VisHelper::OnCommand(HWND hPage, WORD ctrlId, WORD notification
 		}
 		break;
 	case IDC_OPT_CRD:
-		if (notification == BN_CLICKED) {
-			bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == BST_CHECKED);
+		if (notification == RESN_CLICKED) {
+			bool check = (IsChecked(hPage, ctrlId));
 			DWORD flag = FAV_ENABLE;
 			int& crdFlag = Cfg()->CfgVisHelpPrm.flagFrameAxes;
 			if (check) crdFlag |= flag;
@@ -1724,19 +1663,19 @@ BOOL OptionsPage_VisHelper::OnCommand(HWND hPage, WORD ctrlId, WORD notification
 		}
 		break;
 	case IDC_OPT_VHELP_PLN:
-		if (notification == BN_CLICKED)
+		if (notification == RESN_CLICKED)
 			Container()->SwitchPage("Planetarium");
 		break;
 	case IDC_OPT_VHELP_MKR:
-		if (notification == BN_CLICKED)
+		if (notification == RESN_CLICKED)
 			Container()->SwitchPage("Labels");
 		break;
 	case IDC_OPT_VHELP_VEC:
-		if (notification == BN_CLICKED)
+		if (notification == RESN_CLICKED)
 			Container()->SwitchPage("Body forces");
 		break;
 	case IDC_OPT_VHELP_CRD:
-		if (notification == BN_CLICKED)
+		if (notification == RESN_CLICKED)
 			Container()->SwitchPage("Object axes");
 		break;
 	}
@@ -1775,7 +1714,7 @@ const HELPCONTEXT* OptionsPage_Planetarium::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Planetarium::UpdateControls(HWND hPage)
+void OptionsPage_Planetarium::UpdateControls(QWidget *hPage)
 {
 	std::array<int, 15> residPlanetarium = {
 		IDC_OPT_PLN_CELGRID, IDC_OPT_PLN_ECLGRID, IDC_OPT_PLN_GALGRID, IDC_OPT_PLN_HRZGRID, IDC_OPT_PLN_EQU,
@@ -1786,34 +1725,34 @@ void OptionsPage_Planetarium::UpdateControls(HWND hPage)
 
 	int& plnFlag = Cfg()->CfgVisHelpPrm.flagPlanetarium;
 	bool enable = plnFlag & PLN_ENABLE;
-	SendDlgItemMessage(hPage, IDC_OPT_PLN, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_PLN, enable);
 	for (auto resid : residPlanetarium)
-		EnableWindow(GetDlgItem(hPage, resid), enable ? TRUE : FALSE);
+		EnableItem(hPage, resid, enable ? TRUE : FALSE);
 	if (enable && !(plnFlag & PLN_CNSTLABEL)) {
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_PLN_CNSTLABEL_FULL), FALSE);
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_PLN_CNSTLABEL_SHORT), FALSE);
+		EnableItem(hPage, IDC_OPT_PLN_CNSTLABEL_FULL, FALSE);
+		EnableItem(hPage, IDC_OPT_PLN_CNSTLABEL_SHORT, FALSE);
 	}
 	if (enable && !(plnFlag & PLN_CCMARK))
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_PLN_MKRLIST), FALSE);
+		EnableItem(hPage, IDC_OPT_PLN_MKRLIST, FALSE);
 
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CELGRID, BM_SETCHECK, plnFlag & PLN_CGRID ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_ECLGRID, BM_SETCHECK, plnFlag & PLN_EGRID ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_GALGRID, BM_SETCHECK, plnFlag & PLN_GGRID ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_HRZGRID, BM_SETCHECK, plnFlag & PLN_HGRID ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_EQU, BM_SETCHECK, plnFlag & PLN_EQU ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CNSTLABEL, BM_SETCHECK, plnFlag & PLN_CNSTLABEL ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CNSTBND, BM_SETCHECK, plnFlag & PLN_CNSTBND ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CNSTPATTERN, BM_SETCHECK, plnFlag & PLN_CONST ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_MARKER, BM_SETCHECK, plnFlag & PLN_CCMARK ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CNSTLABEL_FULL, BM_SETCHECK, plnFlag & PLN_CNSTLONG ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_CNSTLABEL_SHORT, BM_SETCHECK, plnFlag & PLN_CNSTLONG ? BST_UNCHECKED : BST_CHECKED, 0);
+	SetCheck(hPage, IDC_OPT_PLN_CELGRID, plnFlag & PLN_CGRID);
+	SetCheck(hPage, IDC_OPT_PLN_ECLGRID, plnFlag & PLN_EGRID);
+	SetCheck(hPage, IDC_OPT_PLN_GALGRID, plnFlag & PLN_GGRID);
+	SetCheck(hPage, IDC_OPT_PLN_HRZGRID, plnFlag & PLN_HGRID);
+	SetCheck(hPage, IDC_OPT_PLN_EQU, plnFlag & PLN_EQU);
+	SetCheck(hPage, IDC_OPT_PLN_CNSTLABEL, plnFlag & PLN_CNSTLABEL);
+	SetCheck(hPage, IDC_OPT_PLN_CNSTBND, plnFlag & PLN_CNSTBND);
+	SetCheck(hPage, IDC_OPT_PLN_CNSTPATTERN, plnFlag & PLN_CONST);
+	SetCheck(hPage, IDC_OPT_PLN_MARKER, plnFlag & PLN_CCMARK);
+	SetCheck(hPage, IDC_OPT_PLN_CNSTLABEL_FULL, plnFlag & PLN_CNSTLONG);
+	SetCheck(hPage, IDC_OPT_PLN_CNSTLABEL_SHORT, !(plnFlag & PLN_CNSTLONG));
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Planetarium::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Planetarium::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 	RescanMarkerList(hPage);
 
 	return TRUE;
@@ -1821,7 +1760,7 @@ BOOL OptionsPage_Planetarium::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lPa
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Planetarium::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Planetarium::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_PLN:
@@ -1836,13 +1775,13 @@ BOOL OptionsPage_Planetarium::OnCommand(HWND hPage, WORD ctrlId, WORD notificati
 	case IDC_OPT_PLN_MARKER:
 	case IDC_OPT_PLN_CNSTLABEL_FULL:
 	case IDC_OPT_PLN_CNSTLABEL_SHORT:
-		if (notification == BN_CLICKED) {
+		if (notification == RESN_CLICKED) {
 			OnItemClicked(hPage, ctrlId);
 			return TRUE;
 		}
 		break;
 	case IDC_OPT_PLN_MKRLIST:
-		if (notification == LBN_SELCHANGE)
+		if (notification == RESN_SELCHANGE)
 			return OnMarkerSelectionChanged(hPage);
 		break;
 	}
@@ -1851,9 +1790,9 @@ BOOL OptionsPage_Planetarium::OnCommand(HWND hPage, WORD ctrlId, WORD notificati
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Planetarium::OnItemClicked(HWND hPage, WORD ctrlId)
+void OptionsPage_Planetarium::OnItemClicked(QWidget *hPage, WORD ctrlId)
 {
-	bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == TRUE);
+	bool check = (IsChecked(hPage, ctrlId));
 	DWORD flag;
 	switch (ctrlId) {
 	case IDC_OPT_PLN:                 flag = PLN_ENABLE;    break;
@@ -1880,15 +1819,15 @@ void OptionsPage_Planetarium::OnItemClicked(HWND hPage, WORD ctrlId)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Planetarium::OnMarkerSelectionChanged(HWND hPage)
+BOOL OptionsPage_Planetarium::OnMarkerSelectionChanged(QWidget *hPage)
 {
 	std::vector<oapi::GraphicsClient::LABELLIST>& list = g_psys->LabelList();
 	if (list.size()) {
 		for (int i = 0; i < list.size(); i++) {
-			int sel = SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_GETSEL, i, 0);
+			int sel = DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->item(i)->isSelected();
 			list[i].active = (sel ? true : false);
 		}
-		std::ifstream fcfg(Cfg()->ConfigPath(g_psys->Name().c_str()));
+		std::ifstream fcfg(oapiResolvePath(Cfg()->ConfigPath(g_psys->Name().c_str())));
 		g_psys->ScanLabelLists(fcfg);
 	}
 	return 0;
@@ -1896,9 +1835,10 @@ BOOL OptionsPage_Planetarium::OnMarkerSelectionChanged(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Planetarium::RescanMarkerList(HWND hPage)
+void OptionsPage_Planetarium::RescanMarkerList(QWidget *hPage)
 {
-	SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_RESETCONTENT, 0, 0);
+	QSignalBlocker block(DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)); // LB_ messages don't notify
+	DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->clear();
 
 	if (!g_psys) return;
 	const std::vector< oapi::GraphicsClient::LABELLIST>& list = g_psys->LabelList();
@@ -1906,9 +1846,9 @@ void OptionsPage_Planetarium::RescanMarkerList(HWND hPage)
 
 	int n = 0;
 	g_psys->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
-		SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_ADDSTRING, 0, (LPARAM)entry.path().stem().string().c_str());
+		DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
 		if (n < list.size() && list[n].active)
-			SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_SETSEL, TRUE, n);
+			DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->item(n)->setSelected(true);
 		n++;
 	});
 }
@@ -1945,7 +1885,7 @@ const HELPCONTEXT* OptionsPage_Labels::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Labels::UpdateControls(HWND hPage)
+void OptionsPage_Labels::UpdateControls(QWidget *hPage)
 {
 	std::array<int, 10> residLabels = {
 		IDC_OPT_MKR_VESSEL, IDC_OPT_MKR_CELBODY, IDC_OPT_MKR_FEATUREBODY, IDC_OPT_MKR_BASE,
@@ -1955,26 +1895,26 @@ void OptionsPage_Labels::UpdateControls(HWND hPage)
 
 	int& mkrFlag = Cfg()->CfgVisHelpPrm.flagMarkers;
 	bool enable = mkrFlag & MKR_ENABLE;
-	SendDlgItemMessage(hPage, IDC_OPT_MKR, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_MKR, enable);
 	for (auto resid : residLabels)
-		EnableWindow(GetDlgItem(hPage, resid), enable ? TRUE : FALSE);
+		EnableItem(hPage, resid, enable ? TRUE : FALSE);
 	if (enable && !(mkrFlag & MKR_LMARK)) {
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_MKR_FEATUREBODY), FALSE);
-		EnableWindow(GetDlgItem(hPage, IDC_OPT_MKR_FEATURELIST), FALSE);
+		EnableItem(hPage, IDC_OPT_MKR_FEATUREBODY, FALSE);
+		EnableItem(hPage, IDC_OPT_MKR_FEATURELIST, FALSE);
 	}
 
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_VESSEL, BM_SETCHECK, mkrFlag & MKR_VMARK ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_CELBODY, BM_SETCHECK, mkrFlag & MKR_CMARK ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_BASE, BM_SETCHECK, mkrFlag & MKR_BMARK ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_BEACON, BM_SETCHECK, mkrFlag & MKR_RMARK ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURES, BM_SETCHECK, mkrFlag & MKR_LMARK ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_MKR_VESSEL, mkrFlag & MKR_VMARK);
+	SetCheck(hPage, IDC_OPT_MKR_CELBODY, mkrFlag & MKR_CMARK);
+	SetCheck(hPage, IDC_OPT_MKR_BASE, mkrFlag & MKR_BMARK);
+	SetCheck(hPage, IDC_OPT_MKR_BEACON, mkrFlag & MKR_RMARK);
+	SetCheck(hPage, IDC_OPT_MKR_FEATURES, mkrFlag & MKR_LMARK);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Labels::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Labels::OnInitDialog(QWidget *hPage)
 {
-	OptionsPage::OnInitDialog(hPage, wParam, lParam);
+	OptionsPage::OnInitDialog(hPage);
 	ScanPsysBodies(hPage);
 
 	return TRUE;
@@ -1982,7 +1922,7 @@ BOOL OptionsPage_Labels::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Labels::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Labels::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_MKR:
@@ -1991,17 +1931,17 @@ BOOL OptionsPage_Labels::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 	case IDC_OPT_MKR_BASE:
 	case IDC_OPT_MKR_BEACON:
 	case IDC_OPT_MKR_FEATURES:
-		if (notification == BN_CLICKED) {
+		if (notification == RESN_CLICKED) {
 			OnItemClicked(hPage, ctrlId);
 			return TRUE;
 		}
 		break;
 	case IDC_OPT_MKR_FEATUREBODY:
-		if (notification == CBN_SELCHANGE)
+		if (notification == RESN_SELCHANGE)
 			UpdateFeatureList(hPage);
 		return TRUE;
 	case IDC_OPT_MKR_FEATURELIST:
-		if (notification == LBN_SELCHANGE)
+		if (notification == RESN_SELCHANGE)
 			RescanFeatures(hPage);
 		return TRUE;
 	}
@@ -2010,9 +1950,9 @@ BOOL OptionsPage_Labels::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Labels::OnItemClicked(HWND hPage, WORD ctrlId)
+void OptionsPage_Labels::OnItemClicked(QWidget *hPage, WORD ctrlId)
 {
-	bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == TRUE);
+	bool check = (IsChecked(hPage, ctrlId));
 	DWORD flag;
 	switch (ctrlId) {
 	case IDC_OPT_MKR:          flag = MKR_ENABLE; break;
@@ -2035,7 +1975,7 @@ void OptionsPage_Labels::OnItemClicked(HWND hPage, WORD ctrlId)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Labels::ScanPsysBodies(HWND hPage)
+void OptionsPage_Labels::ScanPsysBodies(QWidget *hPage)
 {
 	if (!g_psys) return;
 	const Body* sel = nullptr;
@@ -2045,11 +1985,11 @@ void OptionsPage_Labels::ScanPsysBodies(HWND hPage)
 			sel = planet;
 		if (planet->isMoon())
 			continue;
-		SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_ADDSTRING, 0, (LPARAM)planet->Name());
+		oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY), planet->Name());
 		for (int j = 0; j < planet->nSecondary(); j++) {
 			char cbuf[256] = "    ";
 			strncpy(cbuf + 4, planet->Secondary(j)->Name(), 252);
-			SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_ADDSTRING, 0, (LPARAM)cbuf);
+			oapiComboAddString(DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY), cbuf);
 		}
 	}
 	if (!sel) {
@@ -2057,20 +1997,21 @@ void OptionsPage_Labels::ScanPsysBodies(HWND hPage)
 		if (tgt->Type() == OBJTP_VESSEL)
 			sel = ((Vessel*)tgt)->GetSurfParam()->ref;
 	}
-	int idx = (sel ? SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_FINDSTRINGEXACT, -1, (LPARAM)sel->Name()) : 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_SETCURSEL, idx, 0);
+	int idx = (sel ? DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->findText(QString::fromUtf8(sel->Name()), Qt::MatchFixedString) : 0);
+	DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->setCurrentIndex(idx);
 	UpdateFeatureList(hPage);
 }
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Labels::UpdateFeatureList(HWND hPage)
+void OptionsPage_Labels::UpdateFeatureList(QWidget *hPage)
 {
 	int n, nlist;
 	char cbuf[256], cpath[256];
-	int idx = SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_GETCURSEL, 0, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_GETLBTEXT, idx, (LPARAM)cbuf);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_RESETCONTENT, 0, 0);
+	int idx = DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->currentIndex();
+	snprintf(cbuf, sizeof(cbuf), "%s", DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->itemText(idx).toUtf8().constData());
+	QSignalBlocker block(DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)); // LB_ messages don't notify
+	DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->clear();
 	Planet* planet = g_psys->GetPlanet(trim_string(cbuf), true);
 	if (!planet) return;
 
@@ -2080,9 +2021,9 @@ void OptionsPage_Labels::UpdateFeatureList(HWND hPage)
 
 		n = 0;
 		planet->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
-				SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_ADDSTRING, 0, (LPARAM)entry.path().stem().string().c_str());
+				DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
 				if (n < nlist && list[n].active)
-					SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_SETSEL, TRUE, n);
+					DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(n)->setSelected(true);
 				n++;
 			});
 	}
@@ -2091,9 +2032,9 @@ void OptionsPage_Labels::UpdateFeatureList(HWND hPage)
 		if (nlabel) {
 			const oapi::GraphicsClient::LABELTYPE* lspec = planet->LabelLegend();
 			for (int i = 0; i < nlabel; i++) {
-				SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_ADDSTRING, 0, (LPARAM)lspec[i].name);
+				DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->addItem(QString::fromUtf8(lspec[i].name));
 				if (lspec[i].active)
-					SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_SETSEL, TRUE, i);
+					DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(i)->setSelected(true);
 			}
 		}
 	}
@@ -2101,13 +2042,13 @@ void OptionsPage_Labels::UpdateFeatureList(HWND hPage)
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Labels::RescanFeatures(HWND hPage)
+void OptionsPage_Labels::RescanFeatures(QWidget *hPage)
 {
 	char cbuf[256];
 	int nlist;
 
-	int idx = SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_GETCURSEL, 0, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATUREBODY, CB_GETLBTEXT, idx, (LPARAM)cbuf);
+	int idx = DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->currentIndex();
+	snprintf(cbuf, sizeof(cbuf), "%s", DlgItem<QComboBox>(hPage, IDC_OPT_MKR_FEATUREBODY)->itemText(idx).toUtf8().constData());
 	Planet* planet = g_psys->GetPlanet(trim_string(cbuf), true);
 	if (!planet) return;
 
@@ -2116,17 +2057,17 @@ void OptionsPage_Labels::RescanFeatures(HWND hPage)
 		if (!nlist) return;
 
 		for (int i = 0; i < nlist; i++) {
-			BOOL sel = SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_GETSEL, i, 0);
+			BOOL sel = DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(i)->isSelected();
 			list[i].active = (sel ? true : false);
 		}
 
-		std::ifstream fcfg(Cfg()->ConfigPath(planet->Name()));
+		std::ifstream fcfg(oapiResolvePath(Cfg()->ConfigPath(planet->Name())));
 		planet->ScanLabelLists(fcfg);
 	}
 	else {
 		nlist = planet->NumLabelLegend();
 		for (int i = 0; i < nlist; i++) {
-			BOOL sel = SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_GETSEL, i, 0);
+			BOOL sel = DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(i)->isSelected();
 			planet->SetLabelActive(i, sel ? true : false);
 		}
 	}
@@ -2164,7 +2105,7 @@ const HELPCONTEXT* OptionsPage_Forces::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Forces::UpdateControls(HWND hPage)
+void OptionsPage_Forces::UpdateControls(QWidget *hPage)
 {
 	std::array<int, 16> residForces = {
 		IDC_OPT_VEC_WEIGHT, IDC_OPT_VEC_THRUST, IDC_OPT_VEC_LIFT, IDC_OPT_VEC_DRAG, IDC_OPT_VEC_SIDEFORCE, IDC_OPT_VEC_TOTAL,
@@ -2174,33 +2115,33 @@ void OptionsPage_Forces::UpdateControls(HWND hPage)
 
 	DWORD vecFlag = Cfg()->CfgVisHelpPrm.flagBodyForce;
 	bool enable = (vecFlag & BFV_ENABLE);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_VEC, enable);
 	for (auto resid : residForces)
-		EnableWindow(GetDlgItem(hPage, resid), enable ? TRUE : FALSE);
+		EnableItem(hPage, resid, enable ? TRUE : FALSE);
 
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_WEIGHT, BM_SETCHECK, vecFlag & BFV_WEIGHT ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_THRUST, BM_SETCHECK, vecFlag & BFV_THRUST ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_LIFT, BM_SETCHECK, vecFlag & BFV_LIFT ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_DRAG, BM_SETCHECK, vecFlag & BFV_DRAG ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_SIDEFORCE, BM_SETCHECK, vecFlag & BFV_SIDEFORCE ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_TOTAL, BM_SETCHECK, vecFlag & BFV_TOTAL ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_TORQUE, BM_SETCHECK, vecFlag & BFV_TORQUE ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_LINSCL, BM_SETCHECK, vecFlag & BFV_LOGSCALE ? BST_UNCHECKED : BST_CHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_VEC_LOGSCL, BM_SETCHECK, vecFlag & BFV_LOGSCALE ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_VEC_WEIGHT, vecFlag & BFV_WEIGHT);
+	SetCheck(hPage, IDC_OPT_VEC_THRUST, vecFlag & BFV_THRUST);
+	SetCheck(hPage, IDC_OPT_VEC_LIFT, vecFlag & BFV_LIFT);
+	SetCheck(hPage, IDC_OPT_VEC_DRAG, vecFlag & BFV_DRAG);
+	SetCheck(hPage, IDC_OPT_VEC_SIDEFORCE, vecFlag & BFV_SIDEFORCE);
+	SetCheck(hPage, IDC_OPT_VEC_TOTAL, vecFlag & BFV_TOTAL);
+	SetCheck(hPage, IDC_OPT_VEC_TORQUE, vecFlag & BFV_TORQUE);
+	SetCheck(hPage, IDC_OPT_VEC_LINSCL, !(vecFlag & BFV_LOGSCALE));
+	SetCheck(hPage, IDC_OPT_VEC_LOGSCL, vecFlag & BFV_LOGSCALE);
 
 	int scalePos = (int)(25.0 * (1.0 + 0.5 * log(Cfg()->CfgVisHelpPrm.scaleBodyForce) / log(2.0)));
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_VEC_SCALE), scalePos);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_VEC_SCALE), scalePos);
 	int opacPos = (int)(Cfg()->CfgVisHelpPrm.opacBodyForce * 50.0);
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_VEC_OPACITY), opacPos);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_VEC_OPACITY), opacPos);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Forces::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Forces::OnInitDialog(QWidget *hPage)
 {
 	GAUGEPARAM gp = { 0, 50, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_VEC_SCALE), &gp);
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_VEC_OPACITY), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_VEC_SCALE), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_VEC_OPACITY), &gp);
 
 	UpdateControls(hPage);
 
@@ -2209,7 +2150,7 @@ BOOL OptionsPage_Forces::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Forces::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Forces::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_VEC:
@@ -2222,7 +2163,7 @@ BOOL OptionsPage_Forces::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 	case IDC_OPT_VEC_TORQUE:
 	case IDC_OPT_VEC_LINSCL:
 	case IDC_OPT_VEC_LOGSCL:
-		if (notification == BN_CLICKED) {
+		if (notification == RESN_CLICKED) {
 			OnItemClicked(hPage, ctrlId);
 			return FALSE;
 		}
@@ -2233,9 +2174,9 @@ BOOL OptionsPage_Forces::OnCommand(HWND hPage, WORD ctrlId, WORD notification, H
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Forces::OnItemClicked(HWND hPage, WORD ctrlId)
+void OptionsPage_Forces::OnItemClicked(QWidget *hPage, WORD ctrlId)
 {
-	bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == TRUE);
+	bool check = (IsChecked(hPage, ctrlId));
 	DWORD flag;
 	switch (ctrlId) {
 	case IDC_OPT_VEC:           flag = BFV_ENABLE;    break;
@@ -2259,24 +2200,24 @@ void OptionsPage_Forces::OnItemClicked(HWND hPage, WORD ctrlId)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Forces::OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Forces::OnHScroll(QWidget *hTab, int ctrlId, int request, int pos)
 {
-	switch (GetDlgCtrlID((HWND)lParam)) {
+	switch (ctrlId) {
 	case IDC_OPT_VEC_SCALE:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			Cfg()->CfgVisHelpPrm.scaleBodyForce = (float)pow(2.0, (HIWORD(wParam) - 25) * 0.08);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			Cfg()->CfgVisHelpPrm.scaleBodyForce = (float)pow(2.0, (pos - 25) * 0.08);
 			return 0;
 		}
 		break;
 	case IDC_OPT_VEC_OPACITY:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			Cfg()->CfgVisHelpPrm.opacBodyForce = (float)(HIWORD(wParam) * 0.02);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			Cfg()->CfgVisHelpPrm.opacBodyForce = (float)(pos * 0.02);
 			return 0;
 		}
 		break;
@@ -2316,7 +2257,7 @@ const HELPCONTEXT* OptionsPage_Axes::HelpContext() const
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Axes::UpdateControls(HWND hPage)
+void OptionsPage_Axes::UpdateControls(QWidget *hPage)
 {
 	std::array<int, 10> residAxes = {
 		IDC_OPT_CRD_VESSEL, IDC_OPT_CRD_CELBODY, IDC_OPT_CRD_BASE, IDC_OPT_CRD_NEGATIVE,
@@ -2326,28 +2267,28 @@ void OptionsPage_Axes::UpdateControls(HWND hPage)
 
 	DWORD crdFlag = Cfg()->CfgVisHelpPrm.flagFrameAxes;
 	bool enable = (crdFlag & FAV_ENABLE);
-	SendDlgItemMessage(hPage, IDC_OPT_CRD, BM_SETCHECK, enable ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_CRD, enable);
 	for (auto resid : residAxes)
-		EnableWindow(GetDlgItem(hPage, resid), enable ? TRUE : FALSE);
+		EnableItem(hPage, resid, enable ? TRUE : FALSE);
 
-	SendDlgItemMessage(hPage, IDC_OPT_CRD_VESSEL, BM_SETCHECK, crdFlag & FAV_VESSEL ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_CRD_CELBODY, BM_SETCHECK, crdFlag & FAV_CELBODY ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_CRD_BASE, BM_SETCHECK, crdFlag & FAV_BASE ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hPage, IDC_OPT_CRD_NEGATIVE, BM_SETCHECK, crdFlag & FAV_NEGATIVE ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hPage, IDC_OPT_CRD_VESSEL, crdFlag & FAV_VESSEL);
+	SetCheck(hPage, IDC_OPT_CRD_CELBODY, crdFlag & FAV_CELBODY);
+	SetCheck(hPage, IDC_OPT_CRD_BASE, crdFlag & FAV_BASE);
+	SetCheck(hPage, IDC_OPT_CRD_NEGATIVE, crdFlag & FAV_NEGATIVE);
 
 	int scalePos = (int)(25.0 * (1.0 + 0.5 * log(Cfg()->CfgVisHelpPrm.scaleFrameAxes) / log(2.0)));
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_CRD_SCALE), scalePos);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_CRD_SCALE), scalePos);
 	int opacPos = (int)(Cfg()->CfgVisHelpPrm.opacFrameAxes * 50.0);
-	oapiSetGaugePos(GetDlgItem(hPage, IDC_OPT_CRD_OPACITY), opacPos);
+	oapiSetGaugePos(oapiResDlgItem(hPage, IDC_OPT_CRD_OPACITY), opacPos);
 }
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Axes::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Axes::OnInitDialog(QWidget *hPage)
 {
 	GAUGEPARAM gp = { 0, 50, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_CRD_SCALE), &gp);
-	oapiSetGaugeParams(GetDlgItem(hPage, IDC_OPT_CRD_OPACITY), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_CRD_SCALE), &gp);
+	oapiSetGaugeParams(oapiResDlgItem(hPage, IDC_OPT_CRD_OPACITY), &gp);
 
 	UpdateControls(hPage);
 
@@ -2356,7 +2297,7 @@ BOOL OptionsPage_Axes::OnInitDialog(HWND hPage, WPARAM wParam, LPARAM lParam)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Axes::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWND hCtrl)
+BOOL OptionsPage_Axes::OnCommand(QWidget *hPage, WORD ctrlId, WORD notification, QWidget *hCtrl)
 {
 	switch (ctrlId) {
 	case IDC_OPT_CRD:
@@ -2364,7 +2305,7 @@ BOOL OptionsPage_Axes::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWN
 	case IDC_OPT_CRD_CELBODY:
 	case IDC_OPT_CRD_BASE:
 	case IDC_OPT_CRD_NEGATIVE:
-		if (notification == BN_CLICKED) {
+		if (notification == RESN_CLICKED) {
 			OnItemClicked(hPage, ctrlId);
 			return FALSE;
 		}
@@ -2375,9 +2316,9 @@ BOOL OptionsPage_Axes::OnCommand(HWND hPage, WORD ctrlId, WORD notification, HWN
 
 // ----------------------------------------------------------------------
 
-void OptionsPage_Axes::OnItemClicked(HWND hPage, WORD ctrlId)
+void OptionsPage_Axes::OnItemClicked(QWidget *hPage, WORD ctrlId)
 {
-	bool check = (SendDlgItemMessage(hPage, ctrlId, BM_GETCHECK, 0, 0) == TRUE);
+	bool check = (IsChecked(hPage, ctrlId));
 	DWORD flag;
 	switch (ctrlId) {
 	case IDC_OPT_CRD:          flag = FAV_ENABLE;   break;
@@ -2396,24 +2337,24 @@ void OptionsPage_Axes::OnItemClicked(HWND hPage, WORD ctrlId)
 
 // ----------------------------------------------------------------------
 
-BOOL OptionsPage_Axes::OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam)
+BOOL OptionsPage_Axes::OnHScroll(QWidget *hTab, int ctrlId, int request, int pos)
 {
-	switch (GetDlgCtrlID((HWND)lParam)) {
+	switch (ctrlId) {
 	case IDC_OPT_CRD_SCALE:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			Cfg()->CfgVisHelpPrm.scaleFrameAxes = (float)pow(2.0, (HIWORD(wParam) - 25) * 0.08);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			Cfg()->CfgVisHelpPrm.scaleFrameAxes = (float)pow(2.0, (pos - 25) * 0.08);
 			return 0;
 		}
 		break;
 	case IDC_OPT_CRD_OPACITY:
-		switch (LOWORD(wParam)) {
-		case SB_THUMBTRACK:
-		case SB_LINELEFT:
-		case SB_LINERIGHT:
-			Cfg()->CfgVisHelpPrm.opacFrameAxes = (float)(HIWORD(wParam) * 0.02);
+		switch (request) {
+		case GAUGE_THUMBTRACK:
+		case GAUGE_LINEDEC:
+		case GAUGE_LINEINC:
+			Cfg()->CfgVisHelpPrm.opacFrameAxes = (float)(pos * 0.02);
 			return 0;
 		}
 		break;

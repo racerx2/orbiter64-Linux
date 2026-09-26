@@ -7,14 +7,17 @@
 #include <stdio.h>
 #include "OrbiterAPI.h"
 #include "DlgMgr.h"
-#include "Resource.h"
+#include "resource.h"
 #include "Orbiter.h"
 #include "Log.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extras.h"
-#include "imgui_impl_win32.h"
+#include "imgui_impl_qt.h"
 #include "implot.h"
+#include <QApplication>
+#include <QWidget>
+#include <QWindow>
 #include "IconsFontAwesome6.h"
 #include <chrono>
 #include <algorithm>
@@ -27,35 +30,17 @@ using namespace oapi;
 extern char DBG_MSG[256];
 extern Orbiter *g_pOrbiter;
 
-static int x_sizeframe = GetSystemMetrics (SM_CXSIZEFRAME);
-static int y_sizeframe = GetSystemMetrics (SM_CYSIZEFRAME);
-static int x_fixedframe = GetSystemMetrics (SM_CXFIXEDFRAME);
-static int y_fixedframe = GetSystemMetrics (SM_CYFIXEDFRAME);
-
 static bool doflip = true;
 static void RenderNotifications();
 
-// dialog thread messages
-#define TM_OPENDIALOG WM_USER
 #define DLG_CAPTIONBUTTON (DLG_CAPTIONCLOSE|DLG_CAPTIONHELP)
 
-struct THREADDATA {
-	HINSTANCE hInst;
-	HWND hParent;
-	int id;
-	DWORD flag;
-	DLGPROC procDlg;
-	void *context;
-} g_tdata;
-
-HWND g_hDlg;       // dialog handle passed from dlg to main thread
-HANDLE hCreateDlg; // used for synchronising dialog creation
 static DIALOGENTRY *de_create = 0;
 
 // ==================================================================
 // class DialogManager
 
-DialogManager::DialogManager (Orbiter *orbiter, HWND hAppWnd)
+DialogManager::DialogManager (Orbiter *orbiter, QWindow *hAppWnd)
 {
 	pOrbiter = orbiter;
 	gc = orbiter->GetGraphicsClient();
@@ -74,7 +59,7 @@ DialogManager::~DialogManager ()
 }
 
 
-void DialogManager::Init (HWND hAppWnd)
+void DialogManager::Init (QWindow *hAppWnd)
 {
 	Clear();
 	hWnd        = hAppWnd;
@@ -103,21 +88,21 @@ void DialogManager::Clear ()
 
 // =======================================================================
 
-HWND DialogManager::OpenDialogEx (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+QWidget *DialogManager::OpenDialogEx (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
 {
 	if ((flag & DLG_ALLOWMULTI) == 0)
 		if (IsEntry (hInst, id)) return NULL; // already open, and multiple instances not allowed
 	return AddEntry (hInst, id, hParent, pDlg, flag, context);
 }
 
-void DialogManager::OpenDialogAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+void DialogManager::OpenDialogAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
 {
 	if ((flag & DLG_ALLOWMULTI) == 0)
 		if (IsEntry (hInst, id)) return; // already open, and multiple instances not allowed
 	AddEntryAsync (hInst, id, hParent, pDlg, flag, context);
 }
 
-bool DialogManager::CloseDialog (HWND hDlg)
+bool DialogManager::CloseDialog (QWidget *hDlg)
 {
 	if (DelEntry (hDlg, 0, 0)) {
 		//DestroyWindow (hDlg);
@@ -126,13 +111,13 @@ bool DialogManager::CloseDialog (HWND hDlg)
 	return false;
 }
 
-void *DialogManager::GetDialogContext (HWND hDlg)
+void *DialogManager::GetDialogContext (QWidget *hDlg)
 {
-	DialogWin *dlg = (DialogWin*)GetWindowLongPtr (hDlg, DWLP_USER);
+	DialogWin *dlg = (hDlg ? (DialogWin*)hDlg->property ("DialogWin").value<void*>() : 0);
 	return (dlg ? dlg->GetContext() : 0);
 }
 
-DIALOGENTRY *DialogManager::AddWindow (HINSTANCE hInst, HWND hWnd, HWND hParent, DWORD flag)
+DIALOGENTRY *DialogManager::AddWindow (void *hInst, QWidget *hWnd, QWindow *hParent, DWORD flag)
 {
 	DIALOGENTRY *tmp = new DIALOGENTRY; TRACENEW
 	de_create = tmp;
@@ -155,12 +140,12 @@ DIALOGENTRY *DialogManager::AddWindow (HINSTANCE hInst, HWND hWnd, HWND hParent,
 	return tmp;
 }
 
-HWND DialogManager::AddEntry (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+QWidget *DialogManager::AddEntry (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
 {
 	return AddEntry (new DialogWin (hInst, hParent, id, pDlg, flag, context));
 }
 
-HWND DialogManager::AddEntry (DialogWin *dlg)
+QWidget *DialogManager::AddEntry (DialogWin *dlg)
 {
 	DIALOGENTRY *tmp = new DIALOGENTRY; TRACENEW
 	de_create = tmp;
@@ -174,27 +159,18 @@ HWND DialogManager::AddEntry (DialogWin *dlg)
 	lastEntry = tmp;
 	nEntry++;
 	de_create = 0;
-	HWND hWnd = tmp->dlg->OpenWindow(); // is this the best place to create the window?
+	QWidget *hWnd = tmp->dlg->OpenWindow(); // is this the best place to create the window?
 	AddList (hWnd);
 	return hWnd;
 }
 
-void DialogManager::AddEntryAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+void DialogManager::AddEntryAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
 {
-#ifdef USEDLGTHREAD
-	g_tdata.hInst = hInst;
-	g_tdata.hParent = hParent;
-	g_tdata.id = id;
-	g_tdata.flag = flag;
-	g_tdata.procDlg = pDlg;
-	g_tdata.context = context;
-	PostThreadMessage (thid, TM_OPENDIALOG, (WPARAM)&g_tdata, 0);
-#else
+	// widgets live on the GUI thread, so there is no separate dialog thread (upstream's USEDLGTHREAD is off as well)
 	AddEntry (hInst, id, hParent, pDlg, flag, context);
-#endif
 }
 
-bool DialogManager::DelEntry (HWND hDlg, HINSTANCE hInst, int id)
+bool DialogManager::DelEntry (QWidget *hDlg, void *hInst, int id)
 {
 	DIALOGENTRY *tmp;
 	for (tmp = firstEntry; tmp; tmp = tmp->next) {
@@ -202,8 +178,9 @@ bool DialogManager::DelEntry (HWND hDlg, HINSTANCE hInst, int id)
 		if (hDlg && hDlg != dlg->GetHwnd()) continue;
 		if (hInst && hInst != dlg->GetHinst()) continue;
 		if (id && id != dlg->GetResId()) continue;
+		QWidget *hWnd = dlg->GetHwnd();
 		delete dlg;
-		DelList (hDlg);
+		DelList (hWnd);
 		if (tmp == firstEntry) firstEntry = tmp->next;
 		if (tmp == lastEntry)  lastEntry  = tmp->prev;
 		if (tmp->prev) tmp->prev->next = tmp->next;
@@ -215,12 +192,12 @@ bool DialogManager::DelEntry (HWND hDlg, HINSTANCE hInst, int id)
 	return false;
 }
 
-void DialogManager::AddList (HWND hWnd)
+void DialogManager::AddList (QWidget *hWnd)
 {
 	if (nList == nListBuf) { // grow buffer
-		HWND *tmp = new HWND[nListBuf += 16];
+		QWidget **tmp = new QWidget*[nListBuf += 16];
 		if (nList) {
-			memcpy (tmp, DlgList, nList*sizeof(HWND));
+			memcpy (tmp, DlgList, nList*sizeof(QWidget*));
 			delete []DlgList;
 		}
 		DlgList = tmp;
@@ -228,7 +205,7 @@ void DialogManager::AddList (HWND hWnd)
 	DlgList[nList++] = hWnd;
 }
 
-void DialogManager::DelList (HWND hWnd)
+void DialogManager::DelList (QWidget *hWnd)
 {
 	DWORD i;
 	for (i = 0; i < nList; i++) {
@@ -242,7 +219,7 @@ void DialogManager::DelList (HWND hWnd)
 	}
 }
 
-HWND DialogManager::GetNextEntry (HWND hWnd) const
+QWidget *DialogManager::GetNextEntry (QWidget *hWnd) const
 {
 	if (!hWnd) {
 		if (firstEntry) {
@@ -261,7 +238,7 @@ HWND DialogManager::GetNextEntry (HWND hWnd) const
 	}
 }
 
-HWND DialogManager::IsEntry (HINSTANCE hInst, int id)
+QWidget *DialogManager::IsEntry (void *hInst, int id)
 {
 	DIALOGENTRY *tmp = firstEntry;
 	while (tmp) {
@@ -273,12 +250,12 @@ HWND DialogManager::IsEntry (HINSTANCE hInst, int id)
 	return 0;
 }
 
-bool DialogManager::AddTitleButton (DWORD msg, HBITMAP hBmp, DWORD flag)
+bool DialogManager::AddTitleButton (DWORD msg, QImage *hBmp, DWORD flag)
 {
 	return DialogWin::Create_AddTitleButton (msg, hBmp, flag);
 }
 
-DWORD DialogManager::GetTitleButtonState (HWND hDlg, DWORD msg)
+DWORD DialogManager::GetTitleButtonState (QWidget *hDlg, DWORD msg)
 {
 	DIALOGENTRY *tmp;
 	for (tmp = firstEntry; tmp; tmp = tmp->next)
@@ -287,7 +264,7 @@ DWORD DialogManager::GetTitleButtonState (HWND hDlg, DWORD msg)
 	return 0;
 }
 
-bool DialogManager::SetTitleButtonState (HWND hDlg, DWORD msg, DWORD state)
+bool DialogManager::SetTitleButtonState (QWidget *hDlg, DWORD msg, DWORD state)
 {
 	state = (state ? 1:0);
 	if (DialogWin::Create_SetTitleButtonState (msg, state)) return true;
@@ -317,33 +294,24 @@ void DialogManager::BroadcastMessage (DWORD msg, void *data)
 // Name: OrbiterDefDialogProc()
 // Desc: Default message handler for orbiter dialog boxes
 //-----------------------------------------------------------------------------
-INT_PTR OrbiterDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool OrbiterDefDialogProc (QWidget *hDlg, QEvent *event)
 {
-	switch (uMsg) {
-	case WM_SETCURSOR:
+	switch (event->type()) {
+	case QEvent::Enter: {
 		// implements "focus follows mouse" behaviour
-		if (!g_pOrbiter->StickyFocus() && g_pOrbiter->Cfg()->CfgUIPrm.MouseFocusMode == 2 && GetFocus() != hDlg &&
-			!IsChild (hDlg, GetFocus()) && GetParent (hDlg) == g_pOrbiter->GetRenderWnd()) {
-				SetFocus (hDlg);
-				return FALSE;
+		QWidget *focus = QApplication::focusWidget();
+		QWindow *owner = (hDlg->windowHandle() ? hDlg->windowHandle()->transientParent() : NULL);
+		if (!g_pOrbiter->StickyFocus() && g_pOrbiter->Cfg()->CfgUIPrm.MouseFocusMode == 2 && focus != hDlg &&
+			!hDlg->isAncestorOf (focus) && owner && owner == g_pOrbiter->GetRenderWnd()) {
+				hDlg->activateWindow();
+				hDlg->setFocus();
+				return false;
 		}
-		break;
-	case WM_NCLBUTTONDBLCLK: {
-		// implements window minimisation on title bar double-click
-		DialogWin *dlg = (DialogWin*)GetWindowLongPtr (hDlg, DWLP_USER);
-		if (dlg) dlg->ToggleShrink();
 		} break;
-
-	// *** Create a timer to force frame updates during dialog box moves ***
-	case WM_ENTERSIZEMOVE:
-		SetTimer (hDlg, 0xff, 1, NULL);
-		return 0;
-	case WM_EXITSIZEMOVE:
-		KillTimer (hDlg, 0xff);
-		return 0;
-	case WM_TIMER:
-		if (wParam == 0xff) g_pOrbiter->SingleFrame();
-		return 0;
+	// title bar double-clicks (window shrinking) and the modal move loop (frame updates during dialog moves)
+	// belong to the window manager: neither reaches the application
+	default:
+		break;
 
 	// *** Provide custom buttons in the window title bar ***
 //	case WM_SETTEXT:
@@ -366,47 +334,20 @@ INT_PTR OrbiterDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam
 	//	SetBkColor (hDC, 0x808080);
 	//	} return (INT_PTR)GetStockObject (GRAY_BRUSH);
 	}
-	return FALSE;
+	return false;
 }
 
 // ====================================================================
 // Tread management for dialog thread
 // ====================================================================
 
+// Qt widgets can only be created on the GUI thread, so dialogs are opened there directly (see AddEntryAsync)
 void DialogManager::StartDialogThread ()
 {
-	DWORD WINAPI DlgThreadProc (void *data);
-	hThread = CreateThread (NULL, 2048, DlgThreadProc, this, 0, &thid);
-	hCreateDlg = CreateEvent (NULL, FALSE, FALSE, NULL);
 }
 
 void DialogManager::DestroyDialogThread ()
 {
-	PostThreadMessage (thid, WM_QUIT, 0, 0);
-	CloseHandle (hThread);
-	CloseHandle (hCreateDlg);
-}
-
-DWORD WINAPI DlgThreadProc (void *data)
-{
-	DialogManager *dlgmgr = (DialogManager*)data;
-	MSG msg;
-	void DoDialog (THREADDATA *tdata);
-
-	while (GetMessage (&msg, NULL, 0, 0)) {
-		switch (msg.message) {
-		case TM_OPENDIALOG: {
-			THREADDATA *tdata = (THREADDATA*)msg.wParam;
-			dlgmgr->AddEntry (tdata->hInst, tdata->id, tdata->hParent, tdata->procDlg, tdata->flag, tdata->context);
-			} break;
-		default:
-			TranslateMessage (&msg);
-			DispatchMessage (&msg);
-			break;
-		}
-	}
-
-	return 0;
 }
 
 // ====================================================================
@@ -546,7 +487,7 @@ void DialogManager::InitImGui()
 	monoFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_MonospacedFontFile, prm.ImGui_FontSize);
 	manuscriptFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
 
-	ImGui_ImplWin32_Init(hWnd);
+	ImGui_ImplQt_Init(hWnd);
 	gc->clbkImGuiInit();
 }
 
@@ -555,7 +496,7 @@ void DialogManager::ShutdownImGui()
 	if(!gc) return;
 
 	gc->clbkImGuiShutdown();
-	ImGui_ImplWin32_Shutdown();
+	ImGui_ImplQt_Shutdown();
 	ImPlot::DestroyContext();
 	ImGui::DestroyContext();
 }
@@ -565,7 +506,7 @@ void DialogManager::ImGuiNewFrame()
 	if(!gc) return;
 
 	gc->clbkImGuiNewFrame();
-	ImGui_ImplWin32_NewFrame();
+	ImGui_ImplQt_NewFrame();
 	ImGui::NewFrame();
 
 	// Focus-follows-mouse: when the mouse is not over any ImGui window,
@@ -972,7 +913,7 @@ namespace ImGui {
 		ImGui::PopStyleColor(2);
 		ImGui::PopStyleVar();
 		if(tooltip && ImGui::IsItemHovered())
-			ImGui::SetTooltip(tooltip);
+			ImGui::SetTooltip("%s", tooltip);
 		ImGui::PopClipRect();
         g.LastItemData = last_item_backup;
 		return ret;

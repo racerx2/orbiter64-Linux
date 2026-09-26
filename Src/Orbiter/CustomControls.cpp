@@ -1,9 +1,12 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#include <windows.h>
 #include "CustomControls.h"
+#include "OrbiterResource.h"
 #include "Util.h"
+#include <QMouseEvent>
+#include <QResizeEvent>
+#include <algorithm>
 
 using std::min;
 using std::max;
@@ -18,49 +21,47 @@ CustomCtrl::CustomCtrl ()
 
 // ---------------------------------------------------------------------------
 
-CustomCtrl::CustomCtrl (HWND hCtrl)
+CustomCtrl::CustomCtrl (QWidget *hCtrl)
 {
 	SetHwnd (hCtrl);
 }
 
 // ---------------------------------------------------------------------------
 
-void CustomCtrl::SetHwnd (HWND hCtrl)
+void CustomCtrl::SetHwnd (QWidget *hCtrl)
 {
+	if (hWnd) hWnd->removeEventFilter (this);
 	hWnd = hCtrl;
-	SetWindowLongPtr (hWnd, 0, (LONG_PTR)this);
+	hWnd->installEventFilter (this);
 
-	hParent = (HWND)GetWindowLongPtr (hCtrl, GWLP_HWNDPARENT);
+	hParent = hCtrl->parentWidget();
 }
 
 // ---------------------------------------------------------------------------
 
-LRESULT CustomCtrl::WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool CustomCtrl::WndProc (QWidget *hWnd, QEvent *event)
 {
-	return DefWindowProc (hWnd, uMsg, wParam, lParam);
+	return false;
 }
 
 // ---------------------------------------------------------------------------
 
-void CustomCtrl::RegisterClass(HINSTANCE hInstance)
+static QWidget *CreateDlgCtrl (const RESCONTROL*, QWidget *parent)
 {
-	WNDCLASSEX wc;
-	ZeroMemory(&wc, sizeof(WNDCLASSEX));
-	wc.cbSize = sizeof(WNDCLASSEX);
-	wc.cbWndExtra = 8;
-	wc.hCursor = LoadCursor(hInstance, IDC_ARROW);
-	wc.lpfnWndProc = CustomCtrl::s_WndProc;
-	wc.lpszClassName = "OrbiterDlgCtrl";
-	RegisterClassEx(&wc);
+	return new QWidget (parent);
+}
+
+void CustomCtrl::RegisterClass(void *hInstance)
+{
+	oapiRegisterResControl (hInstance, "OrbiterDlgCtrl", CreateDlgCtrl);
 }
 
 // ---------------------------------------------------------------------------
 
-LRESULT CALLBACK CustomCtrl::s_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool CustomCtrl::eventFilter (QObject *obj, QEvent *event)
 {
-	CustomCtrl* pCtrl = (CustomCtrl*)GetWindowLongPtr(hWnd, 0);
-	if (pCtrl) return pCtrl->WndProc(hWnd, uMsg, wParam, lParam);
-	else       return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	if (obj == hWnd) return WndProc (hWnd, event);
+	return false;
 }
 
 // ===========================================================================
@@ -70,7 +71,7 @@ GenericCtrl::GenericCtrl()
 {
 }
 
-GenericCtrl::GenericCtrl(HWND hCtrl)
+GenericCtrl::GenericCtrl(QWidget *hCtrl)
 	: CustomCtrl(hCtrl)
 {
 }
@@ -83,12 +84,11 @@ SplitterCtrl::SplitterCtrl (): CustomCtrl ()
 	splitterW = 6;
 	widthRatio = 0.5;
 	isPushing = false;
-	m_hCursor = LoadCursor(NULL, IDC_SIZEWE);
 }
 
 // ---------------------------------------------------------------------------
 
-SplitterCtrl::SplitterCtrl (HWND hCtrl): CustomCtrl (hCtrl)
+SplitterCtrl::SplitterCtrl (QWidget *hCtrl): CustomCtrl (hCtrl)
 {
 	staticPane = PANE_NONE;
 	splitterW = 6;
@@ -98,16 +98,14 @@ SplitterCtrl::SplitterCtrl (HWND hCtrl): CustomCtrl (hCtrl)
 
 // ---------------------------------------------------------------------------
 
-void SplitterCtrl::SetHwnd (HWND hCtrl, HWND hPane1, HWND hPane2)
+void SplitterCtrl::SetHwnd (QWidget *hCtrl, QWidget *hPane1, QWidget *hPane2)
 {
 	CustomCtrl::SetHwnd (hCtrl);
+	hCtrl->setCursor (Qt::SizeHorCursor); // WM_SETCURSOR
 	hPane[0] = hPane1;
 	hPane[1] = hPane2;
-	RECT r;
-	GetClientRect (hCtrl, &r);
-	totalW = r.right;
-	GetClientRect (hPane1, &r);
-	paneW[0] = min ((int)r.right, totalW-splitterW-4);
+	totalW = hCtrl->width();
+	paneW[0] = min (hPane1->width(), totalW-splitterW-4);
 	paneW[1] = totalW-splitterW-paneW[0];
 	widthRatio = (double)paneW[0]/(double)(totalW-splitterW);
 	Refresh();
@@ -120,9 +118,7 @@ void SplitterCtrl::SetStaticPane (PaneId which, int width)
 	staticPane = which;
 	if (which != PANE_NONE) {
 		if (!width) { // use current width
-			RECT rect;
-			GetClientRect (hPane[which-1], &rect);
-			width = rect.right-rect.left;
+			width = hPane[which-1]->width();
 		}
 		paneW[which-1] = width;
 		paneW[2-which] = totalW-splitterW-width;
@@ -154,7 +150,7 @@ void SplitterCtrl::Refresh ()
 
 // ---------------------------------------------------------------------------
 
-BOOL SplitterCtrl::OnSize (HWND hWnd, WPARAM wParam, int w, int h)
+BOOL SplitterCtrl::OnSize (QWidget *hWnd, int w, int h)
 {
 	int w1, w2;
 	switch (staticPane) {
@@ -180,27 +176,25 @@ BOOL SplitterCtrl::OnSize (HWND hWnd, WPARAM wParam, int w, int h)
 
 // ---------------------------------------------------------------------------
 
-BOOL SplitterCtrl::OnLButtonDown (HWND hWnd, LONG modifier, short x, short y)
+BOOL SplitterCtrl::OnLButtonDown (QWidget *hWnd, Qt::KeyboardModifiers modifier, short x, short y)
 {
 	isPushing = true;
 	mouseX = x;
 	mouseY = y;
-	SetCapture (hWnd);
-	return 0;
+	return 0; // Qt grabs the mouse for the pressed widget (SetCapture)
 }
 
 // ---------------------------------------------------------------------------
 
-BOOL SplitterCtrl::OnLButtonUp (HWND hWnd, LONG modifier, short x, short y)
+BOOL SplitterCtrl::OnLButtonUp (QWidget *hWnd, Qt::KeyboardModifiers modifier, short x, short y)
 {
 	isPushing = false;
-	ReleaseCapture ();
 	return 0;
 }
 
 // ---------------------------------------------------------------------------
 
-BOOL SplitterCtrl::OnMouseMove (HWND hWnd, short x, short y)
+BOOL SplitterCtrl::OnMouseMove (QWidget *hWnd, short x, short y)
 {
 	if (isPushing) {
 		short dx = x - mouseX;
@@ -221,20 +215,27 @@ BOOL SplitterCtrl::OnMouseMove (HWND hWnd, short x, short y)
 
 // ---------------------------------------------------------------------------
 
-LRESULT SplitterCtrl::WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool SplitterCtrl::WndProc (QWidget *hWnd, QEvent *event)
 {
-	switch (uMsg) {
-	case WM_SIZE:
-		return OnSize (hWnd, wParam, LOWORD(lParam), HIWORD(lParam));
-	case WM_LBUTTONDOWN:
-		return OnLButtonDown (hWnd, wParam, LOWORD(lParam), HIWORD(lParam));
-	case WM_LBUTTONUP:
-		return OnLButtonUp (hWnd, wParam, LOWORD(lParam), HIWORD(lParam));
-	case WM_MOUSEMOVE:
-		return OnMouseMove (hWnd, LOWORD(lParam), HIWORD(lParam));
-	case WM_SETCURSOR:
-		SetCursor(m_hCursor);
-		return TRUE;
+	QMouseEvent *me = static_cast<QMouseEvent*> (event);
+	switch (event->type()) {
+	case QEvent::Resize: {
+		QSize s = static_cast<QResizeEvent*> (event)->size();
+		OnSize (hWnd, s.width(), s.height());
+		} return false;
+	case QEvent::MouseButtonPress:
+		if (me->button() != Qt::LeftButton) break;
+		OnLButtonDown (hWnd, me->modifiers(), (short)me->position().x(), (short)me->position().y());
+		return true;
+	case QEvent::MouseButtonRelease:
+		if (me->button() != Qt::LeftButton) break;
+		OnLButtonUp (hWnd, me->modifiers(), (short)me->position().x(), (short)me->position().y());
+		return true;
+	case QEvent::MouseMove:
+		OnMouseMove (hWnd, (short)me->position().x(), (short)me->position().y());
+		return true;
+	default:
+		break;
 	}
-	return CustomCtrl::WndProc (hWnd, uMsg, wParam, lParam);
+	return CustomCtrl::WndProc (hWnd, event);
 }

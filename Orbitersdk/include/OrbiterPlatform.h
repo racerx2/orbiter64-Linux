@@ -52,6 +52,17 @@ typedef const char *PCSTR;
 // Linux PATH_MAX; Windows' 260 is too short for Linux paths
 #define MAX_PATH 4096
 
+// dialog command ids of the standard buttons (winuser.h values, as the .rc files use them)
+#define IDOK     1
+#define IDCANCEL 2
+#define IDABORT  3
+#define IDRETRY  4
+#define IDIGNORE 5
+#define IDYES    6
+#define IDNO     7
+#define IDCLOSE  8
+#define IDHELP   9
+
 // handle types are native: HWND -> QWidget (dialogs) / QWindow (render window), HINSTANCE -> dlopen handle (void*),
 // HDC -> QPainter, HFONT -> QFont, HPEN -> QPen, HBRUSH -> QBrush, HBITMAP -> QImage, window messages -> QEvent
 class QWidget;

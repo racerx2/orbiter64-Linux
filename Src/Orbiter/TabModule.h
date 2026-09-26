@@ -12,6 +12,8 @@
 #include "LpadTab.h"
 #include "CustomControls.h"
 
+class QTreeWidgetItem;
+
 namespace orbiter {
 
 	class ModuleTab : public LaunchpadTab {
@@ -20,7 +22,7 @@ namespace orbiter {
 		~ModuleTab();
 
 		void Create();
-		BOOL OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 
 		void GetConfig(const Config* cfg);
 		void SetConfig(Config* cfg);
@@ -30,10 +32,6 @@ namespace orbiter {
 		bool DynamicSize() const { return true; }
 
 		BOOL OnSize(int w, int h);
-
-		BOOL OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh);
-
-		BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 	protected:
 		void Show();
@@ -52,7 +50,7 @@ namespace orbiter {
 		// activate modules listed in config file and tick entries in list
 
 		void ExpandCollapseAll(bool expand);
-		HTREEITEM GetCategoryItem(char* cat);
+		QTreeWidgetItem *GetCategoryItem(char* cat);
 
 	private:
 		SplitterCtrl splitListDesc;  // splitter control for module list(left) and description(right)

@@ -7,9 +7,6 @@
 
 #define OAPI_IMPLEMENTATION
 
-#include <windows.h>
-#include <commctrl.h>
-#include <winuser.h>
 #include "Launchpad.h"
 #include "TabExtra.h"
 #include "Orbiter.h"
@@ -18,6 +15,37 @@
 #include "Help.h"
 #include "resource.h"
 #include "resource2.h"
+#include "ResDialog.h"
+#include "Util.h"
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QDialog>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QTreeWidget>
+#include <strings.h>
+
+// BM_SETCHECK / BM_GETCHECK / EnableWindow / ShowWindow on a dialog control
+static void SetCheck (QWidget *hDlg, int id, bool check)
+{
+	if (QAbstractButton *b = DlgItem<QAbstractButton> (hDlg, id)) b->setChecked (check);
+}
+
+static bool IsChecked (QWidget *hDlg, int id)
+{
+	QAbstractButton *b = DlgItem<QAbstractButton> (hDlg, id);
+	return (b && b->isChecked());
+}
+
+static void EnableItem (QWidget *hDlg, int id, bool enable)
+{
+	if (QWidget *w = oapiResDlgItem (hDlg, id)) w->setEnabled (enable);
+}
+
+static void ShowItem (QWidget *hDlg, int id, bool show)
+{
+	if (QWidget *w = oapiResDlgItem (hDlg, id)) w->setVisible (show);
+}
 
 using std::max;
 
@@ -50,18 +78,47 @@ void orbiter::ExtraTab::Create ()
 {
 	hTab = CreateTab (IDD_PAGE_EXT);
 
-	r_lst0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_EXT_LIST));  // REMOVE!
-	r_dsc0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_EXT_TEXT));  // REMOVE!
-	r_pane  = GetClientPos (hTab, GetDlgItem (hTab, IDC_EXT_SPLIT1));
-	r_edit0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_EXT_OPEN));
-	splitListDesc.SetHwnd (GetDlgItem (hTab, IDC_EXT_SPLIT1), GetDlgItem (hTab, IDC_EXT_LIST), GetDlgItem (hTab, IDC_EXT_TEXT));
+	r_lst0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_EXT_LIST));  // REMOVE!
+	r_dsc0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_EXT_TEXT));  // REMOVE!
+	r_pane  = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_EXT_SPLIT1));
+	r_edit0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_EXT_OPEN));
+	splitListDesc.SetHwnd (oapiResDlgItem (hTab, IDC_EXT_SPLIT1), oapiResDlgItem (hTab, IDC_EXT_LIST), oapiResDlgItem (hTab, IDC_EXT_TEXT));
+}
+
+//-----------------------------------------------------------------------------
+
+BOOL orbiter::ExtraTab::OnInitDialog (QWidget *hWnd)
+{
+	QTreeWidget *hTree = DlgItem<QTreeWidget> (hWnd, IDC_EXT_LIST);
+	// WM_NOTIFY
+	QObject::connect (hTree, &QTreeWidget::currentItemChanged, hWnd, [hWnd](QTreeWidgetItem *itemNew) {
+		// TVN_SELCHANGED
+		if (!itemNew) return;
+		LaunchpadItem* func = (LaunchpadItem*)itemNew->data (0, Qt::UserRole).value<void*>();
+		char* desc = func->Description();
+		if (desc) oapiSetDlgItemText(hWnd, IDC_EXT_TEXT, desc);
+		else oapiSetDlgItemText(hWnd, IDC_EXT_TEXT, "");
+	});
+	QObject::connect (hTree, &QTreeWidget::itemDoubleClicked, hWnd, [this, hTree]() {
+		// NM_DBLCLK
+		QTreeWidgetItem *it = hTree->currentItem();
+		BuiltinLaunchpadItem* func = (it ? (BuiltinLaunchpadItem*)it->data (0, Qt::UserRole).value<void*>() : NULL);
+		if (func) func->clbkOpen(LaunchpadWnd());
+	});
+	// WM_COMMAND
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDC_EXT_OPEN), &QPushButton::clicked, hWnd, [this, hTree]() {
+		QTreeWidgetItem *it = hTree->currentItem();
+		BuiltinLaunchpadItem *func = (it ? (BuiltinLaunchpadItem*)it->data (0, Qt::UserRole).value<void*>() : NULL);
+		if (func) func->clbkOpen (LaunchpadWnd());
+	});
+	return FALSE;
 }
 
 //-----------------------------------------------------------------------------
 
 void orbiter::ExtraTab::GetConfig (const Config *cfg)
 {
-	HTREEITEM ht;
+	QTreeWidgetItem *ht;
 	ht = RegisterExtraParam(new ExtraPropagation(this), NULL); TRACENEW
 	RegisterExtraParam(new ExtraDynamics(this), ht); TRACENEW
 	RegisterExtraParam(new ExtraStabilisation(this), ht); TRACENEW
@@ -77,12 +134,10 @@ void orbiter::ExtraTab::GetConfig (const Config *cfg)
 	RegisterExtraParam(new ExtraLogfileOptions(this), ht); TRACENEW
 	RegisterExtraParam(new ExtraPerformanceSettings(this), ht); TRACENEW
 	m_internalPrm = m_ExtPrm.size();
-	SetWindowText (GetDlgItem (hTab, IDC_EXT_TEXT), "Advanced and addon-specific configuration parameters.\r\n\r\nClick on an item to get a description.\r\n\r\nDouble-click to open or expand.");
+	oapiSetDlgItemText(hTab, IDC_EXT_TEXT, "Advanced and addon-specific configuration parameters.\r\n\r\nClick on an item to get a description.\r\n\r\nDouble-click to open or expand.");
 	int listw = cfg->CfgWindowPos.LaunchpadExtListWidth;
 	if (!listw) {
-		RECT r;
-		GetClientRect (GetDlgItem (hTab, IDC_EXT_LIST), &r);
-		listw = r.right;
+		listw = oapiResDlgItem (hTab, IDC_EXT_LIST)->width();
 	}
 	splitListDesc.SetStaticPane (SplitterCtrl::PANE1, listw);
 }
@@ -127,22 +182,18 @@ BOOL orbiter::ExtraTab::OnSize (int w, int h)
 	//SetWindowPos (GetDlgItem (hTab, IDC_EXT_TEXT), NULL,
 	//	xr, r_dsc0.top, wr, lsth0+dh,
 	//	SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_EXT_SPLIT1), NULL,
-		0, 0, w0+dw, h0+dh,
-		SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_EXT_OPEN), NULL,
-		r_edit0.left, r_edit0.top+dh, 0, 0,
-		SWP_NOACTIVATE|SWP_NOSIZE|SWP_NOOWNERZORDER|SWP_NOZORDER);
+	oapiResDlgItem (hTab, IDC_EXT_SPLIT1)->resize (w0+dw, h0+dh);
+	oapiResDlgItem (hTab, IDC_EXT_OPEN)->move (r_edit0.left, r_edit0.top+dh);
 
-	return NULL;
+	return FALSE;
 }
 
 //-----------------------------------------------------------------------------
 
-HTREEITEM orbiter::ExtraTab::RegisterExtraParam (LaunchpadItem *item, HTREEITEM parent)
+QTreeWidgetItem *orbiter::ExtraTab::RegisterExtraParam (LaunchpadItem *item, QTreeWidgetItem *parent)
 {
 	// first check that the item doesn't already exist
-	HTREEITEM hti = FindExtraParam (item->Name(), parent);
+	QTreeWidgetItem *hti = FindExtraParam (item->Name(), parent);
 	if (hti) return hti;
 
 	// add extra parameter instance to list
@@ -151,13 +202,11 @@ HTREEITEM orbiter::ExtraTab::RegisterExtraParam (LaunchpadItem *item, HTREEITEM 
 	// if a name is provided, add item to tree list
 	char *name = item->Name();
 	if (name) {
-		TV_INSERTSTRUCT tvis;
-		tvis.item.mask = TVIF_TEXT | TVIF_PARAM;
-		tvis.item.pszText = name;
-		tvis.item.lParam = (LPARAM)item;
-		tvis.hInsertAfter = TVI_LAST;
-		tvis.hParent = (parent ? parent : NULL);
-		hti = TreeView_InsertItem (GetDlgItem (hTab, IDC_EXT_LIST), &tvis);
+		hti = new QTreeWidgetItem();
+		hti->setText (0, QString::fromUtf8 (name));
+		hti->setData (0, Qt::UserRole, QVariant::fromValue ((void*)item));
+		if (parent) parent->addChild (hti); // TVI_LAST
+		else DlgItem<QTreeWidget> (hTab, IDC_EXT_LIST)->addTopLevelItem (hti);
 	} else hti = 0;
 	item->hItem = (LAUNCHPADITEM_HANDLE)hti;
 	return hti;
@@ -169,7 +218,7 @@ bool orbiter::ExtraTab::UnregisterExtraParam (LaunchpadItem *item)
 {
 	for (auto it = m_ExtPrm.begin(); it != m_ExtPrm.end(); it++) {
 		if (*it == item) {
-			TreeView_DeleteItem(GetDlgItem(hTab, IDC_EXT_LIST), item->hItem); // remove entry from UI
+			delete (QTreeWidgetItem*)item->hItem; // remove entry from UI
 			item->clbkWriteConfig(); // allow item to save state before removing
 			m_ExtPrm.erase(it);        // delete the container - the actual item has to be deleted by the caller
 			return true;
@@ -180,23 +229,18 @@ bool orbiter::ExtraTab::UnregisterExtraParam (LaunchpadItem *item)
 
 //-----------------------------------------------------------------------------
 
-HTREEITEM orbiter::ExtraTab::FindExtraParam (const char *name, const HTREEITEM parent)
+QTreeWidgetItem *orbiter::ExtraTab::FindExtraParam (const char *name, QTreeWidgetItem *parent)
 {
-	HTREEITEM hti = FindExtraParamChild (parent);
+	QTreeWidgetItem *hti = FindExtraParamChild (parent);
 	if (!name) return hti; // no name given - return first child
 
-	char cbuf[256];
-	HWND hCtrl = GetDlgItem (hTab, IDC_EXT_LIST);
-	TV_ITEM tvi;
-	tvi.pszText = cbuf;
-	tvi.cchTextMax = 256;
-	tvi.hItem = hti;
-	tvi.mask = TVIF_HANDLE | TVIF_TEXT;
-	
+	QTreeWidget *hCtrl = DlgItem<QTreeWidget> (hTab, IDC_EXT_LIST);
+	int n = (parent ? parent->childCount() : hCtrl->topLevelItemCount());
+
 	// step through the list
-	while (TreeView_GetItem (hCtrl, &tvi)) {
-		if (!_stricmp (name, tvi.pszText)) return tvi.hItem;
-		tvi.hItem = TreeView_GetNextSibling (hCtrl, tvi.hItem);
+	for (int i = 0; i < n; i++) {
+		hti = (parent ? parent->child (i) : hCtrl->topLevelItem (i));
+		if (!strcasecmp (name, hti->text (0).toUtf8().constData())) return hti;
 	}
 
 	return 0;
@@ -204,11 +248,11 @@ HTREEITEM orbiter::ExtraTab::FindExtraParam (const char *name, const HTREEITEM p
 
 //-----------------------------------------------------------------------------
 
-HTREEITEM orbiter::ExtraTab::FindExtraParamChild (const HTREEITEM parent)
+QTreeWidgetItem *orbiter::ExtraTab::FindExtraParamChild (QTreeWidgetItem *parent)
 {
-	HWND hCtrl = GetDlgItem (hTab, IDC_EXT_LIST);
-	if (parent) return TreeView_GetChild (hCtrl, parent);
-	else        return TreeView_GetRoot (hCtrl);
+	QTreeWidget *hCtrl = DlgItem<QTreeWidget> (hTab, IDC_EXT_LIST);
+	if (parent) return parent->child (0);
+	else        return hCtrl->topLevelItem (0);
 }
 
 //-----------------------------------------------------------------------------
@@ -221,54 +265,7 @@ void orbiter::ExtraTab::WriteExtraParams ()
 
 //-----------------------------------------------------------------------------
 
-BOOL orbiter::ExtraTab::OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh)
-{
-	if (idCtrl == IDC_EXT_LIST) {
-		NM_TREEVIEW* pnmtv = (NM_TREEVIEW FAR*)pnmh;
-		switch (pnmtv->hdr.code) {
-		case TVN_SELCHANGED: {
-			LaunchpadItem* func = (LaunchpadItem*)pnmtv->itemNew.lParam;
-			char* desc = func->Description();
-			if (desc) SetWindowText(GetDlgItem(hDlg, IDC_EXT_TEXT), desc);
-			else SetWindowText(GetDlgItem(hDlg, IDC_EXT_TEXT), "");
-			} return TRUE;
-		case NM_DBLCLK: {
-			TVITEM tvi;
-			tvi.hItem = TreeView_GetSelection(GetDlgItem(hDlg, IDC_EXT_LIST));
-			tvi.mask = TVIF_PARAM;
-			if (TreeView_GetItem(GetDlgItem(hDlg, IDC_EXT_LIST), &tvi) && tvi.lParam) {
-				BuiltinLaunchpadItem* func = (BuiltinLaunchpadItem*)tvi.lParam;
-				func->clbkOpen(LaunchpadWnd());
-			}
-			} return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-//-----------------------------------------------------------------------------
-
-BOOL orbiter::ExtraTab::OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	NM_TREEVIEW *pnmtv;
-
-	switch (uMsg) {
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
-		case IDC_EXT_OPEN: {
-			TVITEM tvi;
-			tvi.hItem = TreeView_GetSelection (GetDlgItem (hWnd, IDC_EXT_LIST));
-			tvi.mask = TVIF_PARAM;
-			if (TreeView_GetItem (GetDlgItem (hWnd, IDC_EXT_LIST), &tvi) && tvi.lParam) {
-				BuiltinLaunchpadItem *func = (BuiltinLaunchpadItem*)tvi.lParam;
-				func->clbkOpen (LaunchpadWnd());
-			}
-			} return TRUE;
-		}
-		break;
-	}
-	return FALSE;
-}
+// WM_NOTIFY (TVN_SELCHANGED, NM_DBLCLK) and WM_COMMAND (IDC_EXT_OPEN) are connected in OnInitDialog
 
 
 // ****************************************************************************
@@ -283,33 +280,23 @@ BuiltinLaunchpadItem::BuiltinLaunchpadItem (const orbiter::ExtraTab *tab): Launc
 	pTab = tab;
 }
 
-bool BuiltinLaunchpadItem::OpenDialog (HWND hParent, int resid, DLGPROC pDlg)
+bool BuiltinLaunchpadItem::OpenDialog (QWidget *hParent, int resid, DLGINIT pDlg)
 {
 	return LaunchpadItem::OpenDialog (pTab->AppInstance(), hParent, resid, pDlg);
 }
 
 void BuiltinLaunchpadItem::Error (const char *msg)
 {
-	MessageBox (pTab->LaunchpadWnd(), msg, "Orbiter configuration error", MB_OK|MB_ICONERROR);
+	QMessageBox::critical (pTab->LaunchpadWnd(), "Orbiter configuration error", msg);
 }
 
-INT_PTR CALLBACK BuiltinLaunchpadItem::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void BuiltinLaunchpadItem::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		SetWindowLongPtr (hWnd, DWLP_USER, lParam);
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
-		case IDCANCEL:
-			EndDialog (hWnd, 0);
-		}
-		break;
-	case WM_CLOSE:
-		EndDialog (hWnd, 0);
-		return 0;
-	}
-	return FALSE;
+	// WM_INITDIALOG
+	hWnd->setProperty ("LaunchpadItem", QVariant::fromValue (context)); // DWLP_USER
+	// WM_COMMAND IDCANCEL (WM_CLOSE: closing a QDialog rejects it, which ends it with 0)
+	if (QPushButton *b = DlgItem<QPushButton> (hWnd, IDCANCEL))
+		QObject::connect (b, &QPushButton::clicked, hWnd, [hWnd]() { qobject_cast<QDialog*> (hWnd)->done (0); });
 }
 
 //-----------------------------------------------------------------------------
@@ -345,131 +332,131 @@ char *ExtraDynamics::Description ()
 	return (char*)"Select the numerical integration methods used for dynamic state updates.\r\n\r\nState propagators affect the accuracy and stability of spacecraft orbits and trajectory calculations.";
 }
 
-bool ExtraDynamics::clbkOpen (HWND hParent)
+bool ExtraDynamics::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_DYNAMICS, DlgProc);
 	return true;
 }
 
-void ExtraDynamics::InitDialog (HWND hWnd)
+void ExtraDynamics::InitDialog (QWidget *hWnd)
 {
 	DWORD i, j;
 	for (i = 0; i < 5; i++) {
-		SendDlgItemMessage (hWnd, IDC_PROP_PROP0+i, CB_RESETCONTENT, 0, 0);
+		DlgItem<QComboBox>(hWnd, IDC_PROP_PROP0+i)->clear();
 		for (j = 0; j < NPROP_METHOD; j++)
-			SendDlgItemMessage (hWnd, IDC_PROP_PROP0+i, CB_ADDSTRING, 0, (LPARAM)RigidBody::PropagatorStr(j));
+			oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_PROP_PROP0+i), RigidBody::PropagatorStr(j));
 	}
 	SetDialog (hWnd, pTab->Cfg()->CfgPhysicsPrm);
 }
 
-void ExtraDynamics::ResetDialog (HWND hWnd)
+void ExtraDynamics::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_PHYSICSPRM CfgPhysicsPrm_default;
 	SetDialog (hWnd, CfgPhysicsPrm_default);
 }
 
-void ExtraDynamics::SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm)
+void ExtraDynamics::SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm)
 {
 	char cbuf[64];
 	int i, j;
 	int n = prm.nLPropLevel;
 	for (i = 0; i < 5; i++) {
-		SendDlgItemMessage (hWnd, IDC_PROP_ACTIVE0+i, BM_SETCHECK, i < n ? BST_CHECKED : BST_UNCHECKED, 0);
-		EnableWindow (GetDlgItem (hWnd, IDC_PROP_ACTIVE0+i), i < n-1 || i > n || i == 0 ? FALSE : TRUE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_PROP0+i), i < n ? SW_SHOW : SW_HIDE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_TTGT0+i), i < n ? SW_SHOW : SW_HIDE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_ATGT0+i), i < n ? SW_SHOW : SW_HIDE);
+		SetCheck(hWnd, IDC_PROP_ACTIVE0+i, i < n);
+		EnableItem(hWnd, IDC_PROP_ACTIVE0+i, i < n-1 || i > n || i == 0 ? FALSE : TRUE);
+		ShowItem(hWnd, IDC_PROP_PROP0+i, i < n);
+		ShowItem(hWnd, IDC_PROP_TTGT0+i, i < n);
+		ShowItem(hWnd, IDC_PROP_ATGT0+i, i < n);
 		if (i < 4) {
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_TLIMIT01+i), i < n-1 ? SW_SHOW : SW_HIDE);
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_ALIMIT01+i), i < n-1 ? SW_SHOW : SW_HIDE);
+			ShowItem(hWnd, IDC_PROP_TLIMIT01+i, i < n-1);
+			ShowItem(hWnd, IDC_PROP_ALIMIT01+i, i < n-1);
 		}
 		if (i < n) {
 			int id = prm.PropMode[i];
 			for (j = 0; j < NPROP_METHOD; j++)
 				if (id == PropId[j]) {
-					SendDlgItemMessage (hWnd, IDC_PROP_PROP0+i, CB_SETCURSEL, j, 0);
+					DlgItem<QComboBox>(hWnd, IDC_PROP_PROP0+i)->setCurrentIndex(j);
 					break;
 				}
 			sprintf (cbuf, "%0.2f", prm.PropTTgt[i]);
-			SetWindowText (GetDlgItem (hWnd, IDC_PROP_TTGT0+i), cbuf);
+			oapiSetDlgItemText(hWnd, IDC_PROP_TTGT0+i, cbuf);
 			sprintf (cbuf, "%0.1f", prm.PropATgt[i]*DEG);
-			SetWindowText (GetDlgItem (hWnd, IDC_PROP_ATGT0+i), cbuf);
+			oapiSetDlgItemText(hWnd, IDC_PROP_ATGT0+i, cbuf);
 			if (i < n-1) {
 				sprintf (cbuf, "%0.2f", prm.PropTLim[i]);
-				SetWindowText (GetDlgItem (hWnd, IDC_PROP_TLIMIT01+i), cbuf);
+				oapiSetDlgItemText(hWnd, IDC_PROP_TLIMIT01+i, cbuf);
 				sprintf (cbuf, "%0.1f", prm.PropALim[i]*DEG);
-				SetWindowText (GetDlgItem (hWnd, IDC_PROP_ALIMIT01+i), cbuf);
+				oapiSetDlgItemText(hWnd, IDC_PROP_ALIMIT01+i, cbuf);
 			}
 		}
 	}
 	sprintf (cbuf, "%d", prm.PropSubMax);
-	SetWindowText (GetDlgItem (hWnd, IDC_PROP_MAXSAMPLE), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_PROP_MAXSAMPLE, cbuf);
 }
 
-void ExtraDynamics::Activate (HWND hWnd, int which)
+void ExtraDynamics::Activate (QWidget *hWnd, int which)
 {
 	int i = which-IDC_PROP_ACTIVE0;
-	int check = SendDlgItemMessage (hWnd, which, BM_GETCHECK, 0, 0);
-	if (check == BST_CHECKED) {
-		if (i < 4) EnableWindow (GetDlgItem (hWnd, which+1), TRUE);
-		if (i > 0) EnableWindow (GetDlgItem (hWnd, which-1), FALSE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_PROP0+i), SW_SHOW);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_TTGT0+i), SW_SHOW);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_ATGT0+i), SW_SHOW);
+	bool check = IsChecked (hWnd, which);
+	if (check) {
+		if (i < 4) EnableItem(hWnd, which+1, TRUE);
+		if (i > 0) EnableItem(hWnd, which-1, FALSE);
+		ShowItem(hWnd, IDC_PROP_PROP0+i, true);
+		ShowItem(hWnd, IDC_PROP_TTGT0+i, true);
+		ShowItem(hWnd, IDC_PROP_ATGT0+i, true);
 		if (i > 0) {
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_TLIMIT01+i-1), SW_SHOW);
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_ALIMIT01+i-1), SW_SHOW);
+			ShowItem(hWnd, IDC_PROP_TLIMIT01+i-1, true);
+			ShowItem(hWnd, IDC_PROP_ALIMIT01+i-1, true);
 		}
 	} else {
-		if (i > 1) EnableWindow (GetDlgItem (hWnd, which-1), TRUE);
-		if (i < 4) EnableWindow (GetDlgItem (hWnd, which+1), FALSE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_PROP0+i), SW_HIDE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_TTGT0+i), SW_HIDE);
-		ShowWindow (GetDlgItem (hWnd, IDC_PROP_ATGT0+i), SW_HIDE);
+		if (i > 1) EnableItem(hWnd, which-1, TRUE);
+		if (i < 4) EnableItem(hWnd, which+1, FALSE);
+		ShowItem(hWnd, IDC_PROP_PROP0+i, false);
+		ShowItem(hWnd, IDC_PROP_TTGT0+i, false);
+		ShowItem(hWnd, IDC_PROP_ATGT0+i, false);
 		if (i > 0) {
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_TLIMIT01+i-1), SW_HIDE);
-			ShowWindow (GetDlgItem (hWnd, IDC_PROP_ALIMIT01+i-1), SW_HIDE);
+			ShowItem(hWnd, IDC_PROP_TLIMIT01+i-1, false);
+			ShowItem(hWnd, IDC_PROP_ALIMIT01+i-1, false);
 		}
 	}
 }
 
-bool ExtraDynamics::StoreParams (HWND hWnd)
+bool ExtraDynamics::StoreParams (QWidget *hWnd)
 {
 	char cbuf[256];
 	int i, n = 0;
 	double ttgt[MAX_PROP_LEVEL], atgt[MAX_PROP_LEVEL], tlim[MAX_PROP_LEVEL], alim[MAX_PROP_LEVEL];
 	int mode[MAX_PROP_LEVEL];
 	for (i = 0; i < MAX_PROP_LEVEL; i++) {
-		if (SendDlgItemMessage (hWnd, IDC_PROP_ACTIVE0+i, BM_GETCHECK, 0, 0) == BST_CHECKED)
+		if (IsChecked(hWnd, IDC_PROP_ACTIVE0+i))
 			n++;
 	}
 	for (i = 0; i < n; i++) {
-		mode[i] = SendDlgItemMessage (hWnd, IDC_PROP_PROP0+i, CB_GETCURSEL, 0, 0);
-		if (mode[i] == CB_ERR) {
+		mode[i] = DlgItem<QComboBox>(hWnd, IDC_PROP_PROP0+i)->currentIndex();
+		if (mode[i] == -1) { // CB_ERR
 			sprintf (cbuf, "Invalid propagator for integration stage %d.", i+1);
 			Error (cbuf);
 			return false;
 		}
-		GetWindowText (GetDlgItem (hWnd, IDC_PROP_TTGT0+i), cbuf, 256);
+		oapiGetDlgItemText(hWnd, IDC_PROP_TTGT0+i, cbuf, 256);
 		if ((sscanf (cbuf, "%lf", ttgt+i) != 1) || (ttgt[i] <= 0)) {
 			sprintf (cbuf, "Invalid time step target for integration stage %d.", i+1);
 			Error (cbuf);
 			return false;
 		}
-		GetWindowText (GetDlgItem (hWnd, IDC_PROP_ATGT0+i), cbuf, 256);
+		oapiGetDlgItemText(hWnd, IDC_PROP_ATGT0+i, cbuf, 256);
 		if ((sscanf (cbuf, "%lf", atgt+i) != 1) || (atgt[i] <= 0)) {
 			sprintf (cbuf, "Invalid angle step target for integration stage %d.", i+1);
 			Error (cbuf);
 			return false;
 		}
 		if (i < n-1) {
-			GetWindowText (GetDlgItem (hWnd, IDC_PROP_TLIMIT01+i), cbuf, 256);
+			oapiGetDlgItemText(hWnd, IDC_PROP_TLIMIT01+i, cbuf, 256);
 			if ((sscanf (cbuf, "%lf", tlim+i) != 1) || (tlim[i] <= 0)) {
 				sprintf (cbuf, "Invalid time step limit for integration stage %d -> %d.", i+1, i+2);
 				Error (cbuf);
 				return false;
 			}
-			GetWindowText (GetDlgItem (hWnd, IDC_PROP_ALIMIT01+i), cbuf, 256);
+			oapiGetDlgItemText(hWnd, IDC_PROP_ALIMIT01+i, cbuf, 256);
 			if ((sscanf (cbuf, "%lf", alim+i) != 1) || (alim[i] <= 0)) {
 				sprintf (cbuf, "Invalid angle step limit for integration stage %d -> %d.", i+1, i+2);
 				Error (cbuf);
@@ -492,7 +479,7 @@ bool ExtraDynamics::StoreParams (HWND hWnd)
 		cfg->CfgPhysicsPrm.PropALim[i] = (i < n-1 ? alim[i]*RAD : 1e10);
 	}
 
-	GetWindowText (GetDlgItem (hWnd, IDC_PROP_MAXSAMPLE), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_PROP_MAXSAMPLE, cbuf, 256);
 	if ((sscanf (cbuf, "%d", &i) != 1) || i < 1) {
 		Error ("Invalid value for max. subsamples (integer value >= 1 required).");
 		return false;
@@ -503,41 +490,39 @@ bool ExtraDynamics::StoreParams (HWND hWnd)
 	return true;
 }
 
-bool ExtraDynamics::OpenHelp (HWND hWnd)
+bool ExtraDynamics::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_linprop");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraDynamics::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraDynamics::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraDynamics*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
+	// WM_INITDIALOG
+	((ExtraDynamics*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_PROP_ACTIVE0:
 		case IDC_PROP_ACTIVE1:
 		case IDC_PROP_ACTIVE2:
 		case IDC_PROP_ACTIVE3:
 		case IDC_PROP_ACTIVE4:
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
+			((ExtraDynamics*)context)->Activate (hWnd, id);
 			break;
 		case IDC_RESET:
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraDynamics*)context)->ResetDialog (hWnd);
+			return;
 		case IDCHELP:
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraDynamics*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraDynamics*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 //-----------------------------------------------------------------------------
@@ -560,13 +545,13 @@ char *ExtraAngDynamics::Description ()
 	return desc;
 }
 
-bool ExtraAngDynamics::clbkOpen (HWND hParent)
+bool ExtraAngDynamics::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_ADYNAMICS, DlgProc);
 	return true;
 }
 
-void ExtraAngDynamics::InitDialog (HWND hWnd)
+void ExtraAngDynamics::InitDialog (QWidget *hWnd)
 {
 	static char *label[NAPROP_METHOD] = {
 		"Runge-Kutta, 2nd order (RK2)", "Runge-Kutta, 4th order (RK4)", "Runge-Kutta, 5th order (RK5)",
@@ -575,97 +560,97 @@ void ExtraAngDynamics::InitDialog (HWND hWnd)
 
 	int i, j;
 	for (i = 0; i < 5; i++) {
-		SendDlgItemMessage (hWnd, IDC_COMBO1+i, CB_RESETCONTENT, 0, 0);
+		DlgItem<QComboBox>(hWnd, IDC_COMBO1+i)->clear();
 		for (j = 0; j < NAPROP_METHOD; j++)
-			SendDlgItemMessage (hWnd, IDC_COMBO1+i, CB_ADDSTRING, 0, (LPARAM)label[j]);
+			oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_COMBO1+i), label[j]);
 	}
 	SetDialog (hWnd, pTab->Cfg()->CfgPhysicsPrm);
 }
 
-void ExtraAngDynamics::ResetDialog (HWND hWnd)
+void ExtraAngDynamics::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_PHYSICSPRM CfgPhysicsPrm_default;
 	SetDialog (hWnd, CfgPhysicsPrm_default);
 }
 
-void ExtraAngDynamics::SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm)
+void ExtraAngDynamics::SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm)
 {
 	char cbuf[64];
 	int i, j;
 	int n = prm.nAPropLevel;
 	for (i = 0; i < 5; i++) {
-		SendDlgItemMessage (hWnd, IDC_CHECK1+i, BM_SETCHECK, i < n ? BST_CHECKED : BST_UNCHECKED, 0);
-		EnableWindow (GetDlgItem (hWnd, IDC_CHECK1+i), i < n-1 || i > n || i == 0 ? FALSE : TRUE);
-		ShowWindow (GetDlgItem (hWnd, IDC_COMBO1+i), i < n ? SW_SHOW : SW_HIDE);
+		SetCheck(hWnd, IDC_CHECK1+i, i < n);
+		EnableItem(hWnd, IDC_CHECK1+i, i < n-1 || i > n || i == 0 ? FALSE : TRUE);
+		ShowItem(hWnd, IDC_COMBO1+i, i < n);
 		if (i < 4) {
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT1+i), i < n-1 ? SW_SHOW : SW_HIDE);
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT5+i), i < n-1 ? SW_SHOW : SW_HIDE);
+			ShowItem(hWnd, IDC_EDIT1+i, i < n-1);
+			ShowItem(hWnd, IDC_EDIT5+i, i < n-1);
 		}
 		if (i < n) {
 			int id = prm.APropMode[i];
 			for (j = 0; j < NAPROP_METHOD; j++)
 				if (id == PropId[j]) {
-					SendDlgItemMessage (hWnd, IDC_COMBO1+i, CB_SETCURSEL, j, 0);
+					DlgItem<QComboBox>(hWnd, IDC_COMBO1+i)->setCurrentIndex(j);
 					break;
 				}
 			if (i < n-1) {
 				sprintf (cbuf, "%0.2f", prm.APropTLimit[i]);
-				SetWindowText (GetDlgItem (hWnd, IDC_EDIT1+i), cbuf);
+				oapiSetDlgItemText(hWnd, IDC_EDIT1+i, cbuf);
 				sprintf (cbuf, "%0.1f", prm.PropALimit[i]*DEG);
-				SetWindowText (GetDlgItem (hWnd, IDC_EDIT5+i), cbuf);
+				oapiSetDlgItemText(hWnd, IDC_EDIT5+i, cbuf);
 			}
 		}
 	}
 	sprintf (cbuf, "%0.1f", prm.APropSubLimit*DEG);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT9), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT9, cbuf);
 	sprintf (cbuf, "%d", prm.APropSubMax);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT10), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT10, cbuf);
 	sprintf (cbuf, "%0.1f", prm.APropCouplingLimit*DEG);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT11), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT11, cbuf);
 	sprintf (cbuf, "%0.1f", prm.APropTorqueLimit*DEG);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT12), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT12, cbuf);
 }
 
-void ExtraAngDynamics::Activate (HWND hWnd, int which)
+void ExtraAngDynamics::Activate (QWidget *hWnd, int which)
 {
 	int i = which-IDC_CHECK1;
-	int check = SendDlgItemMessage (hWnd, which, BM_GETCHECK, 0, 0);
-	if (check == BST_CHECKED) {
-		if (i < 4) EnableWindow (GetDlgItem (hWnd, which+1), TRUE);
-		if (i > 0) EnableWindow (GetDlgItem (hWnd, which-1), FALSE);
-		ShowWindow (GetDlgItem (hWnd, IDC_COMBO1+i), SW_SHOW);
+	bool check = IsChecked (hWnd, which);
+	if (check) {
+		if (i < 4) EnableItem(hWnd, which+1, TRUE);
+		if (i > 0) EnableItem(hWnd, which-1, FALSE);
+		ShowItem(hWnd, IDC_COMBO1+i, true);
 		if (i > 0) {
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT1+i-1), SW_SHOW);
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT5+i-1), SW_SHOW);
+			ShowItem(hWnd, IDC_EDIT1+i-1, true);
+			ShowItem(hWnd, IDC_EDIT5+i-1, true);
 		}
 	} else {
-		if (i > 1) EnableWindow (GetDlgItem (hWnd, which-1), TRUE);
-		if (i < 4) EnableWindow (GetDlgItem (hWnd, which+1), FALSE);
-		ShowWindow (GetDlgItem (hWnd, IDC_COMBO1+i), SW_HIDE);
+		if (i > 1) EnableItem(hWnd, which-1, TRUE);
+		if (i < 4) EnableItem(hWnd, which+1, FALSE);
+		ShowItem(hWnd, IDC_COMBO1+i, false);
 		if (i > 0) {
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT1+i-1), SW_HIDE);
-			ShowWindow (GetDlgItem (hWnd, IDC_EDIT5+i-1), SW_HIDE);
+			ShowItem(hWnd, IDC_EDIT1+i-1, false);
+			ShowItem(hWnd, IDC_EDIT5+i-1, false);
 		}
 	}
 }
 
-bool ExtraAngDynamics::StoreParams (HWND hWnd)
+bool ExtraAngDynamics::StoreParams (QWidget *hWnd)
 {
 	char cbuf[256];
 	int i, n = 0;
 	double val, tlimit[5], alimit[5], couplim, torqlim;
 	int mode[5];
 	for (i = 0; i < 5; i++) {
-		if (SendDlgItemMessage (hWnd, IDC_CHECK1+i, BM_GETCHECK, 0, 0) == BST_CHECKED)
+		if (IsChecked(hWnd, IDC_CHECK1+i))
 			n++;
 	}
 	for (i = 0; i < n-1; i++) {
-		GetWindowText (GetDlgItem (hWnd, IDC_EDIT1+i), cbuf, 256);
+		oapiGetDlgItemText(hWnd, IDC_EDIT1+i, cbuf, 256);
 		if ((sscanf (cbuf, "%lf", tlimit+i) != 1) || (tlimit[i] <= 0)) {
 			Error ("Invalid step limit entry.");
 			return false;
 		}
-		GetWindowText (GetDlgItem (hWnd, IDC_EDIT5+i), cbuf, 256);
+		oapiGetDlgItemText(hWnd, IDC_EDIT5+i, cbuf, 256);
 		if ((sscanf (cbuf, "%lf", alimit+i) != 1) || (alimit[i] <= 0)) {
 			Error ("Invalid angle step limit entry.");
 			return false;
@@ -676,18 +661,18 @@ bool ExtraAngDynamics::StoreParams (HWND hWnd)
 		}
 	}
 	for (i = 0; i < n; i++) {
-		mode[i] = SendDlgItemMessage (hWnd, IDC_COMBO1+i, CB_GETCURSEL, 0, 0);
-		if (mode[i] == CB_ERR) {
+		mode[i] = DlgItem<QComboBox>(hWnd, IDC_COMBO1+i)->currentIndex();
+		if (mode[i] == -1) { // CB_ERR
 			Error ("Invalid propagator.");
 			return false;
 		}
 	}
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT11), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT11, cbuf, 256);
 	if ((sscanf (cbuf, "%lf", &couplim) != 1) || (couplim < 0.0)) {
 		Error ("Invalid coupling step limit");
 		return false;
 	}
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT12), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT12, cbuf, 256);
 	if ((sscanf (cbuf, "%lf", &torqlim) != 1) || (torqlim < couplim)) {
 		Error ("Torque step limit must be greater than coupling limit");
 		return false;
@@ -703,12 +688,12 @@ bool ExtraAngDynamics::StoreParams (HWND hWnd)
 	cfg->CfgPhysicsPrm.APropCouplingLimit = couplim*RAD;
 	cfg->CfgPhysicsPrm.APropTorqueLimit = torqlim*RAD;
 
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT9), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT9, cbuf, 256);
 	if ((sscanf (cbuf, "%lf", &val) != 1 || val < 0)) {
 		Error ("Invalid subsampling target step.");
 		return false;
 	} else cfg->CfgPhysicsPrm.APropSubLimit = val*RAD;
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT10), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT10, cbuf, 256);
 	if ((sscanf (cbuf, "%d", &i) != 1) || (i < 1)) {
 		Error ("Invalid subsampling steps.");
 		return false;
@@ -717,41 +702,39 @@ bool ExtraAngDynamics::StoreParams (HWND hWnd)
 	return true;
 }
 
-bool ExtraAngDynamics::OpenHelp (HWND hWnd)
+bool ExtraAngDynamics::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, pTab->Launchpad()->GetInstance(), "extra_angprop");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraAngDynamics::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraAngDynamics::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraAngDynamics*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
+	// WM_INITDIALOG
+	((ExtraAngDynamics*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_CHECK1:
 		case IDC_CHECK2:
 		case IDC_CHECK3:
 		case IDC_CHECK4:
 		case IDC_CHECK5:
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
+			((ExtraAngDynamics*)context)->Activate (hWnd, id);
 			break;
 		case IDC_BUTTON1:
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraAngDynamics*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraAngDynamics*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraAngDynamics*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 #endif
@@ -770,122 +753,120 @@ char *ExtraStabilisation::Description ()
 	return (char*)"Select the parameters that determine the conditions when Orbiter switches between dynamic and stabilised state updates.";
 }
 
-bool ExtraStabilisation::clbkOpen (HWND hParent)
+bool ExtraStabilisation::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_STABILISATION, DlgProc);
 	return true;
 }
 
-void ExtraStabilisation::InitDialog (HWND hWnd)
+void ExtraStabilisation::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgPhysicsPrm);
 }
 
-void ExtraStabilisation::ResetDialog (HWND hWnd)
+void ExtraStabilisation::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_PHYSICSPRM CfgPhysicsPrm_default;
 	SetDialog (hWnd, CfgPhysicsPrm_default);
 }
 
-void ExtraStabilisation::SetDialog (HWND hWnd, const CFG_PHYSICSPRM &prm)
+void ExtraStabilisation::SetDialog (QWidget *hWnd, const CFG_PHYSICSPRM &prm)
 {
 	char cbuf[256];
-	SendDlgItemMessage (hWnd, IDC_STAB_ENABLE, BM_SETCHECK, prm.bOrbitStabilise ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hWnd, IDC_STAB_ENABLE, prm.bOrbitStabilise);
 	sprintf (cbuf, "%0.4g", prm.Stabilise_PLimit*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT1, cbuf);
 	sprintf (cbuf, "%0.4g", prm.Stabilise_SLimit*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT2), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT2, cbuf);
 	sprintf (cbuf, "%0.4g", prm.PPropSubLimit*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT3), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT3, cbuf);
 	sprintf (cbuf, "%d", prm.PPropSubMax);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT4), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT4, cbuf);
 	sprintf (cbuf, "%0.4g", prm.PPropStepLimit*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT5), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT5, cbuf);
 	ToggleEnable (hWnd);
 }
 
-bool ExtraStabilisation::StoreParams (HWND hWnd)
+bool ExtraStabilisation::StoreParams (QWidget *hWnd)
 {
 	char cbuf[256];
 	int i;
 	double plimit, slimit, val;
 	Config *cfg = pTab->Cfg();
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT1, cbuf, 256);
 	if (sscanf (cbuf, "%lf", &plimit) != 1 || plimit < 0.0 || plimit > 100.0) {
 		Error ("Invalid perturbation limit.");
 		return false;
 	}
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT2), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT2, cbuf, 256);
 	if (sscanf (cbuf, "%lf", &slimit) != 1 || slimit < 0.0) {
 		Error ("Invalid step limit.");
 		return false;
 	}
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT3), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT3, cbuf, 256);
 	if ((sscanf (cbuf, "%lf", &val) != 1 || val < 0)) {
 		Error ("Invalid subsampling target step.");
 		return false;
 	} else cfg->CfgPhysicsPrm.PPropSubLimit = val*0.01;
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT4), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT4, cbuf, 256);
 	if ((sscanf (cbuf, "%d", &i) != 1) || (i < 1)) {
 		Error ("Invalid subsampling steps.");
 		return false;
 	} else cfg->CfgPhysicsPrm.PPropSubMax = i;
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT5), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT5, cbuf, 256);
 	if ((sscanf (cbuf, "%lf", &val) != 1 || val < 0)) {
 		Error ("Invalid perturbation limit value.");
 		return false;
 	} else cfg->CfgPhysicsPrm.PPropStepLimit = val*0.01;
 
-	cfg->CfgPhysicsPrm.bOrbitStabilise = (SendDlgItemMessage (hWnd, IDC_STAB_ENABLE, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	cfg->CfgPhysicsPrm.bOrbitStabilise = (IsChecked(hWnd, IDC_STAB_ENABLE));
 	cfg->CfgPhysicsPrm.Stabilise_PLimit = plimit * 0.01;
 	cfg->CfgPhysicsPrm.Stabilise_SLimit = slimit * 0.01;
 	return true;
 }
 
-void ExtraStabilisation::ToggleEnable (HWND hWnd)
+void ExtraStabilisation::ToggleEnable (QWidget *hWnd)
 {
 	int i;
-	bool bstab = (SendDlgItemMessage (hWnd, IDC_STAB_ENABLE, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool bstab = (IsChecked(hWnd, IDC_STAB_ENABLE));
 	for (i = IDC_EDIT1; i <= IDC_EDIT5; i++)
-		EnableWindow (GetDlgItem (hWnd, i), bstab);
+		EnableItem(hWnd, i, bstab);
 	for (i = IDC_STATIC1; i <= IDC_STATIC13; i++)
-		EnableWindow (GetDlgItem (hWnd, i), bstab);
+		EnableItem(hWnd, i, bstab);
 }
 
-bool ExtraStabilisation::OpenHelp (HWND hWnd)
+bool ExtraStabilisation::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_orbitstab");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraStabilisation::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraStabilisation::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraStabilisation*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraStabilisation*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_STAB_ENABLE:
-			if (HIWORD (wParam) == BN_CLICKED) {
-				((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
-				return TRUE;
+			if (code == RESN_CLICKED) {
+				((ExtraStabilisation*)context)->ToggleEnable (hWnd);
+				return;
 			}
 			break;
 		case IDC_BUTTON1:
-			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraStabilisation*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraStabilisation*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams(hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraStabilisation*)context)->StoreParams(hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 
@@ -917,51 +898,51 @@ char *ExtraMfdConfig::Description ()
 	return (char*)"Select display parameters for multifunctional displays (MFD).";
 }
 
-bool ExtraMfdConfig::clbkOpen (HWND hParent)
+bool ExtraMfdConfig::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_MFDCONFIG, DlgProc);
 	return true;
 }
 
-void ExtraMfdConfig::InitDialog (HWND hWnd)
+void ExtraMfdConfig::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgInstrumentPrm);
 }
 
-void ExtraMfdConfig::ResetDialog (HWND hWnd)
+void ExtraMfdConfig::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_INSTRUMENTPRM CfgInstrumentPrm_default;
 	SetDialog (hWnd, CfgInstrumentPrm_default);
 }
 
-void ExtraMfdConfig::SetDialog (HWND hWnd, const CFG_INSTRUMENTPRM &prm)
+void ExtraMfdConfig::SetDialog (QWidget *hWnd, const CFG_INSTRUMENTPRM &prm)
 {
 	char cbuf[256];
 	int i, idx;
 	for (i = 0; i < 3; i++)
-		SendDlgItemMessage (hWnd, IDC_RADIO1+i, BM_SETCHECK, i == prm.bMfdPow2 ? BST_CHECKED : BST_UNCHECKED, 0);
+		SetCheck(hWnd, IDC_RADIO1+i, i == prm.bMfdPow2);
 	sprintf (cbuf, "%d", prm.MfdHiresThreshold);
-	SetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf);
+	oapiSetDlgItemText(hWnd, IDC_EDIT1, cbuf);
 
 	idx = (prm.VCMFDSize == 256 ? 0 : prm.VCMFDSize == 512 ? 1 : 2);
 	for (i = 0; i < 3; i++)
-		SendDlgItemMessage (hWnd, IDC_RADIO4+i, BM_SETCHECK, i == idx ? BST_CHECKED : BST_UNCHECKED, 0);
+		SetCheck(hWnd, IDC_RADIO4+i, i == idx);
 }
 
-bool ExtraMfdConfig::StoreParams (HWND hWnd)
+bool ExtraMfdConfig::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
 	char cbuf[256];
 	int i, size, check;
-	GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 256);
+	oapiGetDlgItemText(hWnd, IDC_EDIT1, cbuf, 256);
 	if ((sscanf (cbuf, "%d", &size) != 1) || size < 8) {
 		return false;
 	} else
 		cfg->CfgInstrumentPrm.MfdHiresThreshold = size;
 
 	for (i = 0; i < 3; i++) {
-		check = SendDlgItemMessage (hWnd, IDC_RADIO1+i, BM_GETCHECK, 0, 0);
-		if (check == BST_CHECKED) {
+		check = IsChecked (hWnd, IDC_RADIO1+i);
+		if (check) {
 			cfg->CfgInstrumentPrm.bMfdPow2 = i;
 			break;
 		}
@@ -969,8 +950,8 @@ bool ExtraMfdConfig::StoreParams (HWND hWnd)
 
 	size = 256;
 	for (i = 0; i < 3; i++) {
-		check = SendDlgItemMessage (hWnd, IDC_RADIO4+i, BM_GETCHECK, 0, 0);
-		if (check == BST_CHECKED) {
+		check = IsChecked (hWnd, IDC_RADIO4+i);
+		if (check) {
 			cfg->CfgInstrumentPrm.VCMFDSize = size;
 			break;
 		}
@@ -980,39 +961,37 @@ bool ExtraMfdConfig::StoreParams (HWND hWnd)
 	return true;
 }
 
-void ExtraMfdConfig::ToggleEnable (HWND hWnd)
+void ExtraMfdConfig::ToggleEnable (QWidget *hWnd)
 {
 	// todo
 }
 
-bool ExtraMfdConfig::OpenHelp (HWND hWnd)
+bool ExtraMfdConfig::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_mfdconfig");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraMfdConfig::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraMfdConfig::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraMfdConfig*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraMfdConfig*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraMfdConfig*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraMfdConfig*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraMfdConfig*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 
@@ -1072,67 +1051,65 @@ char *ExtraShutdown::Description ()
 	return (char*)"Set the behaviour of Orbiter after closing the simulation window: return to Launchpad, respawn or terminate.";
 }
 
-bool ExtraShutdown::clbkOpen (HWND hParent)
+bool ExtraShutdown::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_SHUTDOWN, DlgProc);
 	return true;
 }
 
-void ExtraShutdown::InitDialog (HWND hWnd)
+void ExtraShutdown::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraShutdown::ResetDialog (HWND hWnd)
+void ExtraShutdown::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraShutdown::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraShutdown::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
 	for (int i = 0; i < 3; i++)
-		SendDlgItemMessage (hWnd, IDC_RADIO1+i, BM_SETCHECK, (i==prm.ShutdownMode ? BST_CHECKED:BST_UNCHECKED), 0);
+		SetCheck (hWnd, IDC_RADIO1+i, i==prm.ShutdownMode);
 }
 
-bool ExtraShutdown::StoreParams (HWND hWnd)
+bool ExtraShutdown::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
 	int mode;
 	for (mode = 0; mode < 2; mode++)
-		if (SendDlgItemMessage (hWnd, IDC_RADIO1+mode, BM_GETCHECK, 0, 0) == BST_CHECKED) break;
+		if (IsChecked(hWnd, IDC_RADIO1+mode)) break;
 	cfg->CfgDebugPrm.ShutdownMode = mode;
 	return true;
 }
 
-bool ExtraShutdown::OpenHelp (HWND hWnd)
+bool ExtraShutdown::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_shutdown");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraShutdown::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraShutdown::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraShutdown*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraShutdown*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraShutdown*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraShutdown*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraShutdown*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 //-----------------------------------------------------------------------------
@@ -1149,54 +1126,54 @@ char *ExtraFixedStep::Description ()
 	return (char*)"This option assigns a fixed simulation time interval to each frame. Useful for debugging, and when numerical accuracy and stability of the dynamic propagators are important (for example, to generate trajectory data or when recording high-fidelity playbacks).\r\n\r\nWarning: Selecting this option leads to nonlinear time flow and a simulation that is no longer real-time.";
 }
 
-bool ExtraFixedStep::clbkOpen (HWND hParent)
+bool ExtraFixedStep::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_FIXEDSTEP, DlgProc);
 	return true;
 }
 
-void ExtraFixedStep::InitDialog (HWND hWnd)
+void ExtraFixedStep::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraFixedStep::ResetDialog (HWND hWnd)
+void ExtraFixedStep::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraFixedStep::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraFixedStep::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
 	char cbuf[256];
 	double step = prm.FixedStep;
 
 	if (pTab->Cfg()->CfgCmdlinePrm.FixedStep) {
 		// fixed step is set by command line options - disable the dialog
-		SendDlgItemMessage(hWnd, IDC_CHECK1, BM_SETCHECK, BST_CHECKED, 0);
+		SetCheck(hWnd, IDC_CHECK1, true);
 		sprintf(cbuf, "%0.4g", pTab->Cfg()->CfgCmdlinePrm.FixedStep);
-		SetWindowText(GetDlgItem(hWnd, IDC_EDIT1), cbuf);
-		EnableWindow(GetDlgItem(hWnd, IDC_CHECK1), FALSE);
-		EnableWindow(GetDlgItem(hWnd, IDC_EDIT1), FALSE);
+		oapiSetDlgItemText(hWnd, IDC_EDIT1, cbuf);
+		EnableItem(hWnd, IDC_CHECK1, FALSE);
+		EnableItem(hWnd, IDC_EDIT1, FALSE);
 	}
 	else {
-		SendDlgItemMessage(hWnd, IDC_CHECK1, BM_SETCHECK, step ? BST_CHECKED : BST_UNCHECKED, 0);
+		SetCheck(hWnd, IDC_CHECK1, step);
 		sprintf(cbuf, "%0.4g", step ? step : 0.01);
-		SetWindowText(GetDlgItem(hWnd, IDC_EDIT1), cbuf);
+		oapiSetDlgItemText(hWnd, IDC_EDIT1, cbuf);
 		ToggleEnable(hWnd);
 	}
 }
 
-bool ExtraFixedStep::StoreParams (HWND hWnd)
+bool ExtraFixedStep::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
-	bool fixed = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool fixed = (IsChecked(hWnd, IDC_CHECK1));
 	if (!fixed) {
 		cfg->CfgDebugPrm.FixedStep = 0;
 	} else {
 		char cbuf[256];
 		double dt;
-		GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 256);
+		oapiGetDlgItemText(hWnd, IDC_EDIT1, cbuf, 256);
 		if (sscanf (cbuf, "%lf", &dt) != 1 || dt <= 0) {
 			Error ("Invalid frame interval length");
 			return false;
@@ -1206,47 +1183,45 @@ bool ExtraFixedStep::StoreParams (HWND hWnd)
 	return true;
 }
 
-void ExtraFixedStep::ToggleEnable (HWND hWnd)
+void ExtraFixedStep::ToggleEnable (QWidget *hWnd)
 {
-	bool fixed = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	EnableWindow (GetDlgItem (hWnd, IDC_STATIC1), fixed);
-	EnableWindow (GetDlgItem (hWnd, IDC_EDIT1), fixed);
+	bool fixed = (IsChecked(hWnd, IDC_CHECK1));
+	EnableItem(hWnd, IDC_STATIC1, fixed);
+	EnableItem(hWnd, IDC_EDIT1, fixed);
 }
 
-bool ExtraFixedStep::OpenHelp (HWND hWnd)
+bool ExtraFixedStep::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_fixedstep");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraFixedStep::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraFixedStep::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraFixedStep*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraFixedStep*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_CHECK1:
-			if (HIWORD (wParam) == BN_CLICKED) {
-				((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
-				return TRUE;
+			if (code == RESN_CLICKED) {
+				((ExtraFixedStep*)context)->ToggleEnable (hWnd);
+				return;
 			}
 			break;
 		case IDC_BUTTON1:
-			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraFixedStep*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraFixedStep*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraFixedStep*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 //-----------------------------------------------------------------------------
@@ -1263,59 +1238,57 @@ char *ExtraRenderingOptions::Description ()
 	return (char*)"Some rendering options that can be used for debugging problems.";
 }
 
-bool ExtraRenderingOptions::clbkOpen (HWND hParent)
+bool ExtraRenderingOptions::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_DBGRENDER, DlgProc);
 	return true;
 }
 
-void ExtraRenderingOptions::InitDialog (HWND hWnd)
+void ExtraRenderingOptions::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraRenderingOptions::ResetDialog (HWND hWnd)
+void ExtraRenderingOptions::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraRenderingOptions::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraRenderingOptions::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
-	SendDlgItemMessage (hWnd, IDC_CHECK1, BM_SETCHECK, prm.bWireframeMode ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_CHECK2, BM_SETCHECK, prm.bNormaliseNormals ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hWnd, IDC_CHECK1, prm.bWireframeMode);
+	SetCheck(hWnd, IDC_CHECK2, prm.bNormaliseNormals);
 }
 
-bool ExtraRenderingOptions::StoreParams (HWND hWnd)
+bool ExtraRenderingOptions::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
-	cfg->CfgDebugPrm.bWireframeMode = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	cfg->CfgDebugPrm.bNormaliseNormals = (SendDlgItemMessage (hWnd, IDC_CHECK2, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	cfg->CfgDebugPrm.bWireframeMode = (IsChecked(hWnd, IDC_CHECK1));
+	cfg->CfgDebugPrm.bNormaliseNormals = (IsChecked(hWnd, IDC_CHECK2));
 	return true;
 }
 
-INT_PTR CALLBACK ExtraRenderingOptions::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraRenderingOptions::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraRenderingOptions*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraRenderingOptions*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraRenderingOptions*)context)->ResetDialog (hWnd);
+			return;
 	//	case IDC_BUTTON2:
-	//		((ExtraTimerSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-	//		return 0;
+	//		((ExtraTimerSettings*)context)->OpenHelp (hWnd);
+	//		return;
 		case IDOK:
-			if (((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraRenderingOptions*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 //-----------------------------------------------------------------------------
@@ -1332,34 +1305,34 @@ char *ExtraPerformanceSettings::Description ()
 	return (char*)"This option can be used to modify Windows environment parameters that can improve the simulator performance.";
 }
 
-bool ExtraPerformanceSettings::clbkOpen (HWND hParent)
+bool ExtraPerformanceSettings::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_PERFORMANCE, DlgProc);
 	return true;
 }
 
-void ExtraPerformanceSettings::InitDialog (HWND hWnd)
+void ExtraPerformanceSettings::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraPerformanceSettings::ResetDialog (HWND hWnd)
+void ExtraPerformanceSettings::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraPerformanceSettings::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraPerformanceSettings::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
-	SendDlgItemMessage (hWnd, IDC_CHECK1, BM_SETCHECK, prm.bDisableSmoothFont ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_CHECK2, BM_SETCHECK, prm.bForceReenableSmoothFont ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hWnd, IDC_CHECK1, prm.bDisableSmoothFont);
+	SetCheck(hWnd, IDC_CHECK2, prm.bForceReenableSmoothFont);
 }
 
-bool ExtraPerformanceSettings::StoreParams (HWND hWnd)
+bool ExtraPerformanceSettings::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
-	cfg->CfgDebugPrm.bDisableSmoothFont = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED ? true : false);
-	cfg->CfgDebugPrm.bForceReenableSmoothFont = (SendDlgItemMessage (hWnd, IDC_CHECK2, BM_GETCHECK, 0, 0) == BST_CHECKED ? true : false);
+	cfg->CfgDebugPrm.bDisableSmoothFont = (IsChecked(hWnd, IDC_CHECK1) ? true : false);
+	cfg->CfgDebugPrm.bForceReenableSmoothFont = (IsChecked(hWnd, IDC_CHECK2) ? true : false);
 	if (cfg->CfgDebugPrm.bDisableSmoothFont)
 		g_pOrbiter->ActivateRoughType();
 	else
@@ -1367,34 +1340,32 @@ bool ExtraPerformanceSettings::StoreParams (HWND hWnd)
 	return true;
 }
 
-bool ExtraPerformanceSettings::OpenHelp (HWND hWnd)
+bool ExtraPerformanceSettings::OpenHelp (QWidget *hWnd)
 {
 	OpenDefaultHelp (hWnd, "extra_performance");
 	return true;
 }
 
-INT_PTR CALLBACK ExtraPerformanceSettings::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraPerformanceSettings::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraPerformanceSettings*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraPerformanceSettings*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraPerformanceSettings*)context)->ResetDialog (hWnd);
+			return;
 		case IDC_BUTTON2:
-			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((ExtraPerformanceSettings*)context)->OpenHelp (hWnd);
+			return;
 		case IDOK:
-			if (((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraPerformanceSettings*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 
@@ -1412,70 +1383,68 @@ char *ExtraLaunchpadOptions::Description ()
 	return (char*)"Configure the behaviour of the Orbiter Launchpad dialog.";
 }
 
-bool ExtraLaunchpadOptions::clbkOpen (HWND hParent)
+bool ExtraLaunchpadOptions::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_LAUNCHPAD, DlgProc);
 	return true;
 }
 
-void ExtraLaunchpadOptions::InitDialog (HWND hWnd)
+void ExtraLaunchpadOptions::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraLaunchpadOptions::ResetDialog (HWND hWnd)
+void ExtraLaunchpadOptions::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraLaunchpadOptions::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraLaunchpadOptions::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
 	int i;
 	for (i = 0; i < 3; i++)
-		SendDlgItemMessage (hWnd, IDC_RADIO1+i, BM_SETCHECK, prm.bHtmlScnDesc == i ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_CHECK1, BM_SETCHECK, prm.bSaveExitScreen ? BST_CHECKED : BST_UNCHECKED, 0);
+		SetCheck(hWnd, IDC_RADIO1+i, prm.bHtmlScnDesc == i);
+	SetCheck(hWnd, IDC_CHECK1, prm.bSaveExitScreen);
 }
 
-bool ExtraLaunchpadOptions::StoreParams (HWND hWnd)
+bool ExtraLaunchpadOptions::StoreParams (QWidget *hWnd)
 {
 	int i;
 	Config *cfg = pTab->Cfg();
-	cfg->CfgDebugPrm.bSaveExitScreen = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED ? true : false);
+	cfg->CfgDebugPrm.bSaveExitScreen = (IsChecked(hWnd, IDC_CHECK1) ? true : false);
 	for (i = 0; i < 3; i++) {
-		if (SendDlgItemMessage (hWnd, IDC_RADIO1+i, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+		if (IsChecked(hWnd, IDC_RADIO1+i)) {
 			break;
 		}
 	}
 	if (i != cfg->CfgDebugPrm.bHtmlScnDesc) {
 		cfg->CfgDebugPrm.bHtmlScnDesc = i;
-		MessageBox (NULL, "You need to restart Orbiter for these changes to take effect.", "Orbiter settings", MB_OK | MB_ICONEXCLAMATION);
+		QMessageBox::warning (NULL, "Orbiter settings", "You need to restart Orbiter for these changes to take effect.");
 	}
 	return true;
 }
 
-INT_PTR CALLBACK ExtraLaunchpadOptions::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraLaunchpadOptions::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraLaunchpadOptions*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraLaunchpadOptions*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraLaunchpadOptions*)context)->ResetDialog (hWnd);
+			return;
 		//case IDC_BUTTON2:
-		//	((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-		//	return 0;
+		//	((ExtraLaunchpadOptions*)context)->OpenHelp (hWnd);
+		//	return;
 		case IDOK:
-			if (((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraLaunchpadOptions*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 
@@ -1493,57 +1462,55 @@ char *ExtraLogfileOptions::Description ()
 	return (char*)"Configure options for log file output.";
 }
 
-bool ExtraLogfileOptions::clbkOpen (HWND hParent)
+bool ExtraLogfileOptions::clbkOpen (QWidget *hParent)
 {
 	OpenDialog (hParent, IDD_EXTRA_LOGFILE, DlgProc);
 	return true;
 }
 
-void ExtraLogfileOptions::InitDialog (HWND hWnd)
+void ExtraLogfileOptions::InitDialog (QWidget *hWnd)
 {
 	SetDialog (hWnd, pTab->Cfg()->CfgDebugPrm);
 }
 
-void ExtraLogfileOptions::ResetDialog (HWND hWnd)
+void ExtraLogfileOptions::ResetDialog (QWidget *hWnd)
 {
 	extern CFG_DEBUGPRM CfgDebugPrm_default;
 	SetDialog (hWnd, CfgDebugPrm_default);
 }
 
-void ExtraLogfileOptions::SetDialog (HWND hWnd, const CFG_DEBUGPRM &prm)
+void ExtraLogfileOptions::SetDialog (QWidget *hWnd, const CFG_DEBUGPRM &prm)
 {
-	SendDlgItemMessage (hWnd, IDC_CHECK1, BM_SETCHECK, prm.bVerboseLog ? BST_CHECKED : BST_UNCHECKED, 0);
+	SetCheck(hWnd, IDC_CHECK1, prm.bVerboseLog);
 }
 
-bool ExtraLogfileOptions::StoreParams (HWND hWnd)
+bool ExtraLogfileOptions::StoreParams (QWidget *hWnd)
 {
 	Config *cfg = pTab->Cfg();
-	cfg->CfgDebugPrm.bVerboseLog = (SendDlgItemMessage (hWnd, IDC_CHECK1, BM_GETCHECK, 0, 0) == BST_CHECKED ? true : false);
+	cfg->CfgDebugPrm.bVerboseLog = (IsChecked(hWnd, IDC_CHECK1) ? true : false);
 	return true;
 }
 
-INT_PTR CALLBACK ExtraLogfileOptions::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ExtraLogfileOptions::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((ExtraLogfileOptions*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((ExtraLogfileOptions*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_BUTTON1:
-			((ExtraLogfileOptions*)GetWindowLongPtr(hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
+			((ExtraLogfileOptions*)context)->ResetDialog (hWnd);
+			return;
 		//case IDC_BUTTON2:
-		//	((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-		//	return 0;
+		//	((ExtraLogfileOptions*)context)->OpenHelp (hWnd);
+		//	return;
 		case IDOK:
-			if (((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
+			if (((ExtraLogfileOptions*)context)->StoreParams (hWnd))
+				qobject_cast<QDialog*> (hWnd)->done (0);
 			break;
 		}
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
+	});
+	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 }
 
 //-----------------------------------------------------------------------------
@@ -1569,13 +1536,18 @@ char *LaunchpadItem::Description ()
 	return 0;
 }
 
-bool LaunchpadItem::OpenDialog (HINSTANCE hInst, HWND hLaunchpad, int resId, DLGPROC pDlg)
+bool LaunchpadItem::OpenDialog (void *hInst, QWidget *hLaunchpad, int resId, DLGINIT pDlg)
 {
-	DialogBoxParam (hInst, MAKEINTRESOURCE (resId), hLaunchpad, pDlg, (LPARAM)this);
+	// DialogBoxParam: modal, the item is the context of the set-up function
+	QDialog *dlg = qobject_cast<QDialog*> (oapiCreateResDialog (hInst, resId, hLaunchpad));
+	if (!dlg) return true;
+	if (pDlg) pDlg (dlg, this);
+	dlg->exec();
+	delete dlg;
 	return true;
 }
 
-bool LaunchpadItem::clbkOpen (HWND hLaunchpad)
+bool LaunchpadItem::clbkOpen (QWidget *hLaunchpad)
 {
 	return false;
 }

@@ -6,11 +6,29 @@
 #include "OrbiterResource.h"
 #include <QWidget>
 #include <QTabBar>
+#include <functional>
 
 class QToolButton;
 
 // Orbiter's own resource table, generated from Orbiter.rc
 const RESTABLE *OrbiterResources ();
+
+// LoadLibraryEx (LOAD_LIBRARY_AS_DATAFILE) + LoadString counterpart: reads a string of a module's STRINGTABLE
+// from the .oapi_strtab section of the module file, without loading (and so running) the module.
+// Returns the number of bytes copied (buf is zero-terminated), 0 if the file or the string is not found.
+int LoadModuleString (const char *modulefile, int id, char *buf, int buflen);
+
+// routes the events of one or more objects to a handler (window procedure hook); deleted with the first widget
+class EventHook: public QObject {
+public:
+	typedef std::function<bool (QObject *obj, QEvent *event)> Handler;
+	EventHook (QWidget *w, Handler h): QObject (w), handler (h) { w->installEventFilter (this); }
+	void Attach (QObject *o) { if (o) o->installEventFilter (this); }
+protected:
+	bool eventFilter (QObject *obj, QEvent *event) override { return handler (obj, event); }
+private:
+	Handler handler;
+};
 
 // msctls_updown32 counterpart: two arrow buttons stepping an integer position, optionally shown in a buddy control
 class ResUpDown: public QWidget {
@@ -25,6 +43,7 @@ public:
 	int Pos () const { return pos; }
 signals:
 	void valueChanged (int pos, int delta);
+	void deltaPos (int iDelta); // UDN_DELTAPOS: requested change of the position, sent before it is applied (also at a limit)
 protected:
 	void resizeEvent (QResizeEvent *event) override;
 private:

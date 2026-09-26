@@ -8,6 +8,7 @@
 #include "TabOptions.h"
 #include "Help.h"
 #include "resource.h"
+#include "ResDialog.h"
 
 //=============================================================================
 
@@ -49,9 +50,9 @@ void orbiter::OptionsTab::SetConfig(Config* cfg)
 
 //-----------------------------------------------------------------------------
 
-BOOL orbiter::OptionsTab::OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam)
+BOOL orbiter::OptionsTab::OnInitDialog(QWidget *hWnd)
 {
-	SetWindowHandles(hWnd, GetDlgItem(hWnd, IDC_OPT_SPLIT), GetDlgItem(hWnd, IDC_OPT_PAGELIST), GetDlgItem(hWnd, IDC_OPT_PAGECONTAINER));
+	SetWindowHandles(hWnd, oapiResDlgItem(hWnd, IDC_OPT_SPLIT), oapiResDlgItem(hWnd, IDC_OPT_PAGELIST), oapiResDlgItem(hWnd, IDC_OPT_PAGECONTAINER));
 	CreatePages();
 	ExpandAll();
 	return TRUE;
@@ -61,19 +62,11 @@ BOOL orbiter::OptionsTab::OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam)
 
 BOOL orbiter::OptionsTab::OnSize(int w, int h)
 {
-	SetWindowPos(GetDlgItem(hTab, IDC_OPT_SPLIT), HWND_BOTTOM, 0, 0, w, h,
-		SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOOWNERZORDER);
+	QWidget *split = oapiResDlgItem(hTab, IDC_OPT_SPLIT);
+	split->lower(); // HWND_BOTTOM
+	split->resize(w, h);
 
 	return FALSE;
 }
 
-// ----------------------------------------------------------------------
-
-BOOL orbiter::OptionsTab::OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh)
-{
-	if (idCtrl == IDC_OPT_PAGELIST) {
-		OnNotifyPagelist(pnmh);
-		return TRUE;
-	}
-	return FALSE;
-}
+// WM_NOTIFY of the page list is connected in SetWindowHandles

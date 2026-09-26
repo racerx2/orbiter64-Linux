@@ -254,6 +254,8 @@ class Parser:
         self.rcdir = rcdir
         self.dialogs = []
         self.images = []   # (kind, name, id, path)
+        self.strings = []  # (id, text) from STRINGTABLE
+        self.data = []     # (type, name, id, path) user-defined resource types with a file (TEXT, IMAGE, RCDATA, ...)
 
     def peek(self, k=0):
         return self.t[self.i+k] if self.i+k < len(self.t) else ('eof', None)
@@ -372,6 +374,9 @@ class Parser:
             if tok[0] == 'id' and tok[1] in ('LANGUAGE',):
                 self.get(); self.accept('op', ','); self.get()
                 continue
+            if tok == ('id', 'STRINGTABLE'):
+                self.stringtable()
+                continue
             if tok[0] not in ('id', 'num'):
                 continue
             rtype = self.peek()
@@ -390,6 +395,11 @@ class Parser:
                     rid, name = self.resource_id(tok)
                     path = rc_string(f)
                     self.images.append((kind, name, rid, path))
+            elif self.peek(1)[0] == 'str' and kind not in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO', 'MENU', 'MENUEX',
+                          'ACCELERATORS', 'AFX_DIALOG_LAYOUT', 'TOOLBAR', 'DLGINIT', 'HTML', 'CURSOR', 'FONT'):
+                self.get()
+                rid, name = self.resource_id(tok)
+                self.data.append((kind, name, rid, rc_string(self.get())))
             elif kind in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO', 'STRINGTABLE', 'MENU', 'MENUEX',
                           'ACCELERATORS', 'AFX_DIALOG_LAYOUT', 'RCDATA', 'TOOLBAR', 'DLGINIT', 'HTML'):
                 self.get()
@@ -401,6 +411,23 @@ class Parser:
                 if self.peek() in (('id', 'BEGIN'), ('op', '{')):
                     self.skip_block()
         return self
+
+    def stringtable(self):
+        # STRINGTABLE [attributes] BEGIN id [,] "text" ... END (the STRINGTABLE keyword is already consumed)
+        while self.peek()[0] != 'eof' and self.peek() not in (('id', 'BEGIN'), ('op', '{')):
+            self.get()
+        self.get()
+        while True:
+            tok = self.peek()
+            if tok[0] == 'eof' or tok in (('id', 'END'), ('op', '}')):
+                self.get()
+                return
+            sid = self.num()
+            self.accept('op', ',')
+            s = self.get()
+            if s[0] != 'str':
+                raise RcError('bad STRINGTABLE entry %r' % (s,))
+            self.strings.append((sid, rc_string(s)))
 
     def dialog(self, nametok, ex):
         rid, name = self.resource_id(nametok)
@@ -545,6 +572,34 @@ def emit(parser, rcpath, symbol, exe):
         imgrows.append('\t{%s, %d, %s, img_%d, %d},' % (rk, rid if rid is not None else -1, cstr(name), n, len(data)))
     if imgrows:
         out += ['', 'static const RESIMAGE images[] = {'] + imgrows + ['};', '']
+    datarows = []
+    for n, (rtype, name, rid, path) in enumerate(parser.data):
+        p = parser.pp.find(path.replace('\\', '/'), rcdir)
+        if not p:
+            raise RcError('resource file not found: %s' % path)
+        deps.append(p)
+        data = open(p, 'rb').read()
+        out.append('static const unsigned char data_%d[%d] = { // %s, zero-terminated' % (n, len(data) + 1, os.path.basename(p)))
+        for k in range(0, len(data), 32):
+            out.append('\t' + ','.join('0x%02x' % b for b in data[k:k+32]) + ',')
+        out.append('\t0x00')
+        out.append('};')
+        datarows.append('\t{%s, %d, %s, data_%d, %d},' % (c_escape(rtype), rid if rid is not None else -1, cstr(name), n, len(data)))
+    if datarows:
+        out += ['', 'static const RESDATA resdata[] = {'] + datarows + ['};', '']
+    strrows = ['\t{%d, %s},' % (sid, c_escape(s)) for sid, s in parser.strings]
+    if strrows:
+        out += ['', 'static const RESSTRING strings[] = {'] + strrows + ['};', '']
+        # the same strings in an ELF section of their own, readable from the file without loading the module
+        # (LOAD_LIBRARY_AS_DATAFILE): "OAPISTR1", then per string a little-endian u32 id, u32 length and the UTF-8 bytes
+        blob = bytearray(b'OAPISTR1')
+        for sid, s in parser.strings:
+            b = s.encode('utf-8')
+            blob += (sid & 0xFFFFFFFF).to_bytes(4, 'little') + len(b).to_bytes(4, 'little') + b
+        out.append('__attribute__((section(".oapi_strtab"), used)) static const unsigned char strtab[%d] = {' % len(blob))
+        for k in range(0, len(blob), 32):
+            out.append('\t' + ','.join('0x%02x' % x for x in blob[k:k+32]) + ',')
+        out += ['};', '']
     dlgrows = []
     for n, d in enumerate(parser.dialogs):
         if d['ctrls']:
@@ -564,7 +619,9 @@ def emit(parser, rcpath, symbol, exe):
         out += ['', 'static const RESDIALOG dialogs[] = {'] + dlgrows + ['};']
     out += ['', 'static const RESTABLE table = {',
             '\t%s, %s,' % ('sizeof(dialogs)/sizeof(dialogs[0])' if dlgrows else '0', 'dialogs' if dlgrows else 'nullptr'),
-            '\t%s, %s' % ('sizeof(images)/sizeof(images[0])' if imgrows else '0', 'images' if imgrows else 'nullptr'),
+            '\t%s, %s,' % ('sizeof(images)/sizeof(images[0])' if imgrows else '0', 'images' if imgrows else 'nullptr'),
+            '\t%s, %s,' % ('sizeof(resdata)/sizeof(resdata[0])' if datarows else '0', 'resdata' if datarows else 'nullptr'),
+            '\t%s, %s' % ('sizeof(strings)/sizeof(strings[0])' if strrows else '0', 'strings' if strrows else 'nullptr'),
             '};', '']
     if exe:
         out.append('const RESTABLE *%s ()' % symbol)

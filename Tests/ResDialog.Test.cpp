@@ -242,3 +242,32 @@ TEST_CASE("DlgCtrl switch and property list", "[resdialog][dlgctrl]")
 	REQUIRE(pl->verticalScrollBar()->maximum() == 0);
 	oapiUnregisterCustomControls (nullptr);
 }
+
+TEST_CASE("user-defined resources and string tables", "[resdialog]")
+{
+	App();
+	const RESDATA *txt = oapiFindResData (nullptr, "text", IDT_DISCLAIMER);
+	REQUIRE(txt);
+	REQUIRE(txt->size > 100);
+	REQUIRE(txt->data[txt->size] == 0);
+	const RESDATA *img = oapiFindResData (nullptr, "IMAGE", IDR_IMAGE1);
+	REQUIRE(img);
+	QImage splash;
+	REQUIRE(splash.loadFromData (img->data, img->size));
+	REQUIRE(!oapiFindResData (nullptr, "IMAGE", IDT_DISCLAIMER));
+	char buf[32];
+	REQUIRE(oapiLoadResString (nullptr, IDS_TABMODULE, buf, 32) == 7);
+	REQUIRE(std::string (buf) == "Modules");
+	REQUIRE(oapiLoadResString (nullptr, IDS_TABMODULE, buf, 4) == 3);
+	REQUIRE(std::string (buf) == "Mod");
+	REQUIRE(oapiLoadResString (nullptr, 99999, buf, 32) == 0);
+}
+
+TEST_CASE("module strings are read from the file without loading it", "[resdialog]")
+{
+	char buf[64];
+	REQUIRE(LoadModuleString ("/proc/self/exe", IDS_TABVISUAL, buf, 64) == 14);
+	REQUIRE(std::string (buf) == "Visual effects");
+	REQUIRE(LoadModuleString ("/proc/self/exe", 99999, buf, 64) == 0);
+	REQUIRE(LoadModuleString ("/nonexistent.so", IDS_TABVISUAL, buf, 64) == 0);
+}

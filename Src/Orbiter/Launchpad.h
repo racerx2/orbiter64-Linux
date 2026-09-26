@@ -4,9 +4,15 @@
 #ifndef __LAUNCHPAD_H
 #define __LAUNCHPAD_H
 
-#include <CommCtrl.h>
+#include "OrbiterPlatform.h"
 #include "OrbiterAPI.h"
 #include "Config.h"
+#include <vector>
+
+class QTreeWidgetItem;
+class QTimer;
+class QObject;
+class EventHook;
 
 //-----------------------------------------------------------------------------
 // Forward declarations
@@ -18,11 +24,8 @@ class BuiltinLaunchpadItem;
 //-----------------------------------------------------------------------------
 // Nonmember functions
 //-----------------------------------------------------------------------------
-RECT GetClientPos (HWND hWnd, HWND hChild);
-void SetClientPos (HWND hWnd, HWND hChild, RECT &r);
-
-INT_PTR CALLBACK AppDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK WaitPageProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+RECT GetClientPos (QWidget *hWnd, QWidget *hChild);
+void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r);
 
 namespace orbiter {
 
@@ -50,16 +53,14 @@ namespace orbiter {
 
 		inline bool Visible() const { return m_bVisible; }
 
-		bool ConsumeMessage(LPMSG msg);
-		// Consume message msg, if intended for the dialog,
-		// otherwise return false
+		// ConsumeMessage (IsDialogMessage) left out: Qt handles the dialog's keyboard navigation itself
 
-		const HWND GetWaitWindow() const { return hWait; }
+		QWidget *GetWaitWindow() const { return hWait; }
 
 		inline Orbiter* App() const { return pApp; }
 		inline Config* Cfg() const { return pCfg; }
 		LaunchpadTab* GetTab(UINT i) const;
-		HWND HTabContainer() const { return hTabContainer; }
+		QWidget *HTabContainer() const { return hTabContainer; }
 
 		void AddTab(LaunchpadTab* tab);
 		// Inserts a new tab into the list
@@ -67,7 +68,7 @@ namespace orbiter {
 		void EnableLaunchButton(bool enable) const;
 		// Enable/disable "Launch Orbiter" button
 
-		HTREEITEM RegisterExtraParam(LaunchpadItem* item, HTREEITEM parent = 0);
+		QTreeWidgetItem *RegisterExtraParam(LaunchpadItem* item, QTreeWidgetItem *parent = 0);
 		// Register an item in the "Extra" list. If parent=0, the item is registered
 		// as a root (top level) item. Otherwise it appears as a sub-item under
 		// the parent item.
@@ -75,7 +76,7 @@ namespace orbiter {
 		bool UnregisterExtraParam(LaunchpadItem* item);
 		// Unregister an item in the "Extra" list.
 
-		HTREEITEM FindExtraParam(const char* name, const HTREEITEM parent = 0);
+		QTreeWidgetItem *FindExtraParam(const char* name, QTreeWidgetItem *parent = 0);
 		// Return item 'name' below parent 'parent', or NULL if not found
 
 		void WriteExtraParams();
@@ -97,14 +98,15 @@ namespace orbiter {
 		long mem0;     // initial memory status
 
 	private:
-		HINSTANCE hInst;         // instance handle
-		HWND hDlg;               // dialog window handle
+		void *hInst;             // instance handle
+		QWidget *hDlg;           // dialog window handle
 		std::vector<LaunchpadTab*> TabList;
 		LaunchpadTab* CTab;      // current tab page
-		HWND hTabContainer;      // tab container window handle
-		HWND hWait;              // "wait" page
-		HBRUSH hDlgBrush;
-		HANDLE hShadowImg;
+		QWidget *hTabContainer;  // tab container window handle
+		QWidget *hWait;          // "wait" page
+		QBrush *hDlgBrush;
+		QImage *hShadowImg;
+		QTimer *timer;           // demo mode idle timer
 		Orbiter* pApp;           // application pointer
 		Config* pCfg;           // config pointer
 
@@ -114,26 +116,24 @@ namespace orbiter {
 		int SelectDemoScenario();
 		// Select an arbitrary scenario from the demo folder
 
-		void InitSize(HWND hWnd);
-		BOOL Resize(HWND hWnd, DWORD w, DWORD h, DWORD mode);
+		void InitSize(QWidget *hWnd);
+		BOOL Resize(QWidget *hWnd, DWORD w, DWORD h, DWORD mode);
 
-		void InitTabControl(HWND hWnd);
+		void InitTabControl(QWidget *hWnd);
 		// initialise the tabs
 
 		//void InitDevicePage (D3D7Enum_DeviceInfo *devlist, DWORD ndev, D3D7Enum_DeviceInfo *dev);
 		// Set dialog controls for device tab according to device list
 		// and current device dev
 
-		void SwitchTabPage(HWND hWnd, int pg);
+		void SwitchTabPage(QWidget *hWnd, int pg);
 		// display a new page
 
-		INT_PTR DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		INT_PTR WaitProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		// Dialog message callbacks
-
-		static INT_PTR CALLBACK s_DlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		friend INT_PTR CALLBACK ::WaitPageProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		friend LONG_PTR FAR PASCAL MsgProc_CopyrightFrame(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		void OnInitDialog(QWidget *hWnd);
+		void OnCommand(int id);
+		bool DlgProc(QObject *obj, QEvent *event);
+		void WaitProc(QWidget *hWnd);
+		// Dialog set-up and event callbacks (the dialog window and its owner-drawn controls)
 
 		RECT client0;          // initial client window size
 		RECT copyr0;           // initial copyright box size

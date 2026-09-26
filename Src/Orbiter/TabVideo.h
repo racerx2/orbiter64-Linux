@@ -22,22 +22,20 @@ namespace orbiter {
 
 		void Create();
 
-		BOOL OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 
-		void OnGraphicsClientLoaded(oapi::GraphicsClient* gc, const PSTR moduleName);
+		void OnGraphicsClientLoaded(oapi::GraphicsClient* gc, const char *moduleName);
 
 		void SetConfig(Config* cfg);
 
 		bool OpenHelp();
 
-		BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
 	protected:
-		void ShowInterface(HWND hTab, bool show);
+		void ShowInterface(QWidget *hTab, bool show);
 
-		void EnumerateClients(HWND hTab);
+		void EnumerateClients(QWidget *hTab);
 
-		void ScanDir(HWND hTab, const fs::path &dir);
+		void ScanDir(QWidget *hTab, const fs::path &dir);
 		// scan directory dir (relative to Orbiter root) for graphics clients
 		// and enter them in the combo box
 
@@ -45,7 +43,7 @@ namespace orbiter {
 
 		void SetInfoString(PCSTR str);
 
-		static INT_PTR CALLBACK InfoProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		static void InfoProc(QWidget *hWnd, const char *info);
 
 	private:
 		UINT idxClient;

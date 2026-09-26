@@ -4,7 +4,7 @@
 #ifndef __LPADTAB_H
 #define __LPADTAB_H
 
-#include <windows.h>
+#include "OrbiterPlatform.h"
 #include "Config.h"
 #include "Launchpad.h"
 
@@ -64,30 +64,28 @@ namespace orbiter {
 		virtual void Hide();
 		virtual void LaunchpadShowing(bool show) {}
 		inline bool IsActive() const { return bActive; }
-		inline HWND TabWnd() const { return hTab; }
-		inline HWND LaunchpadWnd() const { return pLp->hDlg; }
-		inline HINSTANCE AppInstance() const { return pLp->hInst; }
+		inline QWidget *TabWnd() const { return hTab; }
+		inline QWidget *LaunchpadWnd() const { return pLp->hDlg; }
+		inline void *AppInstance() const { return pLp->hInst; }
 
-		virtual BOOL OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam) { return FALSE; }
+		virtual BOOL OnInitDialog(QWidget *hWnd) { return FALSE; }
+		// WM_INITDIALOG: the tab connects its controls' signals here
 
 		virtual BOOL OnSize(int w, int h);
 		// by default, this re-centers the items if RegisterItemPositions has been called
 
-		virtual BOOL OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh) { return OnMessage(hDlg, WM_NOTIFY, (WPARAM)idCtrl, (LPARAM)pnmh); }
+		virtual BOOL OnMessage(QWidget *hWnd, QEvent *event) { return FALSE; }
+		// events of the tab window other than its size (true if handled)
 
-		virtual BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) { return FALSE; }
-
-		virtual INT_PTR TabProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		// generic message handler
+		virtual bool TabProc(QWidget *hWnd, QEvent *event);
+		// generic event handler
 
 	protected:
-		HWND CreateTab(int resid);
-
-		static INT_PTR CALLBACK TabProcHook(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		QWidget *CreateTab(int resid);
 
 		const LaunchpadDialog* pLp;
 		Config* pCfg;
-		HWND hTab;
+		QWidget *hTab;
 		RECT pos0;  // initial position in Launchpad dialog
 		bool bActive;
 

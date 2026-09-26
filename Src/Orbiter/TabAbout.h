@@ -20,10 +20,10 @@ namespace orbiter {
 		void Create();
 		bool OpenHelp();
 
-		BOOL OnMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+		BOOL OnInitDialog(QWidget *hWnd);
 
 	private:
-		static INT_PTR CALLBACK AboutProc(HWND, UINT, WPARAM, LPARAM);
+		static void AboutProc(QWidget *hWnd, int textId);
 	};
 
 }

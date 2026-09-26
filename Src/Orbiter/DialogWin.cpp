@@ -4,25 +4,38 @@
 #include "DialogWin.h"
 #include "DlgMgr.h"
 #include "OrbiterAPI.h"
+#include "OrbiterResource.h"
 #include "Orbiter.h"
-#include "Resource.h"
+#include "resource.h"
 #include "Log.h"
+#include <QKeyEvent>
+#include <QMoveEvent>
+#include <QPointer>
+#include <QResizeEvent>
+#include <QWidget>
+#include <QWindow>
 
 #define DLG_CAPTIONBUTTON (DLG_CAPTIONCLOSE|DLG_CAPTIONHELP)
 
 extern Orbiter *g_pOrbiter;
 
-static int x_sizeframe = GetSystemMetrics (SM_CXSIZEFRAME);
-static int y_sizeframe = GetSystemMetrics (SM_CYSIZEFRAME);
-static int x_fixedframe = GetSystemMetrics (SM_CXFIXEDFRAME);
-static int y_fixedframe = GetSystemMetrics (SM_CYFIXEDFRAME);
-
 DialogWin *DialogWin::dlg_create = 0;
+
+// routes the events of a dialog window to DialogWin::DlgProc (window procedure hook)
+class DialogEvents: public QObject {
+public:
+	DialogEvents (QWidget *hDlg): QObject (hDlg) { hDlg->installEventFilter (this); }
+	bool eventFilter (QObject *obj, QEvent *event) override
+	{
+		QWidget *w = qobject_cast<QWidget*> (obj);
+		return (w ? DialogWin::DlgProc (w, event) : false);
+	}
+};
 
 // ======================================================================
 
-DialogWin::DialogWin (HINSTANCE hInstance, HWND hParent, int resourceId,
-					  DLGPROC pDlg, DWORD flags, void *pContext)
+DialogWin::DialogWin (void *hInstance, QWindow *hParent, int resourceId,
+					  DLGINIT pDlg, DWORD flags, void *pContext)
 {
 	gc      = g_pOrbiter->GetGraphicsClient();
 	hInst   = hInstance;
@@ -32,7 +45,8 @@ DialogWin::DialogWin (HINSTANCE hInstance, HWND hParent, int resourceId,
 	hPrnt   = hParent;
 	hWnd    = NULL;
 	pos     = NULL;
-	dlgproc = (pDlg ? pDlg : DlgProc);
+	dlgproc = pDlg; // without a module function, OnInitDialog sets up the controls
+	events  = NULL;
 
 	memset (tbtn, 0, 5*sizeof(TitleBtn));
 	//int i = 0;
@@ -42,7 +56,7 @@ DialogWin::DialogWin (HINSTANCE hInstance, HWND hParent, int resourceId,
 
 // ======================================================================
 
-DialogWin::DialogWin (HINSTANCE hInstance, HWND hWindow, HWND hParent, DWORD flags)
+DialogWin::DialogWin (void *hInstance, QWidget *hWindow, QWindow *hParent, DWORD flags)
 {
 	gc      = g_pOrbiter->GetGraphicsClient();
 	hInst   = hInstance;
@@ -51,7 +65,9 @@ DialogWin::DialogWin (HINSTANCE hInstance, HWND hWindow, HWND hParent, DWORD fla
 	context = 0;
 	hWnd    = hWindow;
 	hPrnt   = hParent;
+	pos     = NULL;
 	dlgproc = NULL;
+	events  = NULL;
 
 	memset (tbtn, 0, 5*sizeof(TitleBtn));
 	//int i = 0;
@@ -64,14 +80,17 @@ DialogWin::DialogWin (HINSTANCE hInstance, HWND hWindow, HWND hParent, DWORD fla
 DialogWin::~DialogWin ()
 {
 	if (hWnd) {
-		if (!DestroyWindow(hWnd))
-			LOGOUT_LASTERR();
+		// DestroyWindow; deferred, since the request may come from a signal of one of the dialog's own controls
+		if (events) hWnd->removeEventFilter (events);
+		hWnd->setProperty ("DialogWin", QVariant());
+		hWnd->hide();
+		hWnd->deleteLater();
 	}
 }
 
 // ======================================================================
 
-HWND DialogWin::OpenWindow ()
+QWidget *DialogWin::OpenWindow ()
 {
 	bool newwin = false;
 	dlg_create = this; // is this still necessary ?
@@ -79,22 +98,35 @@ HWND DialogWin::OpenWindow ()
 	if (gc) gc->clbkPreOpenPopup();
 
 	if (!hWnd) { // otherwise window exists already
-		hWnd = CreateDialogParam (hInst, MAKEINTRESOURCE(resId), hPrnt, dlgproc,
-			(LPARAM)context);
+		hWnd = oapiCreateResDialog (hInst, resId, NULL);
+		if (!hWnd) {
+			LOGOUT_ERR ("Dialog resource %d not found", resId);
+			dlg_create = 0;
+			return NULL;
+		}
 		newwin = true;
 	}
-	SetWindowLongPtr (hWnd, DWLP_USER, (LONG_PTR)this);
+	hWnd->setProperty ("DialogWin", QVariant::fromValue ((void*)this)); // DWLP_USER
+	if (!events) events = new DialogEvents (hWnd);
+	if (newwin) {
+		if (hPrnt) { // owned by the render window
+			hWnd->winId();
+			if (hWnd->windowHandle()) hWnd->windowHandle()->setTransientParent (hPrnt);
+		}
+		// WM_INITDIALOG
+		if (dlgproc) dlgproc (hWnd, context);
+		else OnInitDialog (hWnd, context);
+	}
 	if (newwin && pos && pos->right-pos->left) {
-		if (GetWindowLongPtr (hWnd, GWL_STYLE) & WS_SIZEBOX)
-			SetWindowPos (hWnd, NULL, pos->left, pos->top, pos->right-pos->left, pos->bottom-pos->top, SWP_NOZORDER);
+		if (hWnd->minimumSize() != hWnd->maximumSize()) // WS_SIZEBOX
+			hWnd->setGeometry (pos->left, pos->top, pos->right-pos->left, pos->bottom-pos->top);
 		else
-			SetWindowPos (hWnd, NULL, pos->left, pos->top, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+			hWnd->move (pos->left, pos->top);
 	}
 
-	RECT r;
-	ShowWindow (hWnd, SW_SHOWNOACTIVATE);
-	GetWindowRect (hWnd, &r);
-	psize = r.bottom - r.top;
+	hWnd->setAttribute (Qt::WA_ShowWithoutActivating); // SW_SHOWNOACTIVATE
+	hWnd->show();
+	psize = hWnd->frameGeometry().height();
 
 	dlg_create = 0;
 
@@ -109,53 +141,38 @@ void DialogWin::Update ()
 
 // ======================================================================
 
-INT_PTR CALLBACK DialogWin::DlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool DialogWin::DlgProc (QWidget *hDlg, QEvent *event)
 {
-	BOOL res = MSG_DEFAULT;
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		res = GetDialogWin (hDlg)->OnInitDialog (hDlg, wParam, lParam);
+	DialogWin *dlg = GetDialogWin (hDlg);
+	if (!dlg) return false;
+	switch (event->type()) {
+	case QEvent::Move: {
+		QPoint p = static_cast<QMoveEvent*> (event)->pos();
+		dlg->OnMove (hDlg, p.x(), p.y());
+		} break;
+	case QEvent::Resize: {
+		QSize s = static_cast<QResizeEvent*> (event)->size();
+		dlg->OnSize (hDlg, s.width(), s.height());
+		} break;
+	case QEvent::Close: // title bar close button: WM_COMMAND IDCANCEL
+		event->ignore();
+		dlg->OnCommand (hDlg, IDCANCEL, 0, NULL);
+		return true;
+	case QEvent::KeyPress:
+		if (static_cast<QKeyEvent*> (event)->key() == Qt::Key_Escape) { // IDCANCEL from the keyboard
+			dlg->OnCommand (hDlg, IDCANCEL, 0, NULL);
+			return true;
+		}
 		break;
-	case WM_MOVE:
-		res = GetDialogWin (hDlg)->OnMove (hDlg, LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_SIZE:
-		res = GetDialogWin (hDlg)->OnSize (hDlg, wParam, LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_COMMAND:
-		res = GetDialogWin (hDlg)->OnCommand (hDlg, LOWORD(wParam), HIWORD(wParam), (HWND)lParam);
-		break;
-	case WM_HSCROLL:
-		res = GetDialogWin (hDlg)->OnHScroll (hDlg, LOWORD(wParam), HIWORD(wParam), (HWND)lParam);
-		break;
-	case WM_VSCROLL:
-		res = GetDialogWin (hDlg)->OnVScroll(hDlg, LOWORD(wParam), HIWORD(wParam), (HWND)lParam);
-		break;
-	case WM_NOTIFY:
-		res = GetDialogWin (hDlg)->OnNotify (hDlg, (int)wParam, (LPNMHDR)lParam);
-		break;
-	case WM_MOUSEWHEEL:
-		res = GetDialogWin (hDlg)->OnMouseWheel (hDlg, LOWORD(wParam), HIWORD(wParam), LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_LBUTTONDBLCLK:
-		res = GetDialogWin (hDlg)->OnLButtonDblClk (hDlg, wParam, LOWORD(lParam), HIWORD(lParam));
-		break;
-	case WM_APP:
-		res = GetDialogWin (hDlg)->OnApp (hDlg, wParam, lParam);
-		break;
-	case WM_USER+1:
-		res = GetDialogWin (hDlg)->OnUser1 (hDlg, wParam, lParam);
-		break;
-	case WM_USERMESSAGE:
-		res = GetDialogWin (hDlg)->OnUserMessage (hDlg, wParam, lParam);
+	default:
 		break;
 	}
-	return (res != MSG_DEFAULT ? res : OrbiterDefDialogProc (hDlg, uMsg, wParam, lParam));
+	return OrbiterDefDialogProc (hDlg, event);
 }
 
 // ======================================================================
 
-BOOL DialogWin::OnCommand (HWND hDlg, WORD id, WORD code, HWND hControl)
+BOOL DialogWin::OnCommand (QWidget *hDlg, WORD id, WORD code, QWidget *hControl)
 {
 	switch (id) {
 	case IDCANCEL:
@@ -167,17 +184,23 @@ BOOL DialogWin::OnCommand (HWND hDlg, WORD id, WORD code, HWND hControl)
 
 // ======================================================================
 
-int DialogWin::OnSize (HWND hWnd, WPARAM wParam, int w, int h)
+static void WindowRect (QWidget *hWnd, RECT *r)
 {
-	if (pos) GetWindowRect (hWnd, pos);
+	QRect g = hWnd->frameGeometry();
+	r->left = g.left(), r->top = g.top(), r->right = g.left()+g.width(), r->bottom = g.top()+g.height();
+}
+
+int DialogWin::OnSize (QWidget *hWnd, int w, int h)
+{
+	if (pos) WindowRect (hWnd, pos);
 	return 0;
 }
 
 // ======================================================================
 
-int DialogWin::OnMove (HWND hWnd, int x, int y)
+int DialogWin::OnMove (QWidget *hWnd, int x, int y)
 {
-	if (pos) GetWindowRect (hWnd, pos);
+	if (pos) WindowRect (hWnd, pos);
 	return 0;
 }
 
@@ -185,31 +208,38 @@ int DialogWin::OnMove (HWND hWnd, int x, int y)
 
 void DialogWin::Message (DWORD msg, void *data)
 {
-	PostMessage (hWnd, WM_USERMESSAGE, msg, (LPARAM)data);
+	// PostMessage: delivered from the event loop, if the dialog is still open then
+	QPointer<QWidget> w (hWnd);
+	QMetaObject::invokeMethod (hWnd, [w, msg, data]() {
+		DialogWin *dlg = (w ? (DialogWin*)w->property ("DialogWin").value<void*>() : NULL);
+		if (dlg) dlg->OnUserMessage (w, msg, data);
+	}, Qt::QueuedConnection);
 }
 
 // ======================================================================
 
 void DialogWin::ToggleShrink ()
 {
-	RECT r;
-	GetWindowRect (hWnd, &r);
-	int hw = r.bottom - r.top;
-	int h0 = GetSystemMetrics (SM_CYMIN);
+	QRect r = hWnd->geometry();
+	int hw = r.height();
+	int h0 = 1; // SM_CYMIN: no client area left below the title bar
+	bool fixed = (hWnd->minimumHeight() == hWnd->maximumHeight());
 	if (hw == h0) { // restore window
 		hw = psize;
-		SetWindowPos (hWnd, 0, r.left, r.top, r.right-r.left, hw, SWP_SHOWWINDOW);
 	} else {
 		psize = hw;
-		SetWindowPos (hWnd, 0, r.left, r.top, r.right-r.left, h0, SWP_SHOWWINDOW);
+		hw = h0;
 	}
+	if (fixed) hWnd->setFixedHeight (hw);
+	else hWnd->resize (r.width(), hw);
+	hWnd->show();
 }
 
 // ======================================================================
 
-DialogWin *DialogWin::GetDialogWin (HWND hDlg)
+DialogWin *DialogWin::GetDialogWin (QWidget *hDlg)
 {
-	DialogWin *dlg = (DialogWin*)GetWindowLongPtr (hDlg, DWLP_USER);
+	DialogWin *dlg = (hDlg ? (DialogWin*)hDlg->property ("DialogWin").value<void*>() : NULL);
 	if (!dlg)
 		dlg = dlg_create;
 	return dlg;
@@ -217,7 +247,7 @@ DialogWin *DialogWin::GetDialogWin (HWND hDlg)
 
 // ======================================================================
 
-bool DialogWin::AddTitleButton (DWORD msg, HBITMAP hBmp, DWORD flag)
+bool DialogWin::AddTitleButton (DWORD msg, QImage *hBmp, DWORD flag)
 {
 	for (int i = 0; i < 5; i++) {
 		if (tbtn[i].DlgMsg == 0) {
@@ -251,7 +281,13 @@ bool DialogWin::SetTitleButtonState (DWORD msg, DWORD state)
 				if (oldstate != state) {
 					tbtn[i].flag ^= 0x80000000;
 					PaintTitleButtons ();
-					PostMessage (hWnd, WM_COMMAND, MAKELONG (tbtn[i].DlgMsg, state), 0);
+					// PostMessage WM_COMMAND
+					QPointer<QWidget> w (hWnd);
+					WORD id = (WORD)tbtn[i].DlgMsg;
+					QMetaObject::invokeMethod (hWnd, [w, id, state]() {
+						DialogWin *dlg = (w ? (DialogWin*)w->property ("DialogWin").value<void*>() : NULL);
+						if (dlg) dlg->OnCommand (w, id, (WORD)state, NULL);
+					}, Qt::QueuedConnection);
 					return true;
 				}
 			}
@@ -264,76 +300,23 @@ bool DialogWin::SetTitleButtonState (DWORD msg, DWORD state)
 
 void DialogWin::PaintTitleButtons ()
 {
+	// The title bar belongs to the window manager, so the buttons are not drawn into it
+	// (upstream's WM_NCPAINT hook that painted them is disabled as well)
 	if (!(flag & DLG_CAPTIONBUTTON)) return;
-	RECT r;
-	int x0, y0;
-	GetWindowRect (hWnd, &r);
-	if (GetWindowLongPtr (hWnd, GWL_STYLE) & WS_THICKFRAME) {
-		x0 = -y_sizeframe,  y0 = x_sizeframe;
-	} else {
-		x0 = -y_fixedframe, y0 = x_fixedframe;
-	}
-	x0 += r.right-r.left-15;
-	HDC hDC = GetWindowDC (hWnd);
-	HDC hDCsrc = CreateCompatibleDC (hDC);
-	HBITMAP hBmp = (HBITMAP)LoadImage (g_pOrbiter->GetInstance(), MAKEINTRESOURCE(IDB_DEFBUTTON), IMAGE_BITMAP, 15, 30, 0);
-	SelectObject (hDCsrc, hBmp);
-	int i = 0;
-	if (flag & DLG_CAPTIONCLOSE) {
-		BOOL res = BitBlt (hDC, x0, y0, 15, 15, hDCsrc, 0, 0, SRCCOPY);
-		x0 -= 16;
-		i++;
-	}
-	if (flag & DLG_CAPTIONHELP) {
-		BitBlt (hDC, x0, y0, 15, 15, hDCsrc, 0, 15, SRCCOPY);
-		x0 -= 16;
-		i++;
-	}
-	for (; i < 5; i++) {
-		if (tbtn[i].DlgMsg && tbtn[i].hBmp) {
-			SelectObject (hDCsrc, tbtn[i].hBmp);
-			BitBlt (hDC, x0, y0, 15, 15, hDCsrc, 0, tbtn[i].flag & 0x80000000 ? 15:0, SRCCOPY);
-			x0 -= 16;
-		}
-	}
-	DeleteDC (hDCsrc);
-	DeleteObject (hBmp);
-	ReleaseDC (hWnd, hDC);
 }
 
 // ======================================================================
 
-bool DialogWin::CheckTitleButtons (const POINTS &pt)
+bool DialogWin::CheckTitleButtons (const POINT &pt)
 {
+	// no title bar buttons are drawn (see PaintTitleButtons), so none can be hit
 	if (!(flag & DLG_CAPTIONBUTTON)) return false;
-
-	RECT r;
-	GetWindowRect (hWnd, &r);
-	int xm = pt.x-r.left;
-	int ym = pt.y-r.top;
-	int x0, y0;
-	if (GetWindowLongPtr (hWnd, GWL_STYLE) & WS_THICKFRAME) {
-		x0 = y_sizeframe,  y0 = x_sizeframe;
-	} else {
-		x0 = y_fixedframe, y0 = x_fixedframe;
-	}
-	if (ym < y0 || ym >= y0+15) return false;
-	int nbt = (r.right-pt.x-x0)/16;
-	if (nbt >= 0 && nbt < 5 && tbtn[nbt].DlgMsg) {
-		WORD state = 0;
-		if (tbtn[nbt].flag & DLG_CB_TWOSTATE) {
-			tbtn[nbt].flag ^= 0x80000000;
-			state = (tbtn[nbt].flag & 0x80000000 ? 1:0);
-			PaintTitleButtons ();
-		}
-		PostMessage (hWnd, WM_COMMAND, MAKELONG (tbtn[nbt].DlgMsg, state), 0);
-		return true;
-	} else return false;
+	return false;
 }
 
 // ======================================================================
 
-bool DialogWin::Create_AddTitleButton (DWORD msg, HBITMAP hBmp, DWORD flag)
+bool DialogWin::Create_AddTitleButton (DWORD msg, QImage *hBmp, DWORD flag)
 {
 	if (dlg_create) return dlg_create->AddTitleButton (msg, hBmp, flag);
 	else            return false;

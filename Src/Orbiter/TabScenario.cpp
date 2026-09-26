@@ -5,9 +5,9 @@
 // ScenarioTab class
 //=============================================================================
 
-#include <windows.h>
-#include <direct.h>
+#include <unistd.h>
 #include <string>
+#include <strings.h>
 #include "Orbiter.h"
 #include "TabScenario.h"
 #include "Launchpad.h"
@@ -15,31 +15,53 @@
 #include "Help.h"
 #include "htmlctrl.h"
 #include "resource.h"
+#include "ResDialog.h"
+#include "Util.h"
+#include <QCheckBox>
+#include <QDialog>
+#include <QFileSystemWatcher>
+#include <QIcon>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPixmap>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QTreeWidget>
 
 using namespace std;
 
-extern const TCHAR* CurrentScenario;
+extern const char* CurrentScenario;
 const char *htmlstyle = "<style type=""text/css"">body{font-family:Arial;font-size:12px} p{margin-top:0;margin-bottom:0.5em} h1{font-size:150%;font-weight:normal;margin-bottom:0.5em;color:#000080;background-color:#E6E6FF;padding:0.1em}</style>";
 
 //-----------------------------------------------------------------------------
 
+static QPixmap TreeIcon (void *hInst, int resId)
+{
+	QImage *img = oapiLoadResImage (hInst, resId);
+	QPixmap pm = (img ? QPixmap::fromImage (*img) : QPixmap());
+	delete img;
+	return pm;
+}
+
 orbiter::ScenarioTab::ScenarioTab (const LaunchpadDialog *lp): LaunchpadTab (lp)
 {
-	imglist = ImageList_Create (16, 16, ILC_COLOR8, 4, 0);
-	treeicon_idx[0] = ImageList_Add (imglist, LoadBitmap (AppInstance(), MAKEINTRESOURCE (IDB_TREEICON_FOLDER1)), 0);
-	treeicon_idx[1] = ImageList_Add (imglist, LoadBitmap (AppInstance(), MAKEINTRESOURCE (IDB_TREEICON_FOLDER2)), 0);
-	treeicon_idx[2] = ImageList_Add (imglist, LoadBitmap (AppInstance(), MAKEINTRESOURCE (IDB_TREEICON_SCN1)), 0);
-	treeicon_idx[3] = ImageList_Add (imglist, LoadBitmap (AppInstance(), MAKEINTRESOURCE (IDB_TREEICON_SCN2)), 0);
+	// folders show the same image when selected; scenarios switch to their selected image
+	treeicon[0] = new QIcon (TreeIcon (AppInstance(), IDB_TREEICON_FOLDER1));
+	treeicon[1] = new QIcon (TreeIcon (AppInstance(), IDB_TREEICON_SCN1));
+	treeicon[1]->addPixmap (TreeIcon (AppInstance(), IDB_TREEICON_SCN2), QIcon::Selected);
 	scnhelp[0] = '\0';
 	htmldesc = pLp->App()->UseHtmlInline();
+	hWatch = NULL;
 }
 
 //-----------------------------------------------------------------------------
 
 orbiter::ScenarioTab::~ScenarioTab ()
 {
-	ImageList_Destroy (imglist);
-	TerminateThread (hThread, 0);
+	delete treeicon[0];
+	delete treeicon[1];
+	// the watcher belongs to the tab window
 }
 
 //-----------------------------------------------------------------------------
@@ -49,45 +71,47 @@ void orbiter::ScenarioTab::Create ()
 	hTab = CreateTab (IDD_PAGE_SCN);
 
 	RefreshList(false);
-	SendDlgItemMessage (hTab, IDC_SCN_LIST, TVM_SETIMAGELIST, (WPARAM)TVSIL_NORMAL, (LPARAM)imglist);
+	DlgItem<QTreeWidget> (hTab, IDC_SCN_LIST)->setIconSize (QSize (16, 16)); // TVM_SETIMAGELIST
 
-	r_list0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_LIST)); // REMOVE!
-	r_desc0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_HTML)); // REMOVE!
-	r_pane  = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_SPLIT1));
-	r_save0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_SAVE));
-	r_clear0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_DELQS));
-	r_info0  = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_INFO));
-	r_pause0 = GetClientPos (hTab, GetDlgItem (hTab, IDC_SCN_PAUSED));
+	r_list0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_LIST)); // REMOVE!
+	r_desc0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_HTML)); // REMOVE!
+	r_pane  = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_SPLIT1));
+	r_save0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_SAVE));
+	r_clear0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_DELQS));
+	r_info0  = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_INFO));
+	r_pause0 = GetClientPos (hTab, oapiResDlgItem (hTab, IDC_SCN_PAUSED));
 
 	if (pLp->App()->UseHtmlInline()) {
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_DESC), SW_HIDE);
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_HTML), SW_SHOW);
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_INFO), SW_HIDE);
+		oapiResDlgItem (hTab, IDC_SCN_DESC)->hide();
+		oapiResDlgItem (hTab, IDC_SCN_HTML)->show();
+		oapiResDlgItem (hTab, IDC_SCN_INFO)->hide();
 		infoId = IDC_SCN_HTML;
 	} else {
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_HTML), SW_HIDE);
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_DESC), SW_SHOW);
-		ShowWindow (GetDlgItem (hTab, IDC_SCN_INFO), SW_SHOW);
+		oapiResDlgItem (hTab, IDC_SCN_HTML)->hide();
+		oapiResDlgItem (hTab, IDC_SCN_DESC)->show();
+		oapiResDlgItem (hTab, IDC_SCN_INFO)->show();
 		infoId = IDC_SCN_DESC;
 	}
 
-	splitListDesc.SetHwnd (GetDlgItem (hTab, IDC_SCN_SPLIT1), GetDlgItem (hTab, IDC_SCN_LIST), GetDlgItem (hTab, infoId));
+	splitListDesc.SetHwnd (oapiResDlgItem (hTab, IDC_SCN_SPLIT1), oapiResDlgItem (hTab, IDC_SCN_LIST), oapiResDlgItem (hTab, infoId));
 
-	// create a thread to monitor changes to the scenario list
-	hThread = CreateThread (NULL, NULL, threadWatchScnList, this, NULL, NULL);
+	// create a watcher to monitor changes to the scenario list
+	hWatch = new QFileSystemWatcher (hTab);
+	QObject::connect (hWatch, &QFileSystemWatcher::directoryChanged, hTab, [this]() {
+		RefreshList (true);
+		WatchScnList ();
+	});
+	WatchScnList ();
 }
 
 //-----------------------------------------------------------------------------
 
 void orbiter::ScenarioTab::GetConfig (const Config *cfg)
 {
-	SendDlgItemMessage (hTab, IDC_SCN_PAUSED, BM_SETCHECK,
-		cfg->CfgLogicPrm.bStartPaused ? BST_CHECKED : BST_UNCHECKED, 0);
+	DlgItem<QCheckBox> (hTab, IDC_SCN_PAUSED)->setChecked (cfg->CfgLogicPrm.bStartPaused);
 	int listw = cfg->CfgWindowPos.LaunchpadScnListWidth;
 	if (!listw) {
-		RECT r;
-		GetClientRect (GetDlgItem (hTab, IDC_SCN_LIST), &r);
-		listw = r.right-r.left;
+		listw = oapiResDlgItem (hTab, IDC_SCN_LIST)->width();
 	}
 	splitListDesc.SetStaticPane (SplitterCtrl::PANE1, listw);
 }
@@ -96,7 +120,7 @@ void orbiter::ScenarioTab::GetConfig (const Config *cfg)
 
 void orbiter::ScenarioTab::SetConfig (Config *cfg)
 {
-	cfg->CfgLogicPrm.bStartPaused = (SendDlgItemMessage (hTab, IDC_SCN_PAUSED, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	cfg->CfgLogicPrm.bStartPaused = DlgItem<QCheckBox> (hTab, IDC_SCN_PAUSED)->isChecked();
 	cfg->CfgWindowPos.LaunchpadScnListWidth = splitListDesc.GetPaneWidth (SplitterCtrl::PANE1);
 }
 
@@ -137,65 +161,42 @@ BOOL orbiter::ScenarioTab::OnSize (int w, int h)
 	int xb2 = r_save0.left+wb1+bg;
 	int xb3 = xr+wr-wb3;
 
-	SetWindowPos (GetDlgItem (hTab, IDC_SCN_SPLIT1), NULL,
-		0, 0, w0+dw, h0+dh,
-		SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_SCN_SAVE), NULL,
-		r_save0.left, r_save0.top+dh, wb1, hb,
-		SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_SCN_DELQS), NULL,
-		xb2, r_clear0.top+dh, wb2, hb,
-		SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_SCN_INFO), NULL,
-		xb3, r_info0.top+dh, wb3, hb,
-		SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOZORDER);
-	SetWindowPos (GetDlgItem (hTab, IDC_SCN_PAUSED), NULL,
-		r_pause0.left+dw, r_pause0.top, 0, 0,
-		SWP_NOACTIVATE|SWP_NOSIZE|SWP_NOOWNERZORDER|SWP_NOZORDER|SWP_NOCOPYBITS);
+	oapiResDlgItem (hTab, IDC_SCN_SPLIT1)->resize (w0+dw, h0+dh);
+	oapiResDlgItem (hTab, IDC_SCN_SAVE)->setGeometry (r_save0.left, r_save0.top+dh, wb1, hb);
+	oapiResDlgItem (hTab, IDC_SCN_DELQS)->setGeometry (xb2, r_clear0.top+dh, wb2, hb);
+	oapiResDlgItem (hTab, IDC_SCN_INFO)->setGeometry (xb3, r_info0.top+dh, wb3, hb);
+	oapiResDlgItem (hTab, IDC_SCN_PAUSED)->move (r_pause0.left+dw, r_pause0.top);
 
-	return NULL;
-}
-
-//-----------------------------------------------------------------------------
-
-BOOL orbiter::ScenarioTab::OnNotify(HWND hDlg, int idCtrl, LPNMHDR pnmh)
-{
-	if (idCtrl == IDC_SCN_LIST) {
-		NM_TREEVIEW* pnmtv = (NM_TREEVIEW FAR*)pnmh;
-		switch (pnmtv->hdr.code) {
-		case TVN_SELCHANGED:
-			ScenarioChanged();
-			return TRUE;
-		case NM_DBLCLK:
-			PostMessage(LaunchpadWnd(), WM_COMMAND, IDLAUNCH, 0);
-			return TRUE;
-		}
-	}
 	return FALSE;
 }
 
 //-----------------------------------------------------------------------------
 
-BOOL orbiter::ScenarioTab::OnMessage (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+BOOL orbiter::ScenarioTab::OnInitDialog (QWidget *hWnd)
 {
-	NM_TREEVIEW *pnmtv;
+	// WM_NOTIFY
+	QTreeWidget *hTree = DlgItem<QTreeWidget> (hWnd, IDC_SCN_LIST);
+	QObject::connect (hTree, &QTreeWidget::currentItemChanged, hWnd, [this]() {
+		ScenarioChanged(); // TVN_SELCHANGED
+	});
+	QObject::connect (hTree, &QTreeWidget::itemDoubleClicked, hWnd, [this]() {
+		// NM_DBLCLK: WM_COMMAND IDLAUNCH to the Launchpad
+		QMetaObject::invokeMethod (DlgItem<QPushButton> (LaunchpadWnd(), IDLAUNCH), "click", Qt::QueuedConnection);
+	});
 
-	switch (uMsg) {
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
-		case IDC_SCN_SAVE:
-			SaveCurScenario();
-			return TRUE;
-		case IDC_SCN_DELQS:
-			ClearQSFolder();
-			return TRUE;
-		case IDC_SCN_INFO:
-			OpenScenarioHelp();
-			return TRUE;
-		}
-		break;
-	}
+	// WM_COMMAND
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDC_SCN_SAVE), &QPushButton::clicked, hWnd, [this]() { SaveCurScenario(); });
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDC_SCN_DELQS), &QPushButton::clicked, hWnd, [this]() { ClearQSFolder(); });
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDC_SCN_INFO), &QPushButton::clicked, hWnd, [this]() { OpenScenarioHelp(); });
 	return FALSE;
+}
+
+// sibling after an item (TVGN_NEXT)
+static QTreeWidgetItem *NextSibling (QTreeWidget *hTree, QTreeWidgetItem *it)
+{
+	QTreeWidgetItem *parent = it->parent();
+	int idx = (parent ? parent->indexOfChild (it) : hTree->indexOfTopLevelItem (it)) + 1;
+	return (parent ? parent->child (idx) : hTree->topLevelItem (idx));
 }
 
 //-----------------------------------------------------------------------------
@@ -203,29 +204,29 @@ BOOL orbiter::ScenarioTab::OnMessage (HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 void orbiter::ScenarioTab::RefreshList (bool preserveSelection)
 {
 	if (Launchpad()->Visible()) {
-		char cbuf[256], ch[256], * pc, * c;
-		GetSelScenario(cbuf, 256);
-		SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_SELECTITEM, TVGN_CARET, NULL);
-		// remove selection to avoid repeated TVN_SELCHANGED messages while the list is cleared
-		//DWORD styles = GetWindowLongPtr(GetDlgItem(hTab, IDC_SCN_LIST), GWL_STYLE);
-		SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
-		//SetWindowLongPtr(GetDlgItem(hTab, IDC_SCN_LIST), GWL_STYLE, styles);
-		ScanDirectory(pCfg->CfgDirPrm.ScnDir, NULL);
+		char cbuf[256], * pc, * c;
+		QTreeWidget *hTree = DlgItem<QTreeWidget>(hTab, IDC_SCN_LIST);
+		if (!GetSelScenario(cbuf, 256)) cbuf[0] = '\0';
+		{
+			// remove selection to avoid repeated TVN_SELCHANGED messages while the list is cleared
+			QSignalBlocker block(hTree);
+			hTree->setCurrentItem(NULL);
+			hTree->clear();
+		}
+		ScanDirectory(oapiResolvePath(pCfg->CfgDirPrm.ScnDir), NULL);
 
-		HTREEITEM hti = TreeView_GetRoot(GetDlgItem(hTab, IDC_SCN_LIST));
+		QTreeWidgetItem *hti = hTree->topLevelItem(0);
 		if (preserveSelection) { // find the previous selection in the newly created list and re-select it
 			pc = cbuf;
 			while (*pc) {
-				for (c = pc; *c && *c != '\\'; c++);
-				bool isdir = (*c == '\\');
+				for (c = pc; *c && *c != '/'; c++);
+				bool isdir = (*c == '/');
 				*c = '\0';
-				TV_ITEM tvi = { TVIF_HANDLE | TVIF_TEXT, 0, 0, 0, ch, 256 };
-				for (tvi.hItem = hti; tvi.hItem; tvi.hItem = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)tvi.hItem)) {
-					SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETITEM, 0, (LPARAM)&tvi);
-					if (!strcmp(tvi.pszText, pc)) {
-						hti = tvi.hItem;
+				for (QTreeWidgetItem *it = hti; it; it = NextSibling(hTree, it)) {
+					if (!strcmp(it->text(0).toUtf8().constData(), pc)) {
+						hti = it;
 						if (isdir)
-							hti = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hti);
+							hti = hti->child(0);
 						break;
 					}
 				}
@@ -234,17 +235,32 @@ void orbiter::ScenarioTab::RefreshList (bool preserveSelection)
 			}
 		}
 		else { // Select the "current" scenario
-			TV_ITEM tvi = { TVIF_HANDLE | TVIF_TEXT, 0, 0, 0, ch, 256 };
-			for (tvi.hItem = hti; tvi.hItem; tvi.hItem = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)tvi.hItem)) {
-				SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETITEM, 0, (LPARAM)&tvi);
-				if (!strcmp(tvi.pszText, CurrentScenario)) {
-					hti = tvi.hItem;
+			for (QTreeWidgetItem *it = hti; it; it = NextSibling(hTree, it)) {
+				if (!strcmp(it->text(0).toUtf8().constData(), CurrentScenario)) {
+					hti = it;
 					break;
 				}
 			}
 		}
-		SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_SELECTITEM, TVGN_CARET, (LPARAM)hti);
+		hTree->setCurrentItem(hti);
 	}
+}
+
+//-----------------------------------------------------------------------------
+
+void orbiter::ScenarioTab::WatchScnList ()
+{
+	// FindFirstChangeNotification watches the whole tree; the Qt watcher takes each directory
+	if (!hWatch) return;
+	QStringList dirs = hWatch->directories();
+	if (!dirs.isEmpty()) hWatch->removePaths(dirs);
+	std::error_code ec;
+	fs::path root = oapiResolvePath(pCfg->CfgDirPrm.ScnDir);
+	if (!fs::is_directory(root, ec)) return;
+	dirs = {QString::fromStdString(root.string())};
+	for (auto& entry : fs::recursive_directory_iterator(root, ec))
+		if (entry.is_directory(ec)) dirs << QString::fromStdString(entry.path().string());
+	hWatch->addPaths(dirs);
 }
 
 //-----------------------------------------------------------------------------
@@ -257,56 +273,45 @@ void orbiter::ScenarioTab::LaunchpadShowing(bool show)
 }
 //-----------------------------------------------------------------------------
 
-void orbiter::ScenarioTab::ScanDirectory (const fs::path& path, HTREEITEM hti)
+void orbiter::ScenarioTab::ScanDirectory (const fs::path& path, QTreeWidgetItem *hti)
 {
-	TV_INSERTSTRUCT tvis;
-	HTREEITEM ht, hts0, ht0;
-	char cbuf[256];
+	QTreeWidget *hTree = DlgItem<QTreeWidget>(hTab, IDC_SCN_LIST);
+	QTreeWidgetItem *ht, *hts0;
+	std::error_code ec;
+	auto count = [hTree, hti]() { return (hti ? hti->childCount() : hTree->topLevelItemCount()); };
+	auto child = [hTree, hti](int i) { return (hti ? hti->child(i) : hTree->topLevelItem(i)); };
+	auto insert = [hTree, hti](int i, QTreeWidgetItem *it) { if (hti) hti->insertChild(i, it); else hTree->insertTopLevelItem(i, it); };
 
-	tvis.hParent = hti;
-	tvis.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
-	tvis.item.pszText = cbuf;
-	tvis.hInsertAfter = TVI_SORT;
-	tvis.item.cChildren = 1;
-	tvis.item.iImage = treeicon_idx[0];
-	tvis.item.iSelectedImage = treeicon_idx[0];
-
-	for (auto& entry : fs::directory_iterator(path)) {
+	// subdirectories (cChildren = 1, folder image; TVI_SORT)
+	for (auto& entry : fs::directory_iterator(path, ec)) {
 		if (entry.is_directory()) {
-			strcpy(cbuf, entry.path().stem().string().c_str());
-			ht = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_INSERTITEM, 0, (LPARAM)&tvis);
+			QString name = QString::fromStdString(entry.path().stem().string());
+			ht = new QTreeWidgetItem();
+			ht->setText(0, name);
+			ht->setIcon(0, *treeicon[0]);
+			ht->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+			int i;
+			for (i = 0; i < count(); i++)
+				if (QString::compare(name, child(i)->text(0), Qt::CaseInsensitive) < 0) break;
+			insert(i, ht);
 			ScanDirectory(entry.path(), ht);
 		}
 	}
 
-	hts0 = (HTREEITEM)SendDlgItemMessage (hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hti);
+	hts0 = child(0);
 	// the first subdirectory entry in this folder
 
-	// scan for files
-	tvis.hInsertAfter = TVI_FIRST;
-	tvis.item.cChildren = 0;
-	tvis.item.iImage = treeicon_idx[2];
-	tvis.item.iSelectedImage = treeicon_idx[3];
-	for (auto& entry : fs::directory_iterator(path)) {
+	// scan for files: they go ahead of the subdirectories, ordered by strcmp
+	for (auto& entry : fs::directory_iterator(path, ec)) {
 		if (entry.is_regular_file() && entry.path().extension().string() == ".scn") {
-			strcpy(cbuf, entry.path().stem().string().c_str());
-
-			char ch[256];
-			TV_ITEM tvi = { TVIF_HANDLE | TVIF_TEXT, 0, 0, 0, ch, 256 };
-
-			ht0 = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hti);
-			for (tvi.hItem = ht0; tvi.hItem && tvi.hItem != hts0; tvi.hItem = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)tvi.hItem)) {
-				SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETITEM, 0, (LPARAM)&tvi);
-				if (strcmp(tvi.pszText, cbuf) > 0) break;
-			}
-			if (tvi.hItem) {
-				ht = (HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_GETNEXTITEM, TVGN_PREVIOUS, (LPARAM)tvi.hItem);
-				tvis.hInsertAfter = (ht ? ht : TVI_FIRST);
-			}
-			else {
-				tvis.hInsertAfter = (hts0 ? TVI_FIRST : TVI_LAST);
-			}
-			(HTREEITEM)SendDlgItemMessage(hTab, IDC_SCN_LIST, TVM_INSERTITEM, 0, (LPARAM)&tvis);
+			std::string cbuf = entry.path().stem().string();
+			int i;
+			for (i = 0; i < count() && child(i) != hts0; i++)
+				if (strcmp(child(i)->text(0).toUtf8().constData(), cbuf.c_str()) > 0) break;
+			ht = new QTreeWidgetItem();
+			ht->setText(0, QString::fromStdString(cbuf));
+			ht->setIcon(0, *treeicon[1]);
+			insert(i, ht);
 		}
 	}
 }
@@ -330,7 +335,7 @@ char *ScanFileDesc (std::istream &is, const char *blockname)
 				if (is.eof()) break;
 				else is.clear();
 			}
-			if (_strnicmp (line, blockend, strlen(blockend))) {
+			if (strncasecmp (line, blockend, strlen(blockend))) {
 				len = strlen(line);
 				if (len) strcat (line, " "), len++;    // convert newline to space
 				else     strcpy (line, "\r\n"), len=2; // convert empty line to CR
@@ -453,14 +458,14 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 	case 0: // error
 		return;
 	case 1: // scenario file
-		ifs.open (pLp->App()->ScnPath (cbuf));
+		ifs.open (oapiResolvePath (pLp->App()->ScnPath (cbuf)));
 		pLp->EnableLaunchButton (true);
 		break;
 	case 2: // subdirectory
 		strcpy (path, pCfg->CfgDirPrm.ScnDir);
 		strcat (path, cbuf);
-		strcat (path, "\\Description.txt");
-		ifs.open (path, ios::in);
+		strcat (path, "/Description.txt");
+		ifs.open (oapiResolvePath (path), ios::in);
 		pLp->EnableLaunchButton (false);
 		break;
 	}
@@ -470,15 +475,18 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 			if (htmldesc) {
 				buf = ScanFileDesc(ifs, "URLDESC");
 				if (buf) {
-					char url_ref[256], url[256], *path, *topic;
+					char url_ref[256], url[512], cwd[256], *path, *topic;
 					strncpy(url_ref, trim_string(buf), 255);
+					url_ref[255] = '\0';
 					path = strtok(url_ref, ",");
 					topic = strtok(NULL, "\n");
+					// the pages of help file Html/Scenarios/<path>.chm are in the folder Html/Scenarios/<path>
 					if (topic)
-						sprintf(url, "its:Html\\Scenarios\\%s.chm::%s.htm", path, topic);
+						snprintf(url, 512, "Html/Scenarios/%s/%s.htm", path, topic);
 					else
-						sprintf(url, "%s\\Html\\Scenarios\\%s.htm", _getcwd(url, 256), path);
-					DisplayHTMLPage(GetDlgItem(hTab, IDC_SCN_HTML), url);
+						snprintf(url, 512, "%s/Html/Scenarios/%s.htm", getcwd(cwd, 256), path);
+					for (char *c = url; *c; c++) if (*c == '\\') *c = '/';
+					DisplayHTMLPage(oapiResDlgItem(hTab, IDC_SCN_HTML), oapiResolvePath(url).c_str());
 					have_info = true;
 				}
 				else {
@@ -498,18 +506,18 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 						strcpy(buf2, htmlstyle); strcat(buf2, buf);
 						delete[]buf;
 						buf = buf2;
-						DisplayHTMLStr(GetDlgItem(hTab, IDC_SCN_HTML), buf);
+						DisplayHTMLStr(oapiResDlgItem(hTab, IDC_SCN_HTML), buf);
 						have_info = true;
 					}
 				}
 			} else {
-				if (buf = ScanFileDesc (ifs, "DESC")) {
-					SetWindowText(GetDlgItem(hTab, IDC_SCN_DESC), buf);
+				if ((buf = ScanFileDesc (ifs, "DESC"))) {
+					oapiSetDlgItemText(hTab, IDC_SCN_DESC, buf);
 					have_info = true;
-				} else if (buf = ScanFileDesc (ifs, "HYPERDESC")) {
+				} else if ((buf = ScanFileDesc (ifs, "HYPERDESC"))) {
 					std::string str(buf);
 					Html2Text(str);
-					SetWindowText(GetDlgItem(hTab, IDC_SCN_DESC), str.c_str());
+					oapiSetDlgItemText(hTab, IDC_SCN_DESC, str.c_str());
 					have_info = true;
 				}
 			}
@@ -521,8 +529,8 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 	}
 
 	if (!have_info) {
-		if (htmldesc) DisplayHTMLStr (GetDlgItem (hTab, IDC_SCN_HTML), "");
-		else          SetWindowText (GetDlgItem (hTab, IDC_SCN_DESC), "");
+		if (htmldesc) DisplayHTMLStr (oapiResDlgItem (hTab, IDC_SCN_HTML), "");
+		else          oapiSetDlgItemText (hTab, IDC_SCN_DESC, "");
 	}
 
 	if (!htmldesc) {
@@ -532,7 +540,7 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 				enable_info = true;
 				break;
 			}
-		EnableWindow (GetDlgItem (hTab, IDC_SCN_INFO), enable_info ? TRUE:FALSE);
+		oapiResDlgItem (hTab, IDC_SCN_INFO)->setEnabled (enable_info);
 	}
 }
 
@@ -540,27 +548,19 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 
 int orbiter::ScenarioTab::GetSelScenario (char *scn, int len)
 {
-	TV_ITEM tvi;
 	char cbuf[256];
 	int type;
 
-	tvi.mask = TVIF_HANDLE | TVIF_TEXT | TVIF_CHILDREN;
-	tvi.hItem = TreeView_GetSelection (GetDlgItem (hTab, IDC_SCN_LIST));
-	tvi.pszText = scn;
-	tvi.cchTextMax = len;
-
-	if (!TreeView_GetItem (GetDlgItem (hTab, IDC_SCN_LIST), &tvi)) return 0;
-	type = (tvi.cChildren ? 2 : 1);
+	if (!hTab) return 0;
+	QTreeWidgetItem *it = DlgItem<QTreeWidget> (hTab, IDC_SCN_LIST)->currentItem();
+	if (!it) return 0;
+	snprintf (scn, len, "%s", it->text (0).toUtf8().constData());
+	type = (it->childIndicatorPolicy() == QTreeWidgetItem::ShowIndicator ? 2 : 1);
 
 	// build path
-	tvi.pszText = cbuf;
-	tvi.cchTextMax = 256;
-	while (tvi.hItem = TreeView_GetParent (GetDlgItem (hTab, IDC_SCN_LIST), tvi.hItem)) {
-		if (TreeView_GetItem (GetDlgItem (hTab, IDC_SCN_LIST), &tvi)) {
-			strcat (cbuf, "\\");
-			strcat (cbuf, scn);
-			strcpy (scn, cbuf);
-		}
+	while ((it = it->parent())) {
+		snprintf (cbuf, 256, "%s/%s", it->text (0).toUtf8().constData(), scn);
+		snprintf (scn, len, "%s", cbuf);
 	}
 	return type;
 }
@@ -569,11 +569,16 @@ int orbiter::ScenarioTab::GetSelScenario (char *scn, int len)
 
 void orbiter::ScenarioTab::SaveCurScenario ()
 {
-	ifstream ifs (pLp->App()->ScnPath (CurrentScenario), ios::in);
+	ifstream ifs (oapiResolvePath (pLp->App()->ScnPath (CurrentScenario)), ios::in);
 	if (ifs) {
-		DialogBoxParam (AppInstance(), MAKEINTRESOURCE(IDD_SAVESCN), LaunchpadWnd(), SaveProc, (LPARAM)this);
+		QDialog *dlg = qobject_cast<QDialog*> (oapiCreateResDialog (AppInstance(), IDD_SAVESCN, LaunchpadWnd()));
+		if (dlg) {
+			SaveProc (dlg, this);
+			dlg->exec(); // DialogBoxParam
+			delete dlg;
+		}
 	} else {
-		MessageBox (LaunchpadWnd(), "No current simulation state available", "Save Error", MB_OK|MB_ICONEXCLAMATION);
+		QMessageBox::warning (LaunchpadWnd(), "Save Error", "No current simulation state available");
 	}
 }
 
@@ -586,14 +591,14 @@ int orbiter::ScenarioTab::SaveCurScenarioAs (const char *name, char *desc, bool 
 {
 	string cbuf;
 	bool skip = false;
-	const char *path = pLp->App()->ScnPath (name);
+	std::string path = oapiResolvePath (pLp->App()->ScnPath (name));
 	if (!replace) { // check if exists
 		ifstream ifs (path, ios::in);
 		if (ifs) return 2;
 	}
 	ofstream ofs (path);
 	if (!ofs) return 1;
-	ifstream ifs (pLp->App()->ScnPath (CurrentScenario));
+	ifstream ifs (oapiResolvePath (pLp->App()->ScnPath (CurrentScenario)));
 	if (!ifs) return 1;
 	int i, len = strlen(desc);
 	for (i = 0; i < len-1; i++)
@@ -615,49 +620,41 @@ int orbiter::ScenarioTab::SaveCurScenarioAs (const char *name, char *desc, bool 
 
 //-----------------------------------------------------------------------------
 // Name: SaveProc()
-// Desc: Scenario save dialog message proc
+// Desc: Scenario save dialog set-up (WM_INITDIALOG) and command handlers
 //-----------------------------------------------------------------------------
-INT_PTR CALLBACK orbiter::ScenarioTab::SaveProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void orbiter::ScenarioTab::SaveProc (QWidget *hWnd, ScenarioTab *pTab)
 {
-	static ScenarioTab *pTab;
-	int res, name_len, desc_len;
-	static char name[64], *desc;
+	QDialog *dlg = qobject_cast<QDialog*> (hWnd);
 
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		pTab = (ScenarioTab*)lParam;
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
-		case IDOK:
-			name_len = SendDlgItemMessage (hWnd, IDC_SAVE_NAME, WM_GETTEXTLENGTH, 0, 0);
-			desc_len = SendDlgItemMessage (hWnd, IDC_SAVE_DESC, WM_GETTEXTLENGTH, 0, 0);
-			if (name_len > 63) {
-				MessageBox (hWnd, "Scenario name too long (max 63 characters)", "Save Error", MB_OK|MB_ICONEXCLAMATION);
-				return TRUE;
-			}
-			desc = new char[desc_len+1];
-			SendDlgItemMessage (hWnd, IDC_SAVE_NAME, WM_GETTEXT, 64, (LPARAM)name);
-			SendDlgItemMessage (hWnd, IDC_SAVE_DESC, WM_GETTEXT, desc_len+1, (LPARAM)desc);
-			res = pTab->SaveCurScenarioAs (name, desc);
-			if (res == 2) {
-				if (MessageBox (hWnd, "File exists. Overwrite?", "Warning", MB_YESNO|MB_ICONQUESTION) == IDYES)
-					res = pTab->SaveCurScenarioAs (name, desc, true);
-				else return TRUE;
-			}
-			if (res == 1) {
-				MessageBox (hWnd, "Error writing scenario file.", "Save Error", MB_OK|MB_ICONEXCLAMATION);
-				return TRUE;
-			}
-			delete []desc;
-			desc = NULL;
-			// fall through
-		case IDCANCEL:
-			EndDialog (hWnd, TRUE);
-			return TRUE;
+	// WM_COMMAND
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDOK), &QPushButton::clicked, dlg, [hWnd, dlg, pTab]() {
+		int res, name_len, desc_len;
+		char name[64], *desc;
+		name_len = DlgItem<QLineEdit> (hWnd, IDC_SAVE_NAME)->text().toUtf8().size();
+		desc_len = DlgItem<QPlainTextEdit> (hWnd, IDC_SAVE_DESC)->toPlainText().toUtf8().size();
+		if (name_len > 63) {
+			QMessageBox::warning (hWnd, "Save Error", "Scenario name too long (max 63 characters)");
+			return;
 		}
-	}
-    return FALSE;
+		desc = new char[desc_len+1];
+		oapiGetDlgItemText (hWnd, IDC_SAVE_NAME, name, 64);
+		oapiGetDlgItemText (hWnd, IDC_SAVE_DESC, desc, desc_len+1);
+		res = pTab->SaveCurScenarioAs (name, desc);
+		if (res == 2) {
+			if (QMessageBox::question (hWnd, "Warning", "File exists. Overwrite?") == QMessageBox::Yes)
+				res = pTab->SaveCurScenarioAs (name, desc, true);
+			else { delete []desc; return; }
+		}
+		if (res == 1) {
+			QMessageBox::warning (hWnd, "Save Error", "Error writing scenario file.");
+			delete []desc;
+			return;
+		}
+		delete []desc;
+		desc = NULL;
+		dlg->accept(); // EndDialog
+	});
+	QObject::connect (DlgItem<QPushButton> (hWnd, IDCANCEL), &QPushButton::clicked, dlg, &QDialog::reject);
 }
 
 //-----------------------------------------------------------------------------
@@ -666,7 +663,7 @@ INT_PTR CALLBACK orbiter::ScenarioTab::SaveProc (HWND hWnd, UINT uMsg, WPARAM wP
 //-----------------------------------------------------------------------------
 void orbiter::ScenarioTab::ClearQSFolder()
 {
-	fs::path scnpath{ pLp->App()->ScnPath("Quicksave") };
+	fs::path scnpath{ oapiResolvePath(pLp->App()->ScnPath("Quicksave")) };
 	scnpath.replace_extension(); // remove ".scn"
 
 	std::string msg = "Are you sure you want to delete all quicksaves? This affects:\n";
@@ -684,7 +681,7 @@ void orbiter::ScenarioTab::ClearQSFolder()
 	}
 	
 	if (qsCount == 0) {
-		MessageBox(LaunchpadWnd(), "There are no quicksaves to delete.", "Clear Quicksaves", MB_OK | MB_ICONINFORMATION);
+		QMessageBox::information(LaunchpadWnd(), "Clear Quicksaves", "There are no quicksaves to delete.");
 		return;
 	}
 	
@@ -692,7 +689,7 @@ void orbiter::ScenarioTab::ClearQSFolder()
 		msg += "... and " + std::to_string(qsCount - 10) + " more.\n";
 	}
 	
-	if (MessageBox(LaunchpadWnd(), msg.c_str(), "Clear Quicksaves", MB_YESNO | MB_ICONWARNING) != IDYES) {
+	if (QMessageBox::warning(LaunchpadWnd(), "Clear Quicksaves", QString::fromStdString(msg), QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
 		return;
 	}
 
@@ -714,32 +711,8 @@ void orbiter::ScenarioTab::OpenScenarioHelp ()
 	strncpy (str, scnhelp, 256);
 	scenario = strtok (str, ",");
 	topic = strtok (NULL, "\n");
-	sprintf(path, "html\\scenarios\\%s.chm", scenario);
+	snprintf(path, 256, "html/scenarios/%s.chm", scenario);
 	::OpenHelp(LaunchpadWnd(), path, topic);
 }
 
-//-----------------------------------------------------------------------------
-// Thread function for scenario directory tree watcher
-//-----------------------------------------------------------------------------
-DWORD WINAPI orbiter::ScenarioTab::threadWatchScnList (LPVOID pPrm)
-{
-	ScenarioTab *tab = (ScenarioTab*)pPrm;
-	HANDLE dwChangeHandle;
-	DWORD dwWaitStatus;
-
-	dwChangeHandle = FindFirstChangeNotification (
-		tab->pCfg->CfgDirPrm.ScnDir,
-		TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME);
-
-	while (true) {
-		dwWaitStatus = WaitForSingleObject (dwChangeHandle, INFINITE);
-		switch (dwWaitStatus) {
-			case WAIT_OBJECT_0:
-				tab->RefreshList(true);
-				FindNextChangeNotification (dwChangeHandle);
-				break;
-		}
-	}
-	FindCloseChangeNotification(dwChangeHandle);
-	return 0;
-}
+// the scenario directory tree watcher (upstream: a thread on FindFirstChangeNotification) is set up in Create

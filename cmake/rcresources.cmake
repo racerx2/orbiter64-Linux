@@ -3,6 +3,11 @@
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# the depfile names absolute paths, which Ninja takes as they are
+if(POLICY CMP0116)
+	cmake_policy(SET CMP0116 NEW)
+endif()
+
 function(orbiter_rc_resources target rcfile)
 	cmake_parse_arguments(RC "EXE" "SYMBOL" "" ${ARGN})
 	get_filename_component(rcabs ${rcfile} ABSOLUTE)

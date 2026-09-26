@@ -5,14 +5,14 @@
 // Launchpad tab implementations
 //=============================================================================
 
-#define STRICT 1
-#include <windows.h>
-#include <commctrl.h>
 #include "LpadTab.h"
 #include "Launchpad.h"
 #include "Log.h"
 #include "Help.h"
 #include "resource.h"
+#include "ResDialog.h"
+#include <QResizeEvent>
+#include <algorithm>
 
 using std::max;
 
@@ -34,7 +34,7 @@ orbiter::LaunchpadTab::LaunchpadTab (const LaunchpadDialog *lp)
 
 orbiter::LaunchpadTab::~LaunchpadTab ()
 {
-	if (hTab) DestroyWindow (hTab);
+	if (hTab) delete hTab;
 	if (nitem) {
 		delete []item;
 		item = NULL;
@@ -47,7 +47,7 @@ orbiter::LaunchpadTab::~LaunchpadTab ()
 
 void orbiter::LaunchpadTab::Show ()
 {
-	if (hTab) ShowWindow (hTab, SW_SHOW);
+	if (hTab) hTab->show();
 	bActive = true;
 }
 
@@ -55,7 +55,7 @@ void orbiter::LaunchpadTab::Show ()
 
 void orbiter::LaunchpadTab::Hide ()
 {
-	if (hTab) ShowWindow (hTab, SW_HIDE);
+	if (hTab) hTab->hide();
 	bActive = false;
 }
 
@@ -72,30 +72,27 @@ void orbiter::LaunchpadTab::TabAreaResized(int w, int h)
 {
 	if (hTab) {
 		if (DynamicSize())
-			SetWindowPos(hTab, NULL, 0, 0, w, h,
-				SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOZORDER);
+			hTab->resize(w, h);
 		else {
-			RECT r;
-			GetClientRect(hTab, &r);
-			int x0 = max((LONG)0, (w - r.right) / 2);
-			int y0 = max((LONG)0, (h - r.bottom) / 2);
-			SetWindowPos(hTab, NULL, x0, y0, 0, 0,
-				SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOOWNERZORDER | SWP_NOZORDER);
+			int x0 = max(0, (w - hTab->width()) / 2);
+			int y0 = max(0, (h - hTab->height()) / 2);
+			hTab->move(x0, y0);
 		}
 	}
 }
 
 //-----------------------------------------------------------------------------
 
-HWND orbiter::LaunchpadTab::CreateTab (int resid)
+QWidget *orbiter::LaunchpadTab::CreateTab (int resid)
 {
-	HWND hT = CreateDialogParam (AppInstance(), MAKEINTRESOURCE(resid), pLp->HTabContainer(), TabProcHook, (LPARAM)this);
+	QWidget *hT = oapiCreateResDialog (AppInstance(), resid, pLp->HTabContainer());
+	new EventHook (hT, [this](QObject *obj, QEvent *event) { return TabProc (static_cast<QWidget*> (obj), event); });
+	OnInitDialog (hT); // WM_INITDIALOG
 
-	POINT p0, p1;
-	GetClientRect (hT, &pos0);
-	p0.x = p0.y = 0; ClientToScreen (LaunchpadWnd(), &p0);
-	p1.x = p1.y = 0; ClientToScreen (hT, &p1);
-	int dx = p1.x-p0.x, dy = p1.y-p0.y;
+	pos0.left = pos0.top = 0;
+	pos0.right = hT->width(), pos0.bottom = hT->height();
+	QPoint d = hT->mapTo (LaunchpadWnd(), QPoint (0, 0));
+	int dx = d.x(), dy = d.y();
 	pos0.left += dx, pos0.right += dx;
 	pos0.top += dy, pos0.bottom += dy;
 
@@ -110,9 +107,7 @@ BOOL orbiter::LaunchpadTab::OnSize(int w, int h)
 		int dx = max(0, (w - (int)(pos0.right - pos0.left)) / 2);
 		int dy = max(0, (h - (int)(pos0.bottom - pos0.top)) / 2);
 		for (int i = 0; i < nitem; i++) {
-			SetWindowPos(GetDlgItem(hTab, item[i]), NULL,
-				itempos[i].x + dx, itempos[i].y + dy, 0, 0,
-				SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_NOCOPYBITS);
+			oapiResDlgItem(hTab, item[i])->move(itempos[i].x + dx, itempos[i].y + dy);
 		}
 		return FALSE;
 	}
@@ -121,33 +116,15 @@ BOOL orbiter::LaunchpadTab::OnSize(int w, int h)
 
 //-----------------------------------------------------------------------------
 
-INT_PTR orbiter::LaunchpadTab::TabProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool orbiter::LaunchpadTab::TabProc (QWidget *hWnd, QEvent *event)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		return OnInitDialog(hWnd, wParam, lParam);
-	case WM_SIZE:
-		return OnSize(LOWORD(lParam), HIWORD(lParam));
-	case WM_NOTIFY:
-		return OnNotify(hWnd, (int)wParam, (LPNMHDR)lParam);
+	switch (event->type()) {
+	case QEvent::Resize: {
+		QSize s = static_cast<QResizeEvent*> (event)->size();
+		OnSize(s.width(), s.height());
+		} return false;
 	default:
-		return OnMessage(hWnd, uMsg, wParam, lParam);
+		return OnMessage(hWnd, event);
 	}
-	return FALSE;
-}
-
-//-----------------------------------------------------------------------------
-
-INT_PTR CALLBACK orbiter::LaunchpadTab::TabProcHook (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	LaunchpadTab* lt = nullptr;
-	if (uMsg == WM_INITDIALOG) {
-		lt = (LaunchpadTab*)lParam;
-		SetWindowLongPtr(hWnd, DWLP_USER, (LONG_PTR)lParam);
-	}
-	else {
-		lt = (LaunchpadTab*)GetWindowLongPtr(hWnd, DWLP_USER);
-		int i = 1;
-	}
-	return (lt ? lt->TabProc(hWnd, uMsg, wParam, lParam) : FALSE);
+	return false;
 }

@@ -2,20 +2,22 @@
 // Licensed under the MIT License
 
 #include "Help.h"
-#include <htmlhelp.h>
+#include "HtmlHelp.h"
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
 
-void OpenHelp (HWND hWnd, const char *file, const char *topic)
+void OpenHelp (QWidget *hWnd, const char *file, const char *topic)
 {
 	char topic_file[256];
-	if (strlen(topic) < 4 || strnicmp(topic + strlen(topic) - 4, ".htm", 4))
-		sprintf(topic_file, "%s.htm", topic);
+	if (strlen(topic) < 4 || strncasecmp(topic + strlen(topic) - 4, ".htm", 4))
+		snprintf(topic_file, 256, "%s.htm", topic);
 	else
-		strcpy(topic_file, topic);
-	HtmlHelp (hWnd, file, HH_DISPLAY_TOPIC, (DWORD_PTR)topic_file);
+		snprintf(topic_file, 256, "%s", topic);
+	HtmlHelp (hWnd, file, topic_file);
 }
 
-void OpenDefaultHelp (HWND hWnd, const char *topic)
+void OpenDefaultHelp (QWidget *hWnd, const char *topic)
 {
 	OpenHelp (hWnd, "html\\orbiter.chm", topic);
 }

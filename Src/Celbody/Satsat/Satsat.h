@@ -6,7 +6,7 @@
 
 #define SKIP_MFD_API
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 #define SAT_MIMAS     0
 #define SAT_ENCELADUS 1

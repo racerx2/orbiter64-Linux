@@ -1,4 +1,4 @@
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules)
 
 add_library(Vsop87 SHARED
 	Vsop87.cpp
@@ -21,7 +21,7 @@ target_link_libraries(Vsop87
 	${ORBITER_LIB}
 )
 
-set(VSOP87_LIB $<TARGET_LINKER_FILE:Vsop87>)
+set(VSOP87_LIB Vsop87) # target name: CMake links a raw path to a prefix-less .so as -l<name>
 
 add_subdirectory(Sun)
 add_subdirectory(Mercury)
@@ -36,6 +36,6 @@ add_subdirectory(Neptune)
 # Installation
 install(TARGETS
 	Vsop87
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )

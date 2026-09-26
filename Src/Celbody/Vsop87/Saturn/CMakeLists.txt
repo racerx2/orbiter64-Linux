@@ -3,7 +3,7 @@
 
 set(CELBODY "Saturn")
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules/Celbody)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules/Celbody)
 
 add_library(${CELBODY} SHARED
 	${CELBODY}.cpp
@@ -23,7 +23,7 @@ target_include_directories(${CELBODY}
 
 target_link_libraries(${CELBODY}
 	${VSOP87_LIB}
-	$<TARGET_LINKER_FILE:Satsat>
+	Satsat
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
 )
@@ -47,7 +47,7 @@ set_target_properties(${CELBODY}
 #Installation
 install(TARGETS
 	${CELBODY}
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_CELBODY_DIR}
 )
 install(DIRECTORY Config

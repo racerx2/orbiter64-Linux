@@ -5,7 +5,7 @@
 #define __VENUSATM2006_H
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 // ======================================================================
 // class VenusAtmosphere_2006

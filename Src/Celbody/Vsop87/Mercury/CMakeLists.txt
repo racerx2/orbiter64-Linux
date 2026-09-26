@@ -3,7 +3,7 @@
 
 set(CELBODY "Mercury")
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules/Celbody)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules/Celbody)
 
 add_library(${CELBODY} SHARED
 	${CELBODY}.cpp
@@ -45,7 +45,7 @@ set_target_properties(${CELBODY}
 #Installation
 install(TARGETS
 	${CELBODY}
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_CELBODY_DIR}
 )
 install(DIRECTORY Config

@@ -205,12 +205,12 @@ void SampleEphem (int ksat, double simt, double interval, double *ret, Sample *s
 // API interface
 // ===========================================================
 
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	// Load the data for the Lieske perturbation solutions
 	// into global data structures
 
-	if (cd2com("Config\\Jupiter\\Data\\ephem_e15.dat")) {
+	if (cd2com(oapiResolvePath("Config\\Jupiter\\Data\\ephem_e15.dat").c_str())) {
 		oapiWriteLogError("Galsat: file not found: Config\\Jupiter\\Data\\ephem_e15.dat");
 	}
 	chkgal();

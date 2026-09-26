@@ -95,8 +95,11 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 # /we4311 left out: g++ already rejects pointer-to-smaller-int casts; NOMINMAX has no counterpart
 set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
-# Windows finds a module's DLLs next to the exe; $ORIGIN does that for libraries in the root folder
-set(CMAKE_INSTALL_RPATH "$ORIGIN")
+# Windows finds DLLs next to the exe and in Modules (Orbiter adds it to PATH); $ORIGIN/.. reaches Modules from Modules/<sub>
+set(CMAKE_INSTALL_RPATH "$ORIGIN" "$ORIGIN/..")
+# DLL naming: modules are <name>.so, as upstream loads <name>.dll
+set(CMAKE_SHARED_LIBRARY_PREFIX "")
+set(CMAKE_SHARED_MODULE_PREFIX "")
 
 # Copy data and binary assets from source to binary tree to provide a working Orbiter environment
 # copy_directory_if_different: skips re-copying 228 MB of textures on every build
@@ -119,7 +122,7 @@ set_target_properties(CopyData
 # hhc_fix.bat and pdftex_fix.bat left out: they work around Windows doc tool exit codes
 
 set(OrbiterTgt Orbiter)
-set(ORBITER_LIB $<TARGET_LINKER_FILE:Orbiter>)
+set(ORBITER_LIB "") # no import library on ELF: modules bind the exe's exported oapi* symbols at dlopen
 
 # =====================================================================================
 # Configure Orbiter.cfg for externally installed planet textures
@@ -252,6 +255,10 @@ INSTALL(FILES LICENSE
 
 # Sub-projects
 add_subdirectory(Extern)
+# only DLLEXPORT/DLLCLBK/OAPIFUNC symbols leave the exe or a module, as with Windows DLLs
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 # not ported yet: Utils, OVP, Sound, Html
 add_subdirectory(Src)
 #add_subdirectory(Utils)

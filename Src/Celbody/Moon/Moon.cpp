@@ -4,7 +4,7 @@
 #define ORBITER_MODULE
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 // ===========================================================
 // Local prototypes
@@ -174,12 +174,12 @@ void Interpolate (double t, double *data, const Sample *s0, const Sample *s1)
 // DLL entry point
 // ===========================================================
 
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	ELP82_init();
 }
 
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 	ELP82_exit();
 }

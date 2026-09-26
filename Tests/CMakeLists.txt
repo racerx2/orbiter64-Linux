@@ -79,6 +79,11 @@ add_unit_test(Vecmat.Test ${ORBITER_SOURCE_DIR}/Vecmat.cpp)
 add_unit_test(Astro.Test ${ORBITER_SOURCE_DIR}/Astro.cpp ${ORBITER_SOURCE_DIR}/TimeData.cpp)
 add_unit_test(PathResolve.Test ${ORBITER_SOURCE_DIR}/PathResolve.cpp)
 add_unit_test(Input.Test ${ORBITER_SOURCE_DIR}/Di7frame.cpp ${ORBITER_SOURCE_DIR}/Memstat.cpp)
+# not upstream: Phase 2 Celbody modules, loaded like Orbiter loads them; the test exports the exe-side API they bind to
+add_unit_test(Celbody.Test ${ORBITER_SOURCE_DIR}/PathResolve.cpp)
+set_target_properties(Celbody.Test PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(Celbody.Test Sol Sun Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune Moon Io Europa Ganymede Callisto
+	Mimas Enceladus Tethys Dione Rhea Titan Hyperion Iapetus EarthAtm2006 EarthAtmJ71G EarthAtmNRLMSISE00 MarsAtm2006 VenusAtm2006)
 
 if (BUILD_ORBITER_SERVER)
 

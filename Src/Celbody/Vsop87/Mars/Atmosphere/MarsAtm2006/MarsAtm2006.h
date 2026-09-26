@@ -5,7 +5,7 @@
 #define __MARSATM2006_H
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 // ======================================================================
 // class MarsAtmosphere_2006

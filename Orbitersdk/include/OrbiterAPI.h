@@ -37,9 +37,9 @@ extern "C" {
 #include <Lua/lua.h>
 }
 
-// GCC/ELF: exported symbols get default visibility, imports need no marker
+// GCC/ELF: exports and imports both need default visibility (everything else is hidden, as in a DLL)
 #define DLLEXPORT __attribute__((visibility("default")))
-#define DLLIMPORT
+#define DLLIMPORT __attribute__((visibility("default")))
 #define DLLCLBK extern "C" __attribute__((visibility("default")))
 
 #ifdef OAPI_IMPLEMENTATION

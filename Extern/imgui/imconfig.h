@@ -146,18 +146,18 @@ namespace ImGui
 // The ImGui code is stored in the Orbiter SDK so that modules can use it.
 struct ImGuiContext;
 
-// ELF: the exe exports with default visibility (-rdynamic), modules leave it undefined and bind at dlopen
+// ELF: default visibility both ways; the exe defines it (-rdynamic), modules bind to it at dlopen
 #ifdef EXPORT_IMGUI_CONTEXT
 extern __attribute__((visibility("default"))) struct ImGuiContext* GImGui;  // Current implicit context pointer
 #else
-extern struct ImGuiContext* GImGui;  // Current implicit context pointer
+extern __attribute__((visibility("default"))) struct ImGuiContext* GImGui;  // Current implicit context pointer
 #endif
 
 struct ImPlotContext;
 #ifdef EXPORT_IMGUI_CONTEXT
 extern __attribute__((visibility("default"))) struct ImPlotContext* GImPlot;  // Current implicit context pointer
 #else
-extern struct ImPlotContext* GImPlot;  // Current implicit context pointer
+extern __attribute__((visibility("default"))) struct ImPlotContext* GImPlot;  // Current implicit context pointer
 #endif
 #define GImGui GImGui
 #define GImPlot GImPlot

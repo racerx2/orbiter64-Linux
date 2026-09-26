@@ -5,7 +5,7 @@
 #define __GALSAT_H
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 #define GAL_BARYCENTRE 0
 #define GAL_IO         1

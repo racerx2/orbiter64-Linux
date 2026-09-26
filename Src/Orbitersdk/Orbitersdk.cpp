@@ -11,13 +11,22 @@
 #include <stdio.h>
 
 #define DLLCLBK extern "C" __attribute__((visibility("default")))
-#define OAPIFUNC
+#define OAPIFUNC __attribute__((visibility("default")))
 
 // DllMain counterpart: ELF constructor/destructor of the module (Windows calls DllMain only for DLLs, so the exe is skipped)
 OAPIFUNC void InitLib (void *hModule);
 typedef void (*DLLEXIT)(void*);
 static DLLEXIT DLLExit;
 static void *hThisModule;
+
+// GetProcAddress counterpart: dlsym also searches the module's dependencies, so keep only the module's own symbol
+static void *OwnProc (void *hModule, const char *name, const void *base)
+{
+	void *proc = dlsym (hModule, name);
+	Dl_info info;
+	if (proc && (!dladdr (proc, &info) || info.dli_fbase != base)) proc = 0;
+	return proc;
+}
 
 __attribute__((constructor)) static void DllMain_ProcessAttach ()
 {
@@ -28,8 +37,8 @@ __attribute__((constructor)) static void DllMain_ProcessAttach ()
 	if (!hThisModule) return;
 	dlclose (hThisModule); // drop the extra reference; the loader's one keeps the module mapped
 	InitLib (hThisModule);
-	DLLExit = (DLLEXIT)dlsym (hThisModule, "ExitModule");
-	if (!DLLExit) DLLExit = (DLLEXIT)dlsym (hThisModule, "opcDLLExit");
+	DLLExit = (DLLEXIT)OwnProc (hThisModule, "ExitModule", self.dli_fbase);
+	if (!DLLExit) DLLExit = (DLLEXIT)OwnProc (hThisModule, "opcDLLExit", self.dli_fbase);
 }
 
 __attribute__((destructor)) static void DllMain_ProcessDetach ()

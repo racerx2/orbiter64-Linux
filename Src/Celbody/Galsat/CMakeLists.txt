@@ -1,7 +1,7 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Modules)
 
 add_library(Galsat SHARED
 	Galsat.cpp
@@ -33,7 +33,7 @@ add_custom_command(
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/ephem_e15.dat ${CMAKE_BINARY_DIR}/Config/Jupiter/Data/
 )
 
-set(GALSAT_LIB $<TARGET_LINKER_FILE:Galsat>)
+set(GALSAT_LIB Galsat) # target name: CMake links a raw path to a prefix-less .so as -l<name>
 
 add_subdirectory(Io)
 add_subdirectory(Europa)
@@ -43,7 +43,7 @@ add_subdirectory(Callisto)
 # Installation
 install(TARGETS
 	Galsat
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(FILES ephem_e15.dat

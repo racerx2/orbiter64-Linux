@@ -3,8 +3,9 @@
 
 #include "Vsop87.h"
 #include <stdio.h>
+#include <string.h>
 
-#define DLLCLBK extern "C" __declspec(dllexport)
+#define DLLCLBK extern "C" __attribute__((visibility("default")))
 
 using namespace std;
 
@@ -65,7 +66,7 @@ bool VSOPOBJ::ReadData (const char *name)
 
 	char cbuf[256];
 	sprintf (cbuf, "Config\\%s\\Data\\Vsop87%c.dat", name, sid);
-	ifstream ifs (cbuf);
+	ifstream ifs (oapiResolvePath (cbuf));
 	if (!ifs) {
 		oapiWriteLogError("VSOP87 %s: Data file not found: %s", name, cbuf);
 		return false;

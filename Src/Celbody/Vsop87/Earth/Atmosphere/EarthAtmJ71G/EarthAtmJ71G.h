@@ -5,7 +5,7 @@
 #define __EARTHATMJ71G_H
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 // ======================================================================
 // class EarthAtmosphere_J71G

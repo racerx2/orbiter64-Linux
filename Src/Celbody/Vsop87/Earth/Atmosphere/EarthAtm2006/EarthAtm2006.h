@@ -5,7 +5,7 @@
 #define __EARTHATM2006_H
 
 #include "OrbiterAPI.h"
-#include "CelbodyAPI.h"
+#include "CelBodyAPI.h"
 
 // ======================================================================
 // class EarthAtmosphere_2006

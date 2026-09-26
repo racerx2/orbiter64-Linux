@@ -4,10 +4,7 @@
 #ifndef __MEMSTAT_H
 #define __MEMSTAT_H
 
-#include <windows.h>
-#include <psapi.h>
-
-typedef BOOL (CALLBACK *Proc_GetProcessMemoryInfo)(HANDLE,PPROCESS_MEMORY_COUNTERS,DWORD);
+// windows.h/psapi.h left out: the working set is read from /proc/self/statm
 
 class MemStat {
 public:
@@ -17,10 +14,7 @@ public:
     long HeapUsage ();
 
 private:
-    static HMODULE hLib;
-	static bool bLib;
-    HANDLE hProc;
-	Proc_GetProcessMemoryInfo pGetProcessMemoryInfo;
+    // hLib/bLib/hProc/pGetProcessMemoryInfo left out: /proc needs no library or process handle
     bool active;
 };
 

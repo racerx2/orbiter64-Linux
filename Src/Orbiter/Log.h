@@ -5,7 +5,11 @@
 #define __LOG_H
 
 #include <stdio.h>
-#include <windows.h>
+#include <cstdarg>             // va_list: windows.h brought it in
+#include <csignal>             // raise(SIGTRAP) for DebugBreak
+#include <cstring>
+#include <unistd.h>            // getcwd/chdir for _getcwd/_chdir
+#include "OrbiterPlatform.h"   // DWORD
 
 // comment the following line to suppress log file output
 #define GENERATE_LOG
@@ -25,9 +29,9 @@ void LogOut_ErrorVA(const char *func, const char *file, int line, const char *ms
 void LogOut_Warning(const char* func, const char* file, int line, const char* msg, ...);  // Write general warning to log file
 void LogOut_WarningVA(const char* func, const char* file, int line, const char* msg, va_list ap);
 void LogOut_Obsolete(const char* func, const char* msg = 0);      // Write obsolete-function warning to log file
-void LogOut_LastError (const char *func, const char *file, int line);             // Write formatted string from GetLastError
-void LogOut_DDErr (HRESULT hr, const char *func, const char *file, int line);     // Write DirectDraw error to log file
-void LogOut_DIErr (HRESULT hr, const char *func, const char *file, int line);     // Write DirectInput error to log file
+void LogOut_LastError (const char *func, const char *file, int line);             // Write formatted string from errno
+// LogOut_DDErr left out: no DirectDraw on Linux
+void LogOut_DIErr (int err, const char *func, const char *file, int line);        // Write input device error (errno) to log file
 
 // Message formatting components
 void LogOut_Error_Start();
@@ -53,10 +57,9 @@ void PrintModules();
 	LogOut_Location(__FUNCTION__,__FILE__,__LINE__); \
 	LogOut_Error_End(); \
 }
-#define LOGOUT_DDERR(hr) LogOut_DDErr(hr,__FUNCTION__,__FILE__,__LINE__)
+// LOGOUT_DDERR, LOGOUT_DDERR_ONCE left out: no DirectDraw on Linux
 #define LOGOUT_DIERR(hr) LogOut_DIErr(hr,__FUNCTION__,__FILE__,__LINE__)
 #define LOGOUT_DPERR(hr) LogOut_DPErr(hr,__FUNCTION__,__FILE__,__LINE__)
-#define LOGOUT_DDERR_ONCE(hr) {static bool bout=true; if(bout) {LogOut_DDErr(hr,__FUNCTION__,__FILE__,__LINE__);bout=false;}}
 #define LOGOUT_OBSOLETE {static bool bout=true; if(bout) {LogOut_Obsolete(__FUNCTION__);bout=false;}}
 #else
 #define INITLOG(x,app)
@@ -66,7 +69,6 @@ void PrintModules();
 #define LOGOUT_LASTERR()
 #define LOGOUT_WARN(msg,...)
 #define LOGOUT_ERR_FILENOTFOUND(file)
-#define LOGOUT_DDERR(hr)
 #define LOGOUT_DIERR(hr)
 #define LOGOUT_DPERR(hr)
 #define LOGOUT_OBSOLETE
@@ -82,7 +84,7 @@ void PrintModules();
 		LogOut_Error_End(); \
 		if(fatal) { \
 			LogOut(">>> TERMINATING <<<"); \
-			DebugBreak(); \
+			raise(SIGTRAP); \
 			exit(1); \
 		} \
 	} \
@@ -105,7 +107,7 @@ void PrintModules();
 #define dCHECK(test,msg,...)
 #endif
 
-#define CHECKCWD(cwd,name) { char c[512]; _getcwd(c,512); if(strcmp(c,cwd)) { _chdir(cwd); sprintf (c,"CWD modified by module %s - Fixing.",name); LOGOUT_WARN(c); } }
+#define CHECKCWD(cwd,name) { char c[512]; if(!getcwd(c,512) || strcmp(c,cwd)) { if(chdir(cwd)) {} sprintf (c,"CWD modified by module %s - Fixing.",name); LOGOUT_WARN(c); } }
 
 #ifndef __LOG_CPP
 extern char logs[256];

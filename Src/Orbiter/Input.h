@@ -10,6 +10,8 @@
 
 #include "Di7frame.h"
 
+class Orbiter; // g++: a friend declaration doesn't introduce the name
+
 class DInput {
 	friend class Orbiter;
 
@@ -17,22 +19,22 @@ public:
 	DInput (Orbiter *pOrbiter);
 	~DInput ();
 
-	HRESULT Create (HINSTANCE hInst);
+	int Create (void *hInst);
 	void Destroy ();
 
-	void SetRenderWindow(HWND hWnd);
+	void SetRenderWindow(QWindow *hWnd);
 
 	bool CreateKbdDevice();
 	bool CreateJoyDevice ();
 	void DestroyDevices ();
 
 	inline CDIFramework7 *GetDIFrame() const { return diframe; }
-	inline const LPDIRECTINPUTDEVICE8 GetKbdDevice() const { return diframe->GetKbdDevice(); }
-	inline const LPDIRECTINPUTDEVICE8 GetJoyDevice() const { return diframe->GetJoyDevice(); }
+	inline KeyboardDevice *GetKbdDevice() const { return diframe->GetKbdDevice(); }
+	inline JoystickDevice *GetJoyDevice() const { return diframe->GetJoyDevice(); }
 
 	void OptionChanged(DWORD cat, DWORD item);
 
-	bool PollJoystick (DIJOYSTATE2 *js);
+	bool PollJoystick (JoyState *js);
 
 	struct JoyProp {
 		bool bThrottle;  // joystick has throttle control
@@ -41,13 +43,13 @@ public:
 	};
 
 protected:
-	HRESULT SetJoystickProperties ();
+	int SetJoystickProperties ();
 
 private:
 	Orbiter *orbiter;
 	CDIFramework7 *diframe;
 	JoyProp joyprop;
-	HWND m_hWnd;
+	QWindow *m_hWnd;
 };
 
 #endif // !__INPUT_H

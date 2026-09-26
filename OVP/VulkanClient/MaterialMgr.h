@@ -8,13 +8,12 @@
 #ifndef __MATERIALMGR_H
 #define __MATERIALMGR_H
 
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 
 #include "Mesh.h"
 #include "D3D9Client.h"
 #include "D3D9Util.h"
-#include "vObject.h"
+#include "VObject.h"
 
 #define ENVCAM_OMIT_ATTC		0x0001
 #define ENVCAM_OMIT_DOCKS		0x0002

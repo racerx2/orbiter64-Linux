@@ -10,7 +10,7 @@
 // LOD (level-of-detail) algorithm for cloud patch resolution.
 // ==============================================================
 
-#include "cloudmgr2.h"
+#include "Cloudmgr2.h"
 #include "D3D9Catalog.h"
 #include "D3D9Config.h"
 

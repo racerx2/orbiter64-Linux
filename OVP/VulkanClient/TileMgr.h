@@ -17,6 +17,9 @@
 
 #include "D3D9Effect.h"
 #include "D3D9Util.h"
+#include <thread>
+#include <mutex>
+#include <atomic>
 #include "Mesh.h"
 #include "Spherepatch.h"
 
@@ -42,8 +45,8 @@ struct LMASKFILEHEADER { // file header for contents file at level 1-8
 #pragma pack(pop)
 
 struct TILEDESC {
-	LPDIRECT3DTEXTURE9 tex;      // diffuse surface texture
-	LPDIRECT3DTEXTURE9 ltex;     // landmask texture, if applicable
+	VkTex *tex;      // diffuse surface texture
+	VkTex *ltex;     // landmask texture, if applicable
 	DWORD flag;
 	struct TILEDESC *subtile[4];   // sub-tiles for the next resolution level
 	DWORD ofs;                     // refers back to the master list entry for the tile
@@ -56,6 +59,7 @@ typedef struct {
 
 class D3D9Config;
 class vPlanet;
+class TileBuffer; // g++: the friend declaration below doesn't introduce it
 
 
 class TileManager : public D3D9Effect {
@@ -94,22 +98,22 @@ public:
 	virtual void SetMicrotexture (const char *fname);
 	virtual void SetMicrolevel (double lvl);
 
-	virtual void Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, int level, double viewap = 0.0, bool bfog = false);
+	virtual void Render(VkDev *dev, D3DXMATRIX &wmat, double scale, int level, double viewap = 0.0, bool bfog = false);
 
 	void SetAmbientColor(D3DCOLOR cAmbient);
 
 protected:
 
 	void ProcessTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, TILEDESC *tile,
-	const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag,
-	const TEXCRDRANGE &bkp_range, LPDIRECT3DTEXTURE9 bkp_tex, LPDIRECT3DTEXTURE9 bkp_ltex, DWORD bkp_flag);
+	const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag,
+	const TEXCRDRANGE &bkp_range, VkTex *bkp_tex, VkTex *bkp_ltex, DWORD bkp_flag);
 
 	virtual void InitRenderTile() = 0;
 	virtual void EndRenderTile() = 0;
 	virtual void RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXMATRIX mWorld) = 0;
 
 	virtual void RenderTile(int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, double sdist, TILEDESC *tile,
-		const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag) = 0;
+		const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag) = 0;
 
 	bool LoadPatchData ();
 	// load binary definition file for LOD levels 1-8
@@ -126,7 +130,7 @@ protected:
 	void PreloadTileTextures (TILEDESC *tile8, DWORD ntex, DWORD nmask);
 	// Pre-load high-resolution tile textures for the planet (level >= 9)
 
-	void AddSubtileTextures (TILEDESC *td, LPDIRECT3DTEXTURE9 *tbuf, DWORD nt, LPDIRECT3DTEXTURE9 *mbuf, DWORD nm);
+	void AddSubtileTextures (TILEDESC *td, VkTex **tbuf, DWORD nt, VkTex **mbuf, DWORD nm);
 	// add a high-resolution subtile texture to the tree
 
 	void LoadSpecularMasks ();
@@ -171,8 +175,8 @@ protected:
 	TILEDESC *tiledesc;              // tile descriptors for levels 1-8
 	static TileBuffer *tilebuf;      // subtile manager
 
-	LPDIRECT3DTEXTURE9 *texbuf;		// texture buffer for surface textures (level <= 8)
-	LPDIRECT3DTEXTURE9 *specbuf;	// texture buffer for specular masks (level <= 8);
+	VkTex **texbuf;		// texture buffer for surface textures (level <= 8)
+	VkTex **specbuf;	// texture buffer for specular masks (level <= 8);
 	SURFHANDLE microtex;			// microtexture overlay
 
 	// object-independent configuration data
@@ -204,7 +208,7 @@ protected:
 	static DWORD vbMemCaps;          // video/system memory flag for vertex buffers
 
 	struct RENDERPARAM {
-		LPDIRECT3DDEVICE9 dev;       // render device
+		VkDev *dev;       // render device
 		D3DXMATRIX wmat;             // world matrix
 		D3DXMATRIX wmat_tmp;         // copy of world matrix used as work buffer
 		int tgtlvl;                  // target resolution level
@@ -247,18 +251,18 @@ public:
 	static bool ShutDown();
 	static void HoldThread(bool bHold);
 
-	static HANDLE hQueueMutex; // Tile loading queue access mutex
+	static std::mutex hQueueMutex; // Tile loading queue access mutex
 
 private:
-	static HANDLE hLoadThread; // LoadTile ThreadProc handle
-	static HANDLE hStopThread; // Thread kill signal handle
+	static std::thread hLoadThread; // LoadTile ThreadProc handle
+	static std::atomic<bool> hStopThread; // Thread kill signal (event handle)
 
 	static void TerminateLoadThread(); // Terminates the LoadTile thread
 
 	bool DeleteTile (TILEDESC *tile);
 
-	static HRESULT ReadDDSSurface (LPDIRECT3DDEVICE9 pDev, const char *fname, LONG_PTR ofs, LPDIRECT3DTEXTURE9* pTex, bool bManaged);
-	static DWORD WINAPI LoadTile_ThreadProc (void*);
+	static int ReadDDSSurface (VkDev *pDev, const char *fname, LONG_PTR ofs, VkTex** pTex, bool bManaged);
+	static DWORD LoadTile_ThreadProc (void*);
 	// the thread function loading tile textures on demand
 
 	const oapi::D3D9Client *gc;      // the client

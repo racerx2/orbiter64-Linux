@@ -16,8 +16,7 @@
 #define __RUNWAYLIGHTS_H
 
 #include "OrbiterAPI.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 
 class BeaconArray;
 
@@ -41,7 +40,7 @@ public:
 	void SetCategory(int cat);
 
 	void Init();
-	void Render(LPDIRECT3DDEVICE9 dev, LPD3DXMATRIX world, bool night);
+	void Render(VkDev *dev, LPD3DXMATRIX world, bool night);
 	void Update(class vPlanet *vP);
 
 	float GetWidth() const { return float(width); }
@@ -105,7 +104,7 @@ public:
 	void SetColor(VECTOR3 color);
 
 	void Init();
-	void Render(LPDIRECT3DDEVICE9 dev, LPD3DXMATRIX world, bool night);
+	void Render(VkDev *dev, LPD3DXMATRIX world, bool night);
 
 	static int CreateTaxiLights(OBJHANDLE base, const class Scene *scn, const char *file, TaxiLights**& out);
 

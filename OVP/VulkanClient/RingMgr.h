@@ -46,7 +46,7 @@ public:
 	inline double InnerRad() const { return irad; }
 	inline double OuterRad() const { return orad; }
 
-	bool Render (LPDIRECT3DDEVICE9 dev, D3DXMATRIX &mWorld, bool zenable);
+	bool Render (VkDev *dev, D3DXMATRIX &mWorld, bool zenable);
 
 protected:
 	D3D9Mesh *CreateRing (double irad, double orad, int nsect);
@@ -56,8 +56,8 @@ private:
 	static oapi::D3D9Client *gc;
 	const vPlanet *vp;
 	D3D9Mesh *mesh[MAXRINGRES];
-	LPDIRECT3DTEXTURE9 tex[MAXRINGRES];
-	LPDIRECT3DTEXTURE9 pTex;
+	VkTex *tex[MAXRINGRES];
+	VkTex *pTex;
 	DWORD rres, tres, ntex;
 	double irad, orad;
 };

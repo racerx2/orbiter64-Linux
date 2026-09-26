@@ -10,8 +10,7 @@
 
 #include "D3D9Client.h"
 #include "D3D9Effect.h"
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 
 
 /**
@@ -63,7 +62,7 @@ public:
 	 * \param pW 3DX matrix to operate on
 	 * \param time Seconds-only part of the simulation elapsed time (0...1.0)
 	 */
-	void Render(LPDIRECT3DDEVICE9 dev, const LPD3DXMATRIX pW, float time=0.5f);
+	void Render(VkDev *dev, const LPD3DXMATRIX pW, float time=0.5f);
 
 	void Update(DWORD nCount, class vPlanet *vP);
 
@@ -71,7 +70,7 @@ private:
 
 	DWORD nVert;					///< Number of beacons
 	DWORD bidx;						///< Update index
-	LPDIRECT3DVERTEXBUFFER9 pVB;	///< Vertex buffer pointer
+	VkBuf *pVB;	///< Vertex buffer pointer
 	SURFHANDLE pBright;				///< D3D9RwyLight.dds texture handle
 	OBJHANDLE hBase;
 	class vBase *vB;

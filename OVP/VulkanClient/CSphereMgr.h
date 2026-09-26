@@ -61,7 +61,7 @@ public:
 	 */
 	static void GlobalExit ();
 
-	static void CreateDeviceObjects(LPDIRECT3D9 d3d, LPDIRECT3DDEVICE9 dev);
+	static void CreateDeviceObjects(QVulkanInstance *d3d, VkDev *dev); // LPDIRECT3D9
 	static void DestroyDeviceObjects();
 
 	/**
@@ -70,7 +70,7 @@ public:
 	 */
 	void SetBgBrightness(double val);
 
-	void Render (LPDIRECT3DDEVICE9 dev, int level, double bglvl);
+	void Render (VkDev *dev, int level, double bglvl);
 
 protected:
 	bool LoadPatchData ();
@@ -78,11 +78,11 @@ protected:
 	void LoadTextures ();
 
 	void ProcessTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, TILEDESC *tile,
-		const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag,
-		const TEXCRDRANGE &bkp_range, LPDIRECT3DTEXTURE9 bkp_tex, LPDIRECT3DTEXTURE9 bkp_ltex, DWORD bkp_flag);
+		const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag,
+		const TEXCRDRANGE &bkp_range, VkTex *bkp_tex, VkTex *bkp_ltex, DWORD bkp_flag);
 
 	void RenderTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng,
-		TILEDESC *tile, const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag);
+		TILEDESC *tile, const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag);
 
 	void SetWorldMatrix (int ilng, int nlng, int ilat, int nlat);
 
@@ -117,7 +117,7 @@ protected:
 	static int *NLAT;
 
 private:
-	HANDLE hTexA, hTexB, hVSConst;
+	VkConstHandle hTexA, hTexB, hVSConst;
 	ShaderClass* pShader;
 	D3D9Client* gc;
 	char texname[128];
@@ -132,8 +132,8 @@ private:
 	DWORD nhitex;                    // number of textures for levels > 8
 	DWORD nhispec;                   // number of specular reflection masks (level > 8)
 	TILEDESC *tiledesc;              // tile descriptors for levels 1-8
-	std::vector<LPDIRECT3DTEXTURE9> m_texbuf; // texture buffer for surface textures (level <= 8)
-	std::vector<LPDIRECT3DTEXTURE9> m_starbuf; // texture buffer for starfield textures (level <= 8)
+	std::vector<VkTex*> m_texbuf; // texture buffer for surface textures (level <= 8)
+	std::vector<VkTex*> m_starbuf; // texture buffer for starfield textures (level <= 8)
 	bool bPreloadTile;               // preload high-resolution tile textures
 	MATRIX3 ecl2gal;                 // rotates from ecliptic to galactic frame
 	D3DXMATRIX trans;                 // transformation from ecliptic to galactic frame
@@ -141,7 +141,7 @@ private:
 
 	TileBuffer *tilebuf;
 	struct RENDERPARAM {
-		LPDIRECT3DDEVICE9 dev;       // render device
+		VkDev *dev;       // render device
 		int tgtlvl;                  // target resolution level
 		D3DXMATRIX wmat;             // world matrix
 		VECTOR3 camdir;              // camera direction in galactic frame

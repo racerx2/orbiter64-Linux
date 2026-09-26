@@ -9,8 +9,8 @@
 #include "Scene.h"
 #include "D3D9Surface.h"
 #include "D3D9Config.h"
-#include "vPlanet.h"
-#include "vBase.h"
+#include "VPlanet.h"
+#include "VBase.h"
 
 using namespace oapi;
 

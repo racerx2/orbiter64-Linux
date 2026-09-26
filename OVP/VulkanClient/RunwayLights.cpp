@@ -16,7 +16,7 @@
 #include "BeaconArray.h"
 #include "D3D9Config.h"
 #include "D3D9Util.h"
-#include "vBase.h"
+#include "VBase.h"
 #include <vector>
 
 RunwayLights::RunwayLights(class vBase *_vB, const class Scene *scn)

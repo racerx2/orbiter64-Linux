@@ -53,10 +53,10 @@ public:
 	VECTOR3 FromLocal(VECTOR3 pos) const;
 	void	FromLocal(VECTOR3 pos, D3DXVECTOR3 *pTgt) const;
 
-	void RenderRunwayLights (LPDIRECT3DDEVICE9 dev);
-	bool RenderSurface (LPDIRECT3DDEVICE9 dev);
-	bool RenderStructures (LPDIRECT3DDEVICE9 dev);
-	void RenderGroundShadow (LPDIRECT3DDEVICE9 dev, float alpha);
+	void RenderRunwayLights (VkDev *dev);
+	bool RenderSurface (VkDev *dev);
+	bool RenderStructures (VkDev *dev);
+	void RenderGroundShadow (VkDev *dev, float alpha);
 
 	const SurftileSpec *GetTileDesc() const { return tspec; }
 

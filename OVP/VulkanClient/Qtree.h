@@ -12,6 +12,8 @@
 #ifndef __QTREE_H
 #define __QTREE_H
 
+#include <cassert> // _ASSERT (crtdbg.h) -> assert
+
 template<typename T>
 class QuadTreeNode {
 public:
@@ -35,8 +37,8 @@ public:
 	// Ancestor(1) is equivalent to Parent()
 	// If the ancestor does not exist (e.g. trying to step beyond tree root), returns 0
 
-	inline QuadTreeNode *Child (int idx) { _ASSERT(idx < 4); return child[idx]; }
-	inline const QuadTreeNode *Child (int idx) const { _ASSERT(idx < 4); return child[idx]; }
+	inline QuadTreeNode *Child (int idx) { assert(idx < 4); return child[idx]; }
+	inline const QuadTreeNode *Child (int idx) const { assert(idx < 4); return child[idx]; }
 	// Returns the node's idx-th child (0<=idx<4), or 0 if child doesn't exist
 
 	QuadTreeNode<T> *AddChild (int idx, T *childentry);
@@ -97,7 +99,7 @@ QuadTreeNode<T> *QuadTreeNode<T>::Ancestor(int dlvl)
 template<typename T>
 QuadTreeNode<T> *QuadTreeNode<T>::AddChild (int idx, T *childentry)
 {
-	_ASSERT(idx < 4);
+	assert(idx < 4);
 	if (child[idx]) {
 		delete child[idx];
 	}
@@ -108,7 +110,7 @@ QuadTreeNode<T> *QuadTreeNode<T>::AddChild (int idx, T *childentry)
 template<typename T>
 bool QuadTreeNode<T>::DelChild (int idx)
 {
-	_ASSERT(idx < 4);
+	assert(idx < 4);
 	bool ok = true;
 	if (child[idx]) {
 		if (child[idx]->DelChildren() && child[idx]->entry->PreDelete()) {

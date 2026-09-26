@@ -35,7 +35,7 @@ private:
 		VECTOR3 pos;           ///< position of the label
 		char    labeltype;     ///< label type ID (what feature group it belongs to)
 		int     len;           ///< label length WITHOUT terminating zero!
-		LPSTR   label;         ///< the label (might contain multiple lines)
+		char   *label;         ///< the label (might contain multiple lines)
 
 		int     nLines;        ///< number of lines (for labels with multiple names)
 		int     stopLen;       ///< end of the 4th line position for multi-line labels (rendered only 'til here)

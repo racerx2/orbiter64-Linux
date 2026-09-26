@@ -98,9 +98,9 @@ public:
 	 * \return \e true if render operation was performed (object active),
 	 *   \e false if skipped (object inactive)
 	 * \action Calls Render(dev,false), i.e. performs the external render pass.
-	 * \sa Render(LPDIRECT3DDEVICE9,bool)
+	 * \sa Render(VkDev*,bool)
 	 */
-	bool Render (LPDIRECT3DDEVICE9 dev);
+	bool Render (VkDev *dev);
 
 	/**
 	 * \brief Object render call
@@ -111,9 +111,9 @@ public:
 	 *   the virtual cockpit.
 	 * \note The internal pass is only performed on the focus object, and only
 	 *   in cockpit camera mode.
-	 * \sa Render(LPDIRECT3DDEVICE9)
+	 * \sa Render(VkDev*)
 	 */
-	bool Render (LPDIRECT3DDEVICE9 dev, bool bInternalPass);
+	bool Render (VkDev *dev, bool bInternalPass);
 
 	bool RenderExhaust();
 
@@ -122,17 +122,17 @@ public:
 	 * \param dev render device
 	 */
 	void RenderLightCone (LPD3DXMATRIX pWT);
-	void RenderBeacons (LPDIRECT3DDEVICE9 dev);
-	void RenderReentry (LPDIRECT3DDEVICE9 dev);
-	void RenderGrapplePoints (LPDIRECT3DDEVICE9 dev);
-	void RenderGroundShadow (LPDIRECT3DDEVICE9 dev, OBJHANDLE hPlanet, float depth);
-	void RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp);
-	bool RenderENVMap (LPDIRECT3DDEVICE9 pDev, DWORD cnt=2, DWORD flags=0xFF);
-	bool ProbeIrradiance(LPDIRECT3DDEVICE9 pDev, DWORD cnt = 2, DWORD flags = 0xFF);
+	void RenderBeacons (VkDev *dev);
+	void RenderReentry (VkDev *dev);
+	void RenderGrapplePoints (VkDev *dev);
+	void RenderGroundShadow (VkDev *dev, OBJHANDLE hPlanet, float depth);
+	void RenderVectors (VkDev *dev, D3D9Pad *pSkp);
+	bool RenderENVMap (VkDev *pDev, DWORD cnt=2, DWORD flags=0xFF);
+	bool ProbeIrradiance(VkDev *pDev, DWORD cnt = 2, DWORD flags = 0xFF);
 
-	LPDIRECT3DCUBETEXTURE9 GetEnvMap(int idx);
-	LPDIRECT3DCUBETEXTURE9 GetIrradEnv() { return pIrdEnv; }
-	LPDIRECT3DTEXTURE9 GetIrradianceMap() { return pIrrad; }
+	VkTex *GetEnvMap(int idx);
+	VkTex *GetIrradEnv() { return pIrdEnv; }
+	VkTex *GetIrradianceMap() { return pIrrad; }
 
 	float GetExhaustLength() const { return ExhaustLength; }
 
@@ -203,8 +203,8 @@ private:
 	VESSEL *vessel;			// access instance for the vessel
 	class MatMgr *pMatMgr;
 
-	LPDIRECT3DCUBETEXTURE9 pEnv[4], pIrdEnv;
-	LPDIRECT3DTEXTURE9 pIrrad;
+	VkTex *pEnv[4], *pIrdEnv;
+	VkTex *pIrrad;
 
 	int nEnv;				// Number of environmental maps
 	int iFace;				// EnvMap Face index that is to be rendered next

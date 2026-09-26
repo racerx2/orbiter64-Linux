@@ -72,10 +72,10 @@ public:
 	void DeleteParticle (ParticleSpec *p);
 	virtual void Update ();
 
-	void   Render(LPDIRECT3DDEVICE9 dev);
-	//void Render(LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE9 &prevtex);
+	void   Render(VkDev *dev);
+	//void Render(VkDev *dev, VkTex*&prevtex);
 
-	virtual void RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE9 &prevtex) {}
+	virtual void RenderGroundShadow (VkDev *dev, VkTex*&prevtex) {}
 
 
 	ParticleSpec * GetPlast() const { return plast; }
@@ -91,8 +91,8 @@ protected:
 	void SetShadowCoords(const VECTOR3 &ppos, const VECTOR3 &cdir, double scale, VERTEX_XYZ_TEX *vtx);
 	void CalcNormals(const VECTOR3 &ppos, NTVERTEX *vtx);
 	virtual void SetMaterial (D3DCOLORVALUE &col) { col.r = col.g = col.b = 1; }
-	void RenderDiffuse (LPDIRECT3DDEVICE9 dev);
-	void RenderEmissive (LPDIRECT3DDEVICE9 dev);
+	void RenderDiffuse (VkDev *dev);
+	void RenderEmissive (VkDev *dev);
 	//const VECTOR3 *cam_ref;
 	//const VECTOR3 *src_ref;
 	//VECTOR3 src_ofs;
@@ -135,7 +135,7 @@ public:
 	ExhaustStream (oapi::GraphicsClient *_gc, OBJHANDLE hV,
 		const double *srclevel, const VECTOR3 &ref, const VECTOR3 &_dir,
 		PARTICLESTREAMSPEC *pss = 0);
-	void RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE9 &prevtex);
+	void RenderGroundShadow (VkDev *dev, VkTex*&prevtex);
 	void Update ();
 
 private:

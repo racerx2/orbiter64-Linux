@@ -15,6 +15,9 @@
 
 #include "D3D9Client.h"
 #include "D3D9Util.h"
+#include <thread>
+#include <mutex>
+#include <atomic>
 #include "VPlanet.h"
 #include "Spherepatch.h"
 #include "D3D9Pad.h"
@@ -139,8 +142,8 @@ public:
 	// Returns the texture range that allows to access the appropriate subregion of the
 	// parent's texture
 
-	inline LPDIRECT3DTEXTURE9 Tex() { return tex; }
-	inline const LPDIRECT3DTEXTURE9 Tex() const { return tex; }
+	inline VkTex *Tex() { return tex; }
+	inline const VkTex *Tex() const { return tex; }
 
 	enum TileState {
 		Invalid   = 0x0000,                            // tile data have not been loaded/created yet
@@ -175,9 +178,9 @@ protected:
 	 */
 	virtual void Load () = 0;
 
-	bool	CreateTexture(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DTEXTURE9 pPre, LPDIRECT3DTEXTURE9 *pTex);
-	bool	LoadTextureFile(const char *path, LPDIRECT3DTEXTURE9 *pPre);
-	bool	LoadTextureFromMemory(void *data, DWORD ndata, LPDIRECT3DTEXTURE9 *pPre);
+	bool	CreateTexture(VkDev *pDev, VkTex *pPre, VkTex **pTex);
+	bool	LoadTextureFile(const char *path, VkTex **pPre);
+	bool	LoadTextureFromMemory(void *data, DWORD ndata, VkTex **pPre);
 
 	VBMESH *CreateMesh_quadpatch (int grdlat, int grdlng, float *elev=0, double elev_scale = 1.0, double globelev=0.0,
 		const TEXCRDRANGE2 *range=0, bool shift_origin=false, VECTOR3 *shift=0, double bb_excess=0.0);
@@ -191,8 +194,8 @@ protected:
 	int ilat;                  // latitude index
 	int ilng;                  // longitude index
 	int imicrolvl;			   // Micro texture level
-	LPDIRECT3DTEXTURE9 tex;	   // diffuse surface texture
-	LPDIRECT3DTEXTURE9 overlay;
+	VkTex *tex;	   // diffuse surface texture
+	VkTex *overlay;
 	bool bMipmaps;			   // create mipmaps for the tile
 	bool owntex;               // true: tile owns the texture, false: tile uses ancestor subtexture
 	bool ownoverlay;
@@ -239,8 +242,8 @@ public:
 	void Unqueue (TileManager2Base *mgr);
 	// removes all tiles of a manager from the load queue (caller must own hLoadMutex)
 
-	inline static DWORD WaitForMutex() { return ::WaitForSingleObject (hLoadMutex, INFINITE); }
-	inline static BOOL ReleaseMutex() { return ::ReleaseMutex (hLoadMutex); }
+	inline static DWORD WaitForMutex() { hLoadMutex.lock(); return 0; } // WaitForSingleObject(INFINITE): WAIT_OBJECT_0
+	inline static BOOL ReleaseMutex() { hLoadMutex.unlock(); return TRUE; }
 
 private:
 	void TerminateLoadThread(); // Terminates the Load thread
@@ -251,10 +254,10 @@ private:
 
 	const oapi::D3D9Client *gc; // the client
 	static int nqueue, queue_in, queue_out;
-	HANDLE hLoadThread; // Load ThreadProc handle
-	HANDLE hStopThread; // Thread kill signal handle
-	static HANDLE hLoadMutex;
-	static DWORD WINAPI Load_ThreadProc (void*);
+	std::thread hLoadThread; // Load ThreadProc handle
+	std::atomic<bool> hStopThread; // Thread kill signal (event handle)
+	static std::mutex hLoadMutex;
+	static DWORD Load_ThreadProc (void*);
 	int load_frequency;
 };
 
@@ -347,8 +350,8 @@ public:
 	 */
 	static bool ShutDown ();
 
-	static LPDIRECT3DDEVICE9 Dev() { return pDev; }
-	static HFONT GetDebugFont() { return hFont; }
+	static VkDev *Dev() { return pDev; }
+	static QFont *GetDebugFont() { return hFont; }
 
 	template<class TileType>
 	QuadTreeNode<TileType> *FindNode (QuadTreeNode<TileType> root[2], int lvl, int ilat, int ilng);
@@ -415,15 +418,15 @@ private:
 	double elevRes;                  // target elevation resolution
 
 	static oapi::D3D9Client* gc;
-	static LPDIRECT3DDEVICE9 pDev;
-	static HFONT hFont;
+	static VkDev *pDev;
+	static QFont *hFont;
 	static double resolutionBias;
 	static double resolutionScale;
 	static bool bTileLoadThread;     // load tiles on separate thread
 public:
-	static LPDIRECT3DTEXTURE9 hOcean;
-	static LPDIRECT3DTEXTURE9 hCloudMicro;
-	static LPDIRECT3DTEXTURE9 hCloudMicroNorm;
+	static VkTex *hOcean;
+	static VkTex *hCloudMicro;
+	static VkTex *hCloudMicroNorm;
 };
 
 // =======================================================================

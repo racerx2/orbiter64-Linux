@@ -29,54 +29,54 @@ set(INCLUDE_TARGET_DIR ${ORBITER_BINARY_SDK_DIR}/include)
 # not upstream: sources still commented out are not ported yet
 set(SourceFiles
 	AABBUtil.cpp
-#	AtmoControls.cpp
-#	BeaconArray.cpp
-#	CelSphere.cpp
-#	CloudMgr.cpp
-#	Cloudmgr2.cpp
-#	CSphereMgr.cpp
-#	D3D9Client.cpp
-#	D3D9Config.cpp
-#	D3D9ControlPanel.cpp
+	AtmoControls.cpp
+	BeaconArray.cpp
+	CelSphere.cpp
+	CloudMgr.cpp
+	Cloudmgr2.cpp
+	CSphereMgr.cpp
+	D3D9Client.cpp
+	D3D9Config.cpp
+	D3D9ControlPanel.cpp
 	D3D9Effect.cpp
 	D3D9Frame.cpp
-#	D3D9Pad.cpp
-#	D3D9Pad2.cpp
-#	D3D9Pad3.cpp
+	D3D9Pad.cpp
+	D3D9Pad2.cpp
+	D3D9Pad3.cpp
 	D3D9Surface.cpp
 	D3D9TextMgr.cpp
 	D3D9Util.cpp
-#	DebugControls.cpp
-#	gcCore.cpp
-#	gcConst.cpp
-#	GDIPad.cpp
-#	HazeMgr.cpp
-#	IProcess.cpp
+	DebugControls.cpp
+	gcCore.cpp
+	gcConst.cpp
+	GDIPad.cpp
+	HazeMgr.cpp
+	IProcess.cpp
 	Log.cpp
-#	MaterialMgr.cpp
+	MaterialMgr.cpp
 	Mesh.cpp
-#	MeshMgr.cpp
+	MeshMgr.cpp
 	OapiExtension.cpp
-#	Particle.cpp
-#	RingMgr.cpp
-#	RunwayLights.cpp
-#	Scene.cpp
-#	Spherepatch.cpp
-#	SurfMgr.cpp
-#	Surfmgr2.cpp
-#	TileLabel.cpp
-#	TileMgr.cpp
-#	Tilemgr2.cpp
-#	VBase.cpp
-#	VideoTab.cpp
-#	VObject.cpp
-#	VPlanet.cpp
-#	VPlanetAtmo.cpp
-#	VStar.cpp
-#	VVessel.cpp
-#	WindowMgr.cpp
-#	ZTreeMgr.cpp
-#	Tilemgr2_imp.hpp
+	Particle.cpp
+	RingMgr.cpp
+	RunwayLights.cpp
+	Scene.cpp
+	Spherepatch.cpp
+	SurfMgr.cpp
+	Surfmgr2.cpp
+	TileLabel.cpp
+	TileMgr.cpp
+	Tilemgr2.cpp
+	VBase.cpp
+	VideoTab.cpp
+	VObject.cpp
+	VPlanet.cpp
+	VPlanetAtmo.cpp
+	VStar.cpp
+	VVessel.cpp
+	WindowMgr.cpp
+	ZTreeMgr.cpp
+	Tilemgr2_imp.hpp
 #	${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp # imgui_impl_dx9
 	D3DXMath.cpp # not upstream: D3DX math types and functions
 	VkCore.cpp # not upstream: Vulkan device, buffers, textures

@@ -48,7 +48,7 @@ public:
 	static void GlobalExit ();
 
 	bool Update (bool bMainScene);
-	bool Render (LPDIRECT3DDEVICE9 dev);
+	bool Render (VkDev *dev);
 
 private:
 	double maxdist;                    ///< max render distance

@@ -17,7 +17,7 @@
 #include "Cloudmgr2.h"
 #include "D3D9Catalog.h"
 #include "D3D9Config.h"
-#include "vVessel.h"
+#include "VVessel.h"
 #include "VectorHelpers.h"
 #include "DebugControls.h"
 #include "gcCore.h"

@@ -7,7 +7,7 @@
 // Copyright (C) 2011-2026 Jarmo Nikkanen (D3D9Client modification) 
 // ==============================================================
 
-#include "D3D9util.h"
+#include "D3D9Util.h"
 #include "CSphereMgr.h"
 #include "Scene.h"
 #include "D3D9Config.h"

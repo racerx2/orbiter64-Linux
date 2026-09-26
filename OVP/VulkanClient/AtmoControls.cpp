@@ -10,8 +10,8 @@
 #include "D3D9Config.h"
 #include "AtmoControls.h"
 #include "Commctrl.h"
-#include "vObject.h"
-#include "vPlanet.h"
+#include "VObject.h"
+#include "VPlanet.h"
 #include "Mesh.h"
 #include "Scene.h"
 #include <stdio.h>

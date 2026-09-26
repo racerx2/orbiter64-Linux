@@ -37,8 +37,8 @@ public:
 	double GetCameraDistance();
 	SurfTile *getTextureOwner();
 
-	LPDIRECT3DTEXTURE9 SetOverlay(LPDIRECT3DTEXTURE9 pOverlay, bool bOwn = true);
-	bool DeleteOverlay(LPDIRECT3DTEXTURE9 pOverlay = NULL);
+	VkTex *SetOverlay(VkTex *pOverlay, bool bOwn = true);
+	bool DeleteOverlay(VkTex *pOverlay = NULL);
 
 	double GetMinElev() const { return ehdr.emin; }		// virtual from Tile::
 	double GetMaxElev() const { return ehdr.emax; }		// virtual from Tile::
@@ -87,7 +87,7 @@ private:
 	mutable ELEVFILEHEADER ehdr;///< Let's store the complete header for later use
 	D3DXVECTOR2 MicroRep[3];
 	DWORD MaxRep;
-	LPDIRECT3DTEXTURE9 ltex;	///< landmask/nightlight texture, if applicable
+	VkTex *ltex;	///< landmask/nightlight texture, if applicable
 	INT16 *elev_file;			///< elevation data [m]
 	float *elev;				///< elevation data [m] (8x subsampled)
 	mutable float *ggelev;		///< pointer to my elevation data in the great-grandparent

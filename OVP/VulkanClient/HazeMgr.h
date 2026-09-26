@@ -46,7 +46,7 @@ public:
 	 */
 	static void GlobalExit();
 
-	void Render (LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, bool dual = false);
+	void Render (VkDev *dev, D3DXMATRIX &wmat, bool dual = false);
 	
 private:
 	OBJHANDLE obj;
@@ -103,12 +103,12 @@ private:
 
 	static ShaderClass* pRing;
 	static ShaderClass* pDome;
-	static LPDIRECT3DDEVICE9 pDev;
-	static LPDIRECT3DTEXTURE9 pNoise;
+	static VkDev *pDev;
+	static VkTex *pNoise;
 	static int xreslvl[6];
 	static int yreslvl[6];
-	static LPDIRECT3DVERTEXBUFFER9 pSkyVB[6];
-	static LPDIRECT3DVERTEXBUFFER9 pRingVB;
+	static VkBuf *pSkyVB[6];
+	static VkBuf *pRingVB;
 };
 
 

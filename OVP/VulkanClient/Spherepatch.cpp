@@ -11,7 +11,7 @@
 
 #include "Spherepatch.h"
 #include "AABBUtil.h"
-#include "TileMgr2.h"
+#include "Tilemgr2.h"
 
 static float TEX2_MULTIPLIER = 4.0f; // microtexture multiplier
 

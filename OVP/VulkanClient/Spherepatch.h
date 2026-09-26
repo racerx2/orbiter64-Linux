@@ -21,11 +21,11 @@ struct VBMESH {
 	VBMESH();
 	~VBMESH();
 
-	void MapVertices (LPDIRECT3DDEVICE9 dev, DWORD MemFlag=0); // copy vertices from vtx to vb
+	void MapVertices (VkDev *dev, DWORD MemFlag=0); // copy vertices from vtx to vb
 	void ComputeSphere();
 
-	LPDIRECT3DVERTEXBUFFER9 pVB;	// mesh vertex buffer
-	LPDIRECT3DINDEXBUFFER9  pIB;	// mesh index buffer
+	VkBuf *pVB;	// mesh vertex buffer
+	VkBuf *pIB;	// mesh index buffer
 
 	VERTEX_2TEX *vtx;				// separate storage of vertices (NULL if not available)
 	WORD *idx;						// list of indices
@@ -39,8 +39,8 @@ struct VBMESH {
 	bool bBox;						// true if bounding box data is valid
 };
 
-void CreateSphere(LPDIRECT3DDEVICE9 pDev, VBMESH &mesh, DWORD nrings, bool hemisphere, int which_half, int texres);
-void CreateSpherePatch(LPDIRECT3DDEVICE9 pDev, VBMESH &mesh, int nlng, int nlat, int ilat, int res, int bseg = -1, bool reduce = true, bool outside = true, bool store_vtx = false, bool shift_origin = false);
+void CreateSphere(VkDev *pDev, VBMESH &mesh, DWORD nrings, bool hemisphere, int which_half, int texres);
+void CreateSpherePatch(VkDev *pDev, VBMESH &mesh, int nlng, int nlat, int ilat, int res, int bseg = -1, bool reduce = true, bool outside = true, bool store_vtx = false, bool shift_origin = false);
 void ClearVBMesh (VBMESH &mesh);
 
 #endif // !__SPHEREPATCH_H

@@ -6,8 +6,7 @@
 #ifndef __IPROCESS_H
 #define __IPROCESS_H
 
-#include <d3d9.h> 
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 #include <list>
 #include <map>
 #include "OrbiterAPI.h"
@@ -47,7 +46,7 @@ public:
 	// which contains the executed code with two input variables x, y
 	// ppf is a list of preprocessor directives e.g. "_MYSECTION;_DEBUG" used like #if defined(_MYSECTION) ..code.. #endif
 	// ----------------------------------------------------------------------------------
-			ImageProcessing(LPDIRECT3DDEVICE9 pDev, const char *_file, const char *_entry, const char *ppf = NULL, const char *_vsentry = NULL);
+			ImageProcessing(VkDev *pDev, const char *_file, const char *_entry, const char *ppf = NULL, const char *_vsentry = NULL);
 			~ImageProcessing();
 
 	bool	CompileShader(const char *Entry);
@@ -112,21 +111,21 @@ public:
 
 	// Native DirectX calls -------------------------------------------------------------
 	//
-	void	SetDepthStencil(LPDIRECT3DSURFACE9 hSrf = NULL);
-	void	SetOutputNative(int id, LPDIRECT3DSURFACE9 hSrf);
-	void	SetTextureNative(const char *var, LPDIRECT3DBASETEXTURE9 hTex, DWORD flags);
+	void	SetDepthStencil(VkSurf *hSrf = NULL);
+	void	SetOutputNative(int id, VkSurf *hSrf);
+	void	SetTextureNative(const char *var, VkTex *hTex, DWORD flags);
 
 private:
 
 	bool	SetupViewPort();	
 
 	typedef struct {
-		LPDIRECT3DPIXELSHADER9 pPixel;
-		LPD3DXCONSTANTTABLE pPSConst;
+		VkShaderEXT pPixel;
+		VkConstTable *pPSConst;
 	} SHADER;
 
 	struct {
-		LPDIRECT3DBASETEXTURE9 hTex;
+		VkTex *hTex;
 		DWORD flags;
 	} pTextures[8];
 
@@ -134,20 +133,20 @@ private:
 
 	SketchMesh *pMesh;
 	std::map<std::string, SHADER> Shaders;
-	LPDIRECT3DDEVICE9 pDevice;
-	LPDIRECT3DSURFACE9 pRtg[4], pRtgBak[4];
-	LPDIRECT3DSURFACE9 pDepth, pDepthBak;
-	LPD3DXCONSTANTTABLE pVSConst;
-	LPD3DXCONSTANTTABLE pPSConst;
-	LPDIRECT3DVERTEXSHADER9 pVertex;
-	LPDIRECT3DPIXELSHADER9 pPixel;
-	D3DSURFACE_DESC desc;
+	VkDev *pDevice;
+	VkSurf *pRtg[4], *pRtgBak[4];
+	VkSurf *pDepth, *pDepthBak;
+	VkConstTable *pVSConst;
+	VkConstTable *pPSConst;
+	VkShaderEXT pVertex;
+	VkShaderEXT pPixel;
+	struct { UINT Width, Height; } desc;	// D3DSURFACE_DESC: size of the first render target
 	D3DXMATRIX   mVP;
 	D3DXVECTOR4  vTemplate;
-	D3DVIEWPORT9 iVP;
-	D3DXHANDLE   hVP;
-	D3DXHANDLE   hPos;
-	D3DXHANDLE   hSiz;
+	struct { DWORD X, Y, Width, Height; float MinZ, MaxZ; } iVP; // D3DVIEWPORT9
+	VkConstHandle hVP;
+	VkConstHandle hPos;
+	VkConstHandle hSiz;
 	SMVERTEX	*pOcta;
 
 	int		mesh_tex_idx;

@@ -29,7 +29,7 @@ public:
 	
 	HRESULT LoadTexture(const char *fname, SURFHANDLE *ppdds, int flags);
 
-	int LoadTextures(const char *fname, LPDIRECT3DTEXTURE9 *ppdds, DWORD flags, int count);
+	int LoadTextures(const char *fname, VkTex **ppdds, DWORD flags, int count);
 	// Read a texture from file 'fname' into the DX7 surface
 	// pointed to by 'ppdds'.
 
@@ -46,7 +46,7 @@ protected:
 
 private:
 	oapi::D3D9Client *gc;
-	LPDIRECT3DDEVICE9 pDev;
+	VkDev *pDev;
 
 	// simple repository of loaded textures: linked list
 	struct TexRec {

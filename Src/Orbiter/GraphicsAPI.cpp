@@ -1,7 +1,6 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
 #define OAPI_IMPLEMENTATION
 
 #include "Orbiter.h"
@@ -16,7 +15,14 @@
 #include "Log.h"
 #include "Util.h"
 #include "resource.h"
-#include <wincodec.h>
+#include "OrbiterResource.h"
+// wincodec.h left out: image files go through QImage
+#include <QWindow>
+#include <QScreen>
+#include <QImage>
+#include <QImageReader>
+#include <QBuffer>
+#include <QPainter>
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -25,21 +31,28 @@ using std::min;
 extern Orbiter *g_pOrbiter;
 extern PlanetarySystem *g_psys;
 extern Pane *g_pane;
+extern const char *g_strAppTitle; // file scope: declared inside the member function it named oapi::g_strAppTitle
 
 using namespace oapi;
 
 const char *strWndClass = "Orbiter Render Window";
 
-OAPIFUNC LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
-// Render window callback (calls RenderWndProc)
+// WndProc counterpart: an event filter on the render window that passes its events to RenderWndProc
+class RenderWndHook: public QObject {
+public:
+	RenderWndHook (QWindow *hWnd, GraphicsClient *_gc): QObject (hWnd), gc (_gc)
+	{ setObjectName (strWndClass); hWnd->installEventFilter (this); }
+	bool eventFilter (QObject *obj, QEvent *event) override
+	{ return gc && gc->RenderWndProc (static_cast<QWindow*>(obj), event); }
+	GraphicsClient *gc;
+};
 
-OAPIFUNC INT_PTR CALLBACK LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-// 'Video' tab window callback
+// LaunchpadVideoWndProc export left out: the video tab calls GraphicsClient::LaunchpadVideoWndProc directly
 
 // ======================================================================
 // class GraphicsClient
 
-GraphicsClient::GraphicsClient (HINSTANCE hInstance): Module (hInstance)
+GraphicsClient::GraphicsClient (void *hInstance): Module (hInstance)
 {
 	hOrbiterInst = g_pOrbiter->GetInstance();
 	VideoData.fullscreen = false;
@@ -55,24 +68,20 @@ GraphicsClient::GraphicsClient (HINSTANCE hInstance): Module (hInstance)
 	VideoData.winh = 768;
 	surfBltTgt = RENDERTGT_NONE;
 	splashFont = 0;
+	hVid = NULL;
+	hRenderWnd = NULL;
 
-    // Create WIC factory for formatted image output
-    HRESULT hr = CoCreateInstance (
-        CLSID_WICImagingFactory,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&m_pIWICFactory)
-    );
-	if (hr != S_OK)
-		m_pIWICFactory = NULL;
-		
+	// WIC factory left out: image files go through QImage
 }
 
 // ======================================================================
 
 GraphicsClient::~GraphicsClient ()
 {
-	if (hVid) SetWindowLongPtr (hVid, GWLP_USERDATA, 0);
+	// hVid userdata reset left out: the video tab disconnects the client's controls itself
+	if (hRenderWnd)
+		for (QObject *obj : hRenderWnd->children())
+			if (obj->objectName() == strWndClass) static_cast<RenderWndHook*>(obj)->gc = NULL;
 	if (splashFont) clbkReleaseFont (splashFont);
 }
 
@@ -80,17 +89,10 @@ GraphicsClient::~GraphicsClient ()
 
 bool GraphicsClient::clbkInitialise ()
 {
-    // Register a window class for the render window
-    WNDCLASS wndClass = {0, ::WndProc, 0, 0, hModule,
-		LoadIcon (g_pOrbiter->GetInstance(), MAKEINTRESOURCE(IDI_MAIN_ICON)),
-		LoadCursor (NULL, IDC_ARROW),
-		(HBRUSH)GetStockObject (WHITE_BRUSH),
-		NULL, strWndClass};
-    RegisterClass (&wndClass);
+	// RegisterClass left out: the render window is a QWindow, its events reach RenderWndProc through RenderWndHook
 
 	if (clbkUseLaunchpadVideoTab() && g_pOrbiter->Launchpad()) {
 		hVid = g_pOrbiter->Launchpad()->GetTab(PG_VID)->TabWnd();
-		SetWindowLongPtr (hVid, GWLP_USERDATA, (LONG_PTR)this);
 	} else hVid = NULL;
 
 	// set default parameters from config data
@@ -107,8 +109,7 @@ bool GraphicsClient::clbkInitialise ()
 	VideoData.winw       = (int)cfg->CfgDevPrm.WinW;
 	VideoData.winh       = (int)cfg->CfgDevPrm.WinH;
 
-	char fname[256];
-	GetModuleFileName(hModule, fname, 256);
+	const char *fname = ModuleFileName (hModule); // GetModuleFileName
 	((orbiter::DefVideoTab*)g_pOrbiter->Launchpad()->GetTab(PG_VID))->OnGraphicsClientLoaded(this, fname);
 
 	return true;
@@ -201,7 +202,7 @@ bool GraphicsClient::PlanetTexturePath(const char* planetname, char* path) const
 
 // ======================================================================
 
-DWORD GraphicsClient::GetPopupList (const HWND **hPopupWnd) const
+DWORD GraphicsClient::GetPopupList (QWidget *const **hPopupWnd) const
 {
 	DialogManager *dlgmgr = g_pOrbiter->DlgMgr();
 	if (dlgmgr) return dlgmgr->GetDlgList (hPopupWnd);
@@ -268,18 +269,18 @@ const void *GraphicsClient::GetConfigParam (DWORD paramtype) const
 
 // ======================================================================
 
-HWND GraphicsClient::clbkCreateRenderWindow ()
+QWindow *GraphicsClient::clbkCreateRenderWindow ()
 {
-	HWND hWnd;
+	QWindow *hWnd = new QWindow;
+	hWnd->setObjectName (strWndClass);
+	hWnd->setSurfaceType (QSurface::VulkanSurface); // must precede create(); the client attaches its QVulkanInstance
 
 	if (VideoData.fullscreen) {
-		hWnd = CreateWindow (strWndClass, "", // dummy window
-			WS_POPUP | WS_EX_TOPMOST| WS_VISIBLE,
-			CW_USEDEFAULT, CW_USEDEFAULT, 10, 10, 0, 0, hModule, (LPVOID)this);
+		hWnd->showFullScreen (); // the Direct3D client resized a 10x10 dummy popup; Qt shows the window fullscreen directly
 	} else {
-		hWnd = CreateWindow (strWndClass, "",
-			WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-			CW_USEDEFAULT, CW_USEDEFAULT, VideoData.winw, VideoData.winh, 0, 0, hModule, (LPVOID)this);
+		qreal dpr = (hWnd->screen() ? hWnd->screen()->devicePixelRatio() : 1.0); // winw/winh are device pixels
+		hWnd->resize ((int)(VideoData.winw/dpr), (int)(VideoData.winh/dpr));
+		hWnd->show ();
 	}
 	return hWnd;
 }
@@ -334,12 +335,10 @@ void GraphicsClient::ShowDefaultSplash ()
 	//const DWORD bmw = rw, bmh = (rw*10)/16; // source image is 1920x1200, i.e. 16/20 aspect ratio
 	const DWORD bmw = min(rw, (rh*16)/10);
 	const DWORD bmh = (bmw*10)/16;
-	HMODULE hMod = GetModuleHandle(NULL);
-	HRSRC hRsrc = FindResource(hMod,MAKEINTRESOURCE(IDR_IMAGE1), "IMAGE");
-	HGLOBAL hGlob = LoadResource(hMod, hRsrc);
-	BYTE *pBuf = (BYTE*)LockResource(hGlob);
-	DWORD nBuf = SizeofResource(hMod,hRsrc);
-	HBITMAP hbm = ReadImageFromMemory (pBuf, nBuf, bmw, bmh);
+	const RESDATA *res = oapiFindResData (g_pOrbiter->GetInstance(), "IMAGE", IDR_IMAGE1); // FindResource/LoadResource on the exe
+	BYTE *pBuf = (BYTE*)(res ? res->data : NULL);
+	DWORD nBuf = (res ? res->size : 0);
+	QImage *hbm = ReadImageFromMemory (pBuf, nBuf, bmw, bmh);
 
 	// copy splash screen to viewport
 	SURFHANDLE surf = GraphicsClient::clbkCreateSurface (hbm);
@@ -360,7 +359,7 @@ void GraphicsClient::ShowDefaultSplash ()
 	skp->SetTextColor (texcol);
 	skp->SetTextAlign (oapi::Sketchpad::LEFT, oapi::Sketchpad::TOP);
 
-	//DeleteObject(hbm);
+	delete hbm; // DeleteObject; upstream leaked the bitmap
 	clbkReleaseSketchpad (skp);
 
 	clbkDisplayFrame();
@@ -368,102 +367,45 @@ void GraphicsClient::ShowDefaultSplash ()
 
 // ======================================================================
 
-#define DIB_WIDTHBYTES(bits) ((((bits) + 31)>>5)<<2)
-
 // Image decoding engine: extract an image from a decoder and rescale it to the desired size
 // Return as bitmap
-HBITMAP ReadImageFromDecoder (IWICImagingFactory *m_pIWICFactory, IWICBitmapDecoder *piDecoder, UINT w, UINT h)
+static QImage *ReadImageFromDecoder (QImageReader &reader, UINT w, UINT h)
 {
-	IWICBitmapFrameDecode *piFrame = NULL;
-	IWICFormatConverter *piConvertedFrame = NULL;
-	IWICBitmapScaler *piScaler = NULL;
+	int nCount = reader.imageCount ();
+	if (nCount > 1) reader.jumpToImage (nCount-1); // last frame, as the WIC decoder was asked for
+	QImage frame = reader.read ();
+	if (frame.isNull ()) return NULL;
+	frame = frame.convertToFormat (QImage::Format_RGB32); // GUID_WICPixelFormat32bppBGR: B,G,R,x bytes
 
-	UINT nWidth, nHeight, nFrame, nCount = 0;
-	piDecoder->GetFrameCount(&nCount);
-	nFrame = nCount-1;
+	if (!w) w = frame.width();
+	if (!h) h = frame.height();
+	if ((int)w != frame.width() || (int)h != frame.height())
+		frame = frame.scaled (w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation); // WICBitmapInterpolationModeFant
+	return new QImage (frame); // CreateDIBSection + CopyPixels
+}
 
-	piDecoder->GetFrame(nFrame, &piFrame);
-	piFrame->GetSize(&nWidth, &nHeight);
+// ======================================================================
 
-	m_pIWICFactory->CreateFormatConverter(&piConvertedFrame);
-	piConvertedFrame->Initialize(
-		piFrame,                        // Source frame to convert
-        GUID_WICPixelFormat32bppBGR,     // The desired pixel format
-        WICBitmapDitherTypeNone,         // The desired dither pattern
-        NULL,                            // The desired palette
-        0.f,                             // The desired alpha threshold
-        WICBitmapPaletteTypeCustom       // Palette translation type
-    );
-
-	if (!w) w = nWidth;
-	if (!h) h = nHeight;
-	UINT nStride = DIB_WIDTHBYTES(w * 32);
-	UINT nImage = nStride * h;
-	m_pIWICFactory->CreateBitmapScaler(&piScaler);
-	piScaler->Initialize(piConvertedFrame, w, h, WICBitmapInterpolationModeFant);
-
-	HDC hdcScreen = GetDC(NULL);
-	BITMAPINFO bminfo;
-	ZeroMemory(&bminfo, sizeof(bminfo));
-	bminfo.bmiHeader.biSize   = sizeof(BITMAPINFOHEADER);
-	bminfo.bmiHeader.biWidth  = w;
-	bminfo.bmiHeader.biHeight = -(LONG)h;
-	bminfo.bmiHeader.biPlanes = 1;
-	bminfo.bmiHeader.biBitCount = 32;
-	bminfo.bmiHeader.biCompression = BI_RGB;
-	void *pvImageBits = NULL;
-	HBITMAP hDIBBitmap = CreateDIBSection (hdcScreen, &bminfo, DIB_RGB_COLORS, &pvImageBits, NULL, 0);
-	ReleaseDC (NULL, hdcScreen);
-
-	piScaler->CopyPixels(NULL, nStride, nImage, reinterpret_cast<BYTE*>(pvImageBits));
-
-	piFrame->Release();
-	piConvertedFrame->Release();
-	piScaler->Release();
-
+QImage *GraphicsClient::ReadImageFromMemory (BYTE *pBuf, DWORD nBuf, UINT w, UINT h)
+{
+	QByteArray data = QByteArray::fromRawData ((const char*)pBuf, nBuf);
+	QBuffer buffer (&data);
+	QImageReader reader (&buffer);
+	QImage *hDIBBitmap = (pBuf && nBuf ? ReadImageFromDecoder (reader, w, h) : NULL);
+	if (!hDIBBitmap)
+		LOGOUT_WARN("Couldn't create decoder for memory image data");
 	return hDIBBitmap;
 }
 
 // ======================================================================
 
-HBITMAP GraphicsClient::ReadImageFromMemory (BYTE *pBuf, DWORD nBuf, UINT w, UINT h)
+QImage *GraphicsClient::ReadImageFromFile (const char *fname, UINT w, UINT h)
 {
-	IWICBitmapDecoder *piDecoder = NULL;
-	
-	IWICStream *piStream;
-	m_pIWICFactory->CreateStream(&piStream);
-	piStream->InitializeFromMemory(pBuf,nBuf);
-	m_pIWICFactory->CreateDecoderFromStream (piStream, NULL, WICDecodeMetadataCacheOnDemand, &piDecoder);
-
-	piStream->Release();
-	if (piDecoder) {
-		HBITMAP hDIBBitmap = ReadImageFromDecoder (m_pIWICFactory, piDecoder, w, h);
-		piDecoder->Release();
-		return hDIBBitmap;
-	} else {
-		LOGOUT_WARN("Couldn't create decoder for memory image data");
-		return 0;
-	}
-}
-
-// ======================================================================
-
-HBITMAP GraphicsClient::ReadImageFromFile (const char *fname, UINT w, UINT h)
-{
-	wchar_t wcbuf[256];
-	mbstowcs (wcbuf, fname, 256);
-
-	IWICBitmapDecoder *piDecoder = NULL;
-	m_pIWICFactory->CreateDecoderFromFilename (wcbuf, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &piDecoder);
-
-	if (piDecoder) {
-		HBITMAP hDIBBitmap = ReadImageFromDecoder (m_pIWICFactory, piDecoder, w, h);
-		piDecoder->Release();
-		return hDIBBitmap;
-	} else {
+	QImageReader reader (QString::fromStdString (oapiResolvePath (fname)));
+	QImage *hDIBBitmap = ReadImageFromDecoder (reader, w, h);
+	if (!hDIBBitmap)
 		LOGOUT_WARN("Couldn't create decoder for image file: %s (does it exist?)", fname);
-		return 0;
-	}
+	return hDIBBitmap;
 }
 
 // ======================================================================
@@ -473,19 +415,12 @@ bool GraphicsClient::WriteImageDataToFile (const ImageData &data,
 {
 	const char *extension[4] = {".bmp", ".png", ".jpg", ".tif"};
 
-	const GUID FormatGUID[4] = {
-		GUID_ContainerFormatBmp,
-		GUID_ContainerFormatPng,
-		GUID_ContainerFormatJpeg,
-		GUID_ContainerFormatTiff,
+	const char *Format[4] = { // GUID_ContainerFormat* counterparts
+		"BMP",
+		"PNG",
+		"JPG",
+		"TIFF",
 	};
-
-	HRESULT hr = S_OK;
-	// Note: hr should be checked after every function returning it.
-	// The rest of the code should only be executed if SUCCEEDED(hr)
-
-	if (!m_pIWICFactory)
-		return false;
 
 	if (data.bpp != 24)
 		return false;  // can only deal with 24bit images for now
@@ -495,55 +430,19 @@ bool GraphicsClient::WriteImageDataToFile (const ImageData &data,
 
 	if (data.bufsize < data.stride * data.height)
 		return false;
-	UINT bufsize = data.stride * data.height;
 
-	wchar_t wcbuf[256];
 	char cbuf[256];
 	strcpy (cbuf, fname);
 	strcat (cbuf, extension[fmt]);
-	mbstowcs (wcbuf, cbuf, 256);
+	QString path = QString::fromStdString (oapiResolvePath (cbuf));
 
-	IWICStream *piStream = NULL;
-	IWICBitmapEncoder *piEncoder = NULL;
-	IWICBitmapFrameEncode *piBitmapFrame = NULL;
-	IPropertyBag2 *pPropertybag = NULL;
-
-	hr = m_pIWICFactory->CreateStream (&piStream);
-	hr = piStream->InitializeFromFilename(wcbuf, GENERIC_WRITE);
-	if ((hr & 0xFF) == ERROR_PATH_NOT_FOUND && MakePath(fname)) {
-		hr = piStream->InitializeFromFilename(wcbuf, GENERIC_WRITE);
-	}
-
-	hr = m_pIWICFactory->CreateEncoder (FormatGUID[fmt], NULL, &piEncoder);
-	hr = piEncoder->Initialize (piStream, WICBitmapEncoderNoCache);
-	hr = piEncoder->CreateNewFrame (&piBitmapFrame, &pPropertybag);
-
-	// customize output
-	PROPBAG2 option = { 0 };
-	option.pstrName = (wchar_t*)L"ImageQuality";
-	VARIANT varValue;
-	VariantInit (&varValue);
-	varValue.vt = VT_R4;
-	varValue.fltVal = quality;
-	hr = pPropertybag->Write(1,&option,&varValue);
-	hr = piBitmapFrame->Initialize (pPropertybag);
-
-	hr = piBitmapFrame->SetSize (data.width, data.height);
-
-	WICPixelFormatGUID formatGUID = GUID_WICPixelFormat24bppBGR;
-	hr = piBitmapFrame->SetPixelFormat(&formatGUID);
-
-	hr = IsEqualGUID(formatGUID, GUID_WICPixelFormat24bppBGR) ? S_OK : E_FAIL;
-
-	hr = piBitmapFrame->WritePixels(data.height, data.stride, bufsize, data.data);
-
-	hr = piBitmapFrame->Commit ();
-	hr = piEncoder->Commit ();
-
-	piBitmapFrame->Release();
-	piEncoder->Release();
-	piStream->Release();
-	return true;
+	// GUID_WICPixelFormat24bppBGR rows, top-down
+	QImage img ((const uchar*)data.data, data.width, data.height, data.stride, QImage::Format_BGR888);
+	int q = (int)(quality*100.0f + 0.5f); // ImageQuality 0..1 -> 0..100
+	bool ok = img.save (path, Format[fmt], q);
+	if (!ok && MakePath (fname)) // the WIC stream reported ERROR_PATH_NOT_FOUND
+		ok = img.save (path, Format[fmt], q);
+	return ok;
 }
 
 // ======================================================================
@@ -563,11 +462,10 @@ void GraphicsClient::clbkRender2DPanel (SURFHANDLE *hSurf, MESHHANDLE hMesh, MAT
 
 // ======================================================================
 
-SURFHANDLE GraphicsClient::clbkCreateSurface (HBITMAP hBmp)
+SURFHANDLE GraphicsClient::clbkCreateSurface (QImage *hBmp)
 {
-	BITMAP bm;
-	GetObject (hBmp, sizeof(bm), &bm);
-	SURFHANDLE surf = clbkCreateSurface (bm.bmWidth, bm.bmHeight);
+	if (!hBmp) return NULL; // GetObject failed on a NULL bitmap
+	SURFHANDLE surf = clbkCreateSurface (hBmp->width(), hBmp->height());
 	if (surf) {
 		if (!clbkCopyBitmap (surf, hBmp, 0, 0, 0, 0)) {
 			clbkReleaseSurface (surf);
@@ -601,31 +499,22 @@ int GraphicsClient::clbkEndBltGroup ()
 
 // ======================================================================
 
-bool GraphicsClient::clbkCopyBitmap (SURFHANDLE pdds, HBITMAP hbm,
+bool GraphicsClient::clbkCopyBitmap (SURFHANDLE pdds, QImage *hbm,
     int x, int y, int dx, int dy)
 {
-    HDC                     hdcImage;
-    HDC                     hdc;
-    BITMAP                  bm;
+    QPainter                *hdc;
     //DDSURFACEDESC2          ddsd;
     //HRESULT                 hr;
 	DWORD                   surfW, surfH;
 
     if (hbm == NULL || pdds == NULL)
         return false;
-    //
-    // Select bitmap into a memoryDC so we can use it.
-    //
-    hdcImage = CreateCompatibleDC(NULL);
-    if (!hdcImage)
-        OutputDebugString("createcompatible dc failed\n");
-    SelectObject(hdcImage, hbm);
+    // memory DC left out: QPainter draws from the QImage directly
     //
     // Get size of the bitmap
     //
-    GetObject(hbm, sizeof(bm), &bm);
-    dx = dx == 0 ? bm.bmWidth : dx;     // Use the passed size, unless zero
-    dy = dy == 0 ? bm.bmHeight : dy;
+    dx = dx == 0 ? hbm->width() : dx;     // Use the passed size, unless zero
+    dy = dy == 0 ? hbm->height() : dy;
     //
     // Get size of surface.
     //
@@ -634,36 +523,38 @@ bool GraphicsClient::clbkCopyBitmap (SURFHANDLE pdds, HBITMAP hbm,
     //ddsd.dwFlags = DDSD_HEIGHT | DDSD_WIDTH;
     //pdds->GetSurfaceDesc(&ddsd);
 
-	if (hdc = clbkGetSurfaceDC (pdds)) {
-        StretchBlt(hdc, 0, 0, surfW, surfH, hdcImage, x, y,
-                   dx, dy, SRCCOPY);
+	if ((hdc = clbkGetSurfaceDC (pdds))) {
+		hdc->save ();
+		hdc->setCompositionMode (QPainter::CompositionMode_Source); // SRCCOPY
+		hdc->drawImage (QRect (0, 0, surfW, surfH), *hbm, QRect (x, y, dx, dy)); // StretchBlt
+		hdc->restore ();
 		clbkReleaseSurfaceDC (pdds, hdc);
     }
-	DeleteDC(hdcImage);
     return true;
 }
 
 // ======================================================================
 
-HWND GraphicsClient::InitRenderWnd (HWND hWnd)
+QWindow *GraphicsClient::InitRenderWnd (QWindow *hWnd)
 {
 	if (!hWnd) { // create a dummy window
-		hWnd = CreateWindow (strWndClass, "",
-			WS_POPUP | WS_VISIBLE,
-			CW_USEDEFAULT, CW_USEDEFAULT, 10, 10, 0, 0, hModule, 0);
+		hWnd = new QWindow;
+		hWnd->setObjectName (strWndClass);
+		hWnd->setFlags (Qt::Window | Qt::FramelessWindowHint); // WS_POPUP
+		hWnd->resize (10, 10);
+		hWnd->show ();
 	}
-	SetWindowLongPtr (hWnd, GWLP_USERDATA, (LONG_PTR)this);
+	new RenderWndHook (hWnd, this);
 	// store class instance with window for access in the message handler
 
 	char title[256], cbuf[128];
-	extern const TCHAR *g_strAppTitle;
 	strcpy (title, g_strAppTitle);
-	GetWindowText (hWnd, cbuf, 128);
+	strncpy (cbuf, hWnd->title().toUtf8().constData(), 127); cbuf[127] = '\0'; // GetWindowText
 	if (cbuf[0]) {
 		strcat (title, " ");
 		strcat (title, cbuf);
 	}
-	SetWindowText (hWnd, title);
+	hWnd->setTitle (QString::fromUtf8 (title)); // SetWindowText
 	hRenderWnd = hWnd;
 	return hRenderWnd;
 }
@@ -671,21 +562,20 @@ HWND GraphicsClient::InitRenderWnd (HWND hWnd)
 // ======================================================================
 
 
-LRESULT GraphicsClient::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool GraphicsClient::RenderWndProc (QWindow *hWnd, QEvent *event)
 {
-	switch (uMsg) {
+	switch (event->type()) {
 	// graphics-specific stuff to go here
 	default:
-		return g_pOrbiter->MsgProc (hWnd, uMsg, wParam, lParam);
+		return g_pOrbiter->MsgProc (hWnd, event);
 	}
-    return DefWindowProc (hWnd, uMsg, wParam, lParam);
+    return false; // DefWindowProc: Qt's default handling
 }
 
 // ======================================================================
 
-INT_PTR GraphicsClient::LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void GraphicsClient::LaunchpadVideoWndProc (QWidget *hWnd)
 {
-	return FALSE;
 }
 
 // ==================================================================
@@ -881,26 +771,7 @@ void ScreenAnnotation::Render ()
 // ======================================================================
 // Nonmember functions
 
-//-----------------------------------------------------------------------
-// Name: WndProc()
-// Desc: Static msg handler which passes messages from the render window
-//       to the application class.
-//-----------------------------------------------------------------------
-DLLEXPORT LRESULT CALLBACK WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	GraphicsClient *gc = (GraphicsClient*)GetWindowLongPtr (hWnd, GWLP_USERDATA);
-	if (gc) return gc->RenderWndProc (hWnd, uMsg, wParam, lParam);
-	else return DefWindowProc (hWnd, uMsg, wParam, lParam);
-}
-
-// ======================================================================
-
-DLLEXPORT INT_PTR CALLBACK LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	GraphicsClient *gc = (GraphicsClient*)GetWindowLongPtr (hWnd, GWLP_USERDATA);
-	if (gc) return gc->LaunchpadVideoWndProc (hWnd, uMsg, wParam, lParam);
-	else return FALSE;
-}
+// WndProc and LaunchpadVideoWndProc exports left out: RenderWndHook and the video tab call the client directly
 
 // ======================================================================
 // API interface: register/unregister the graphics client

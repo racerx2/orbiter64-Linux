@@ -22,6 +22,7 @@
 #include "Log.h"
 #include "Util.h"
 #include "Psys.h"
+#include <QPainter>
 
 using namespace std;
 
@@ -39,7 +40,7 @@ char Key2Char[256] = {
 	' ','A','S','D','F','G','H','J','K','L',';','\'','`',' ',
 	'\\','Z','X','C','V','B','N','M',',','.','/'};
 
-HPEN Instrument::hdefpen[MAXPEN] = {0};
+QPen *Instrument::hdefpen[MAXPEN] = {0};
 
 struct Instrument::DrawResource Instrument::draw[MAXDEFCOL][2] = {0};
 
@@ -109,20 +110,20 @@ Instrument *Instrument::Create (ifstream &ifs, Pane *_pane,
 	for (;instr == 0;) {
 		if (!ifs.getline (cbuf, 256)) return 0;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_MFD", 7)) return 0;
-		if (!_strnicmp (pc, "TYPE", 4)) {
+		if (!strncasecmp (pc, "END_MFD", 7)) return 0;
+		if (!strncasecmp (pc, "TYPE", 4)) {
 			pc = trim_string (pc+4);
-			if      (!_strnicmp (pc, "Orbit", 5))    instr = Create (MFD_ORBIT, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Surface", 7))  instr = Create (MFD_SURFACE, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Map", 3))      instr = Create (MFD_MAP, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "HSI", 3))      instr = Create (MFD_HSI, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Launch", 6))   instr = Create (MFD_LANDING, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Docking", 7))  instr = Create (MFD_DOCKING, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "OAlign", 6))   instr = Create (MFD_OPLANEALIGN, _pane, _id, spec, _vessel, false);
-			else if (!_strnicmp (pc, "OSync", 5))    instr = Create (MFD_OSYNC, _pane, _id, spec, _vessel, false);
-			else if (!_strnicmp (pc, "Transfer", 8)) instr = Create (MFD_TRANSFER, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "COM/NAV", 4))  instr = Create (MFD_COMMS, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "User", 4))     instr = Create (MFD_USERTYPE, _pane, _id, spec, _vessel);
+			if      (!strncasecmp (pc, "Orbit", 5))    instr = Create (MFD_ORBIT, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "Surface", 7))  instr = Create (MFD_SURFACE, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "Map", 3))      instr = Create (MFD_MAP, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "HSI", 3))      instr = Create (MFD_HSI, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "Launch", 6))   instr = Create (MFD_LANDING, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "Docking", 7))  instr = Create (MFD_DOCKING, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "OAlign", 6))   instr = Create (MFD_OPLANEALIGN, _pane, _id, spec, _vessel, false);
+			else if (!strncasecmp (pc, "OSync", 5))    instr = Create (MFD_OSYNC, _pane, _id, spec, _vessel, false);
+			else if (!strncasecmp (pc, "Transfer", 8)) instr = Create (MFD_TRANSFER, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "COM/NAV", 4))  instr = Create (MFD_COMMS, _pane, _id, spec, _vessel);
+			else if (!strncasecmp (pc, "User", 4))     instr = Create (MFD_USERTYPE, _pane, _id, spec, _vessel);
 		}
 	}
 	if (instr) {
@@ -177,7 +178,7 @@ void Instrument::GlobalInit (oapi::GraphicsClient *gc)
 		RGB(128,128,0), RGB(64,64,0), RGB(128,128,128)
 	};
 	for (i = 0; i < MAXPEN; i++) {
-		hdefpen[i] = CreatePen (PS_SOLID, 0, pencol[i]);
+		hdefpen[i] = new QPen (QColor (GetRValue(pencol[i]), GetGValue(pencol[i]), GetBValue(pencol[i])), 0); // CreatePen (PS_SOLID, 0, ...): width 0 is a cosmetic 1-pixel pen in both
 	}
 }
 
@@ -185,8 +186,10 @@ void Instrument::GlobalExit (oapi::GraphicsClient *gc)
 {
 	int i, j;
 
-	for (i = 0; i < MAXPEN; i++)
-		DeleteObject (hdefpen[i]);
+	for (i = 0; i < MAXPEN; i++) {
+		delete hdefpen[i]; // DeleteObject
+		hdefpen[i] = 0;
+	}
 	for (i = 0; i < MAXDEFCOL; i++) {
 		for (j = 0; j < 2; j++) {
 			if (gc && draw[i][j].solidpen) gc->clbkReleasePen (draw[i][j].solidpen);
@@ -262,7 +265,7 @@ int Instrument::ModeIdFromKey (DWORD key)
 int Instrument::ModeFromNameOld (char *name, MFDMODESPEC **spec)
 {
 	for (DWORD i = 0; i < nGlobalModes; i++) {
-		if (!_stricmp (GlobalMode[i].spec->name, name)) {
+		if (!strcasecmp (GlobalMode[i].spec->name, name)) {
 			if (spec) *spec = GlobalMode[i].oldspec;
 			return GlobalMode[i].id;
 		}
@@ -273,7 +276,7 @@ int Instrument::ModeFromNameOld (char *name, MFDMODESPEC **spec)
 int Instrument::ModeFromName (char *name, MFDMODESPECEX **spec)
 {
 	for (DWORD i = 0; i < nGlobalModes; i++) {
-		if (!_stricmp (GlobalMode[i].spec->name, name)) {
+		if (!strcasecmp (GlobalMode[i].spec->name, name)) {
 			if (spec) *spec = GlobalMode[i].spec;
 			return GlobalMode[i].id;
 		}
@@ -286,7 +289,7 @@ int Instrument::VesselModeFromName (const char *name, MFDMODESPECEX **spec)
 	const MFDMODE *mlist;
 	DWORD nmode = vessel->GetMFDModes (&mlist);
 	for (DWORD i = 0; i < nmode; i++) {
-		if (!_stricmp (mlist[i].spec->name, name)) {
+		if (!strcasecmp (mlist[i].spec->name, name)) {
 			if (spec) *spec = mlist[i].spec;
 			return mlist[i].id;
 		}
@@ -759,17 +762,17 @@ void Instrument::EndDraw (oapi::Sketchpad *skp)
 		gc->clbkReleaseSketchpad (skp);
 }
 
-HDC Instrument::BeginDrawHDC ()
+QPainter *Instrument::BeginDrawHDC ()
 {
-	HDC hDC;
+	QPainter *hDC;
 	if (gc && (hDC = gc->clbkGetSurfaceDC (surf))) {
-		SetTextColor (hDC, draw[0][0].col);
-		SelectObject (hDC, mfdfont[0]->GetGDIFont());
-		SetBkMode (hDC, TRANSPARENT);
-		SelectObject (hDC, GetStockObject (NULL_BRUSH));
-		SelectObject (hDC, hdefpen[0]);
+		// SetTextColor (draw[0][0].col) left out: QPainter draws text with the pen, hdefpen[0] has the same green
+		if (QFont *font = mfdfont[0]->GetGDIFont()) hDC->setFont (*font);
+		hDC->setBackgroundMode (Qt::TransparentMode); // SetBkMode (TRANSPARENT)
+		hDC->setBrush (Qt::NoBrush); // NULL_BRUSH
+		hDC->setPen (*hdefpen[0]);
 		if (pane->GetPanelMode() == 1) {
-			Rectangle (hDC, 0, 0, IW, IH);
+			hDC->drawRect (0, 0, IW-1, IH-1); // Rectangle: right and bottom edges are exclusive
 		}
 		return hDC;
 	} else {
@@ -777,11 +780,11 @@ HDC Instrument::BeginDrawHDC ()
 	}
 }
 
-void Instrument::EndDrawHDC (HDC hDC)
+void Instrument::EndDrawHDC (QPainter *hDC)
 {
 	if (gc && hDC) {
-		SelectObject (hDC, GetStockObject (NULL_PEN));
-		SelectObject (hDC, GetStockObject (NULL_BRUSH));
+		hDC->setPen (Qt::NoPen); // NULL_PEN
+		hDC->setBrush (Qt::NoBrush); // NULL_BRUSH
 		gc->clbkReleaseSurfaceDC (surf, hDC);
 	}
 }
@@ -803,7 +806,7 @@ bool Instrument::Update (double upDTscale)
 				EndDraw (skp);
 			}
 		} else {
-			HDC hDC = BeginDrawHDC();
+			QPainter *hDC = BeginDrawHDC();
 			if (hDC) {
 				UpdateDraw (hDC);
 				EndDrawHDC (hDC);
@@ -839,10 +842,12 @@ oapi::Font *Instrument::GetDefaultFont (DWORD fontidx)
 	return (fontidx < 4 ? mfdfont[fontidx] : 0);
 }
 
-HFONT Instrument::SelectDefaultFont (HDC hDC, DWORD i)
+QFont *Instrument::SelectDefaultFont (QPainter *hDC, DWORD i)
 {
-	// obsolete
-	return (i < 4 ? (HFONT)SelectObject (hDC, mfdfont[i]->GetGDIFont()) : 0);
+	// obsolete; QPainter holds fonts by value, so the selected font is returned, not the previous one
+	QFont *font = (i < 4 ? mfdfont[i]->GetGDIFont() : 0);
+	if (font) hDC->setFont (*font);
+	return font;
 }
 
 oapi::Pen *Instrument::GetDefaultPen (DWORD colidx, DWORD intens, DWORD style)
@@ -858,10 +863,12 @@ oapi::Pen *Instrument::GetDefaultPen (DWORD colidx, DWORD intens, DWORD style)
 	}
 }
 
-HPEN Instrument::SelectDefaultPen (HDC hDC, DWORD i)
+QPen *Instrument::SelectDefaultPen (QPainter *hDC, DWORD i)
 {
-	// obsolete
-	return (i < 6 ? (HPEN)SelectObject (hDC, hdefpen[i]) : 0);
+	// obsolete; QPainter holds pens by value, so the selected pen is returned, not the previous one
+	QPen *pen = (i < 6 ? hdefpen[i] : 0);
+	if (pen) hDC->setPen (*pen);
+	return pen;
 }
 
 DWORD Instrument::GetDefaultColour (DWORD colidx, DWORD intens) const
@@ -878,11 +885,13 @@ void Instrument::DisplayTitle (oapi::Sketchpad *skp, const char *title) const
 	skp->Text (cw/2, 0, title, strlen(title));
 }
 
-void Instrument::DisplayTitle (HDC hDC, const char *title) const
+void Instrument::DisplayTitle (QPainter *hDC, const char *title) const
 {
-	// obsolete
-	SetTextColor (hDC, col_grey1);
-	TextOut (hDC, cw/2, 0, title, strlen(title));
+	// obsolete; SetTextColor: QPainter draws text with the pen, so the pen is swapped for the text
+	QPen pen = hDC->pen ();
+	hDC->setPen (QColor (GetRValue(col_grey1), GetGValue(col_grey1), GetBValue(col_grey1)));
+	hDC->drawText (cw/2, hDC->fontMetrics().ascent(), QString::fromLatin1 (title)); // TextOut: GDI places the top edge at y, QPainter the baseline
+	hDC->setPen (pen);
 }
 
 void Instrument::DisplayModes (int page)
@@ -1147,7 +1156,7 @@ bool Instrument::FindScnHeader (ifstream &ifs) const
 	switch (id) {
 	case 0: strcpy (header+10, "Left"); break;
 	case 1: strcpy (header+10, "Right"); break;
-	default: sprintf (header+10, "%lld", (int64_t)id + 1); break;
+	default: sprintf (header+10, "%lld", (long long)id + 1); break;
 	}
 	return FindLine (ifs, header);
 }

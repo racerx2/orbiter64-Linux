@@ -7,6 +7,7 @@
 #include "Celbody.h"
 #include "Planet.h"
 #include "Base.h"
+#include <QImage>
 
 using namespace std;
 
@@ -474,16 +475,15 @@ SURFHANDLE Instrument_MapOld::LoadBitmap (const char *cbuf, int *w, int *h)
 
 	// Load bitmap
 	char *path = g_pOrbiter->TexPath (cbuf, ".bmp");
-	HBITMAP hbm = (HBITMAP)LoadImage (GetModuleHandle(NULL), path, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
-	if (!hbm)
-		hbm = (HBITMAP)LoadImage (NULL, path, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE|LR_CREATEDIBSECTION);
-	if (!hbm)
+	// LoadImage from the exe resources left out: a file path is never a resource name
+	QImage *hbm = new QImage (QString::fromStdString (oapiResolvePath (path)));
+	if (hbm->isNull()) {
+		delete hbm;
 		return NULL;
+	}
 	// Get bitmap size
-	BITMAP bm;
-	GetObject (hbm, sizeof(bm), &bm);
-	*w = bm.bmWidth;
-	*h = bm.bmHeight;
+	*w = hbm->width();
+	*h = hbm->height();
 	// Create surface
 	SURFHANDLE surf = gc->clbkCreateSurfaceEx (*w, *h, OAPISURFACE_RENDERTARGET);
 	// Copy bitmap
@@ -493,7 +493,7 @@ SURFHANDLE Instrument_MapOld::LoadBitmap (const char *cbuf, int *w, int *h)
 			surf = NULL;
 		}
 	}
-	DeleteObject (hbm);
+	delete hbm; // DeleteObject
 	return surf;
 }
 
@@ -671,7 +671,7 @@ bool Instrument_MapOld::ClbkSubmn_Target (Select *menu, int item, char *str, voi
 bool Instrument_MapOld::ClbkEnter_Target (Select *menu, int item, char *str, void *data)
 {
 	Instrument_MapOld *map = (Instrument_MapOld*)data;
-	if (!_stricmp (str, "By name ...")) {
+	if (!strcasecmp (str, "By name ...")) {
 		g_input->Open ("Enter target:", 0, 20, Instrument_MapOld::ClbkName_Target,
 			map);
 		return true;
@@ -701,17 +701,17 @@ bool Instrument_MapOld::ReadParams (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) return false;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_MFD", 7)) break;
-		if (!_strnicmp (pc, "REF", 3)) {
+		if (!strncasecmp (pc, "END_MFD", 7)) break;
+		if (!strncasecmp (pc, "REF", 3)) {
 			strcpy (cref, trim_string (pc+3));
-		} else if (!_strnicmp (pc, "BTARGET", 7)) {
+		} else if (!strncasecmp (pc, "BTARGET", 7)) {
 			strcpy (cbtgt, trim_string (pc+7));
-		} else if (!_strnicmp (pc, "OTARGET", 7)) {
+		} else if (!strncasecmp (pc, "OTARGET", 7)) {
 			strcpy (cotgt, trim_string (pc+7));
-		} else if (!_strnicmp (pc, "ZOOM", 4)) {
+		} else if (!strncasecmp (pc, "ZOOM", 4)) {
 			zoom = true;
-		} else if (!_strnicmp (pc, "TRACK", 5)) {
-			if (!_stricmp (trim_string (pc+5), "ON")) {
+		} else if (!strncasecmp (pc, "TRACK", 5)) {
+			if (!strcasecmp (trim_string (pc+5), "ON")) {
 				track = true;
 			} else {
 				track = false;

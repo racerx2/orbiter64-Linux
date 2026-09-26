@@ -163,7 +163,7 @@ void DlgOptions::DrawJoystick()
 {
 	ImGui::SeparatorText("Joystick device");
 	DWORD ndev;
-	DIDEVICEINSTANCE* joylist;
+	JoyDeviceInstance* joylist;
 	g_pOrbiter->GetDInput()->GetJoysticks(&joylist, &ndev);
 	DWORD &jidx = g_pOrbiter->Cfg()->CfgJoystickPrm.Joy_idx;
 

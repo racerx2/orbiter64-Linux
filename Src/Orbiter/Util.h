@@ -68,6 +68,9 @@ double rand1();
 RECT GetClientPos (QWidget *hWnd, QWidget *hChild);
 void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r);
 
+// GetCursorPos + ScreenToClient: cursor in the window's device pixels (screen device pixels if hWnd is NULL)
+POINT CursorPos (const QWindow *hWnd);
+
 // Floating point output stream formatter
 struct FltFormatter
 {
@@ -89,5 +92,8 @@ DWORD GetCSSColor(const char *col);
 
 // not upstream: GetProcAddress counterpart; dlsym also searches a module's dependencies, only the module's own symbol counts
 void *ModuleProc (void *hModule, const char *name);
+
+// not upstream: GetModuleFileName counterpart; the path the module was loaded from
+const char *ModuleFileName (void *hModule);
 
 #endif //!__UTIL_H

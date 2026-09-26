@@ -24,6 +24,8 @@ typedef uint64_t  DWORDLONG;
 typedef int64_t   LONGLONG;
 typedef int       INT;
 typedef float     FLOAT;
+typedef uintptr_t WPARAM; // MFD message parameters (MFDMODESPEC::msgproc)
+typedef intptr_t  LPARAM;
 #define VOID void
 
 #ifndef TRUE
@@ -48,6 +50,32 @@ typedef const char *PCSTR;
 #define GetRValue(rgb) ((BYTE)(rgb))
 #define GetGValue(rgb) ((BYTE)(((WORD)(rgb)) >> 8))
 #define GetBValue(rgb) ((BYTE)((rgb)>>16))
+
+// packed 16-bit pairs (Sketchpad char size, mouse wheel state)
+#define LOWORD(l) ((WORD)(((DWORD_PTR)(l)) & 0xffff))
+#define HIWORD(l) ((WORD)((((DWORD_PTR)(l)) >> 16) & 0xffff))
+#define MAKELONG(a,b) ((LONG)(((WORD)(((DWORD_PTR)(a)) & 0xffff)) | ((DWORD)((WORD)(((DWORD_PTR)(b)) & 0xffff))) << 16))
+#define MAKEWPARAM(l,h) ((WPARAM)(DWORD)MAKELONG(l,h))
+
+// mouse event codes and key state flags passed to clbkProcessMouse keep their winuser.h values
+#define WM_MOUSEMOVE     0x0200
+#define WM_LBUTTONDOWN   0x0201
+#define WM_LBUTTONUP     0x0202
+#define WM_LBUTTONDBLCLK 0x0203
+#define WM_RBUTTONDOWN   0x0204
+#define WM_RBUTTONUP     0x0205
+#define WM_RBUTTONDBLCLK 0x0206
+#define WM_MBUTTONDOWN   0x0207
+#define WM_MBUTTONUP     0x0208
+#define WM_MBUTTONDBLCLK 0x0209
+#define WM_MOUSEWHEEL    0x020A
+#define WM_MOUSEHWHEEL   0x020E
+#define MK_LBUTTON  0x0001
+#define MK_RBUTTON  0x0002
+#define MK_SHIFT    0x0004
+#define MK_CONTROL  0x0008
+#define MK_MBUTTON  0x0010
+#define WHEEL_DELTA 120
 
 // Linux PATH_MAX; Windows' 260 is too short for Linux paths
 #define MAX_PATH 4096

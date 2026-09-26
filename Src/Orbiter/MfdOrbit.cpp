@@ -506,31 +506,31 @@ bool Instrument_Orbit::ReadParams (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) return false;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_MFD", 7)) break;
-		if (!_strnicmp (pc, "PROJ", 4)) {
+		if (!strncasecmp (pc, "END_MFD", 7)) break;
+		if (!strncasecmp (pc, "PROJ", 4)) {
 			strcpy (cprj, trim_string (pc+4));
-		} else if (!_strnicmp (pc, "ALT", 3)) {
+		} else if (!strncasecmp (pc, "ALT", 3)) {
 			dstmode = DIST_ALT;
-		} else if (!_strnicmp (pc, "REF", 3)) {
+		} else if (!strncasecmp (pc, "REF", 3)) {
 			strcpy (cref, trim_string (pc+3));
-		} else if (!_strnicmp (pc, "TARGET", 6)) {
+		} else if (!strncasecmp (pc, "TARGET", 6)) {
 			strcpy (ctgt, trim_string (pc+6));
-		} else if (!_strnicmp (pc, "FRAME", 5)) {
+		} else if (!strncasecmp (pc, "FRAME", 5)) {
 			pc = trim_string (pc+5);
-			if (!_stricmp (pc, "Ecliptic"))
+			if (!strcasecmp (pc, "Ecliptic"))
 				frmmode = FRM_ECL;
-			else if (!_stricmp (pc, "Equator"))
+			else if (!strcasecmp (pc, "Equator"))
 				frmmode = FRM_EQU;
 		}
 	}
 	if (cref[0]) SelectRef (cref);
 	if (ctgt[0]) SelectTarget (ctgt);
 	if (cprj[0]) {
-		if (!_strnicmp (cprj, "Ship", 4))
+		if (!strncasecmp (cprj, "Ship", 4))
 			projmode = PRJ_SHIP;
-		else if (!_strnicmp (cprj, "Target", 6) && tgt)
+		else if (!strncasecmp (cprj, "Target", 6) && tgt)
 			projmode = PRJ_TGT;
-		else if (!_strnicmp (cprj, "Ecliptic", 8) || !_strnicmp (cprj, "Frame", 5))
+		else if (!strncasecmp (cprj, "Ecliptic", 8) || !strncasecmp (cprj, "Frame", 5))
 			projmode = PRJ_FRM;
 	}
 	return true;

@@ -595,7 +595,7 @@ bool Instrument_Transfer::SelectRef (char *str)
 bool Instrument_Transfer::SelectSrc (const char *str)
 {
 	RigidBody *obj;
-	if (!_stricmp (str, "x")) {
+	if (!strcasecmp (str, "x")) {
 		obj = vessel;
 	} else {
 		obj = (RigidBody*)g_psys->GetObj (str, true);
@@ -659,17 +659,17 @@ bool Instrument_Transfer::ReadParams (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) return false;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_MFD", 7)) break;
-		if (!_strnicmp (pc, "REF", 3)) {
+		if (!strncasecmp (pc, "END_MFD", 7)) break;
+		if (!strncasecmp (pc, "REF", 3)) {
 			strcpy (cref, trim_string (pc+3));
-		} else if (!_strnicmp (pc, "SOURCE", 6)) {
+		} else if (!strncasecmp (pc, "SOURCE", 6)) {
 			strcpy (csrc, trim_string (pc+6));
-		} else if (!_strnicmp (pc, "TARGET", 6)) {
+		} else if (!strncasecmp (pc, "TARGET", 6)) {
 			strcpy (ctgt, trim_string (pc+6));
-		} else if (!_strnicmp (pc, "SIMORBIT", 8)) {
+		} else if (!strncasecmp (pc, "SIMORBIT", 8)) {
 			char flag[32];
 			int res = sscanf (pc+8, "%lf%lf%s", &le, &dv, flag);
-			enable_hyp = (res == 3 && !_stricmp (flag, "SHOW"));
+			enable_hyp = (res == 3 && !strcasecmp (flag, "SHOW"));
 			xferprm = true;
 		}
 	}

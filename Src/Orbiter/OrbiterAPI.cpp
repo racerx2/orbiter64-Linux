@@ -1,7 +1,6 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
 #define OAPI_IMPLEMENTATION
 
 #include "Orbiter.h"
@@ -25,6 +24,7 @@
 #include "MenuInfoBar.h"
 #include <zlib.h>
 #include "DrawAPI.h"
+#include <QImage>
 
 #include "Orbitersdk.h"
 
@@ -50,7 +50,7 @@ DLLEXPORT void FormatValue (char *cbuf, int n, double f, int precision)
 	strncpy (cbuf, s, n);
 }
 
-DLLEXPORT HINSTANCE oapiGetOrbiterInstance ()
+DLLEXPORT void *oapiGetOrbiterInstance ()
 {
 	return g_pOrbiter->GetInstance();
 }
@@ -1585,8 +1585,7 @@ DLLEXPORT int oapiSetMaterial (DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL
 
 DLLEXPORT DWORD oapiAddMaterial (MESHHANDLE hMesh, MATERIAL *mat)
 {
-	D3DMATERIAL7 *m = (D3DMATERIAL7*)mat;
-	return ((Mesh*)hMesh)->AddMaterial (*m);
+	return ((Mesh*)hMesh)->AddMaterial (*mat);
 }
 
 DLLEXPORT bool oapiDeleteMaterial (MESHHANDLE hMesh, DWORD idx)
@@ -1774,7 +1773,7 @@ DLLEXPORT void oapiVCRegisterHUD (const VCHUDSPEC *spec)
 		g_pane->RegisterVCHUD (spec);
 }
 
-DLLEXPORT void oapiRegisterPanelBackground (HBITMAP hBmp, DWORD flag, DWORD ck)
+DLLEXPORT void oapiRegisterPanelBackground (QImage *hBmp, DWORD flag, DWORD ck)
 {
 	g_pane->RegisterPanelBackground (hBmp, flag, ck);
 }
@@ -1957,16 +1956,16 @@ DLLEXPORT void oapiReleaseBrush (oapi::Brush *brush)
 	if (gc) gc->clbkReleaseBrush (brush);
 }
 
-DLLEXPORT HDC oapiGetDC (SURFHANDLE surf)
+DLLEXPORT QPainter *oapiGetDC (SURFHANDLE surf)
 {
 	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
-	HDC hDC = NULL;
+	QPainter *hDC = NULL;
 	if (gc && surf)
 		hDC = gc->clbkGetSurfaceDC (surf);
 	return hDC;
 }
 
-DLLEXPORT void oapiReleaseDC (SURFHANDLE surf, HDC hDC)
+DLLEXPORT void oapiReleaseDC (SURFHANDLE surf, QPainter *hDC)
 {
 	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
 	if (gc && surf && hDC)
@@ -1996,12 +1995,12 @@ DLLEXPORT SURFHANDLE oapiCreateSurfaceEx (int width, int height, DWORD attrib)
 	return surf;
 }
 
-DLLEXPORT SURFHANDLE oapiCreateSurface (HBITMAP hBmp, bool release_bmp)
+DLLEXPORT SURFHANDLE oapiCreateSurface (QImage *hBmp, bool release_bmp)
 {
 	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
 	SURFHANDLE surf = NULL;
 	if (gc) surf = gc->clbkCreateSurface (hBmp);
-	if (release_bmp) DeleteObject ((HGDIOBJ)hBmp);
+	if (release_bmp) delete hBmp; // DeleteObject
 	return surf;
 }
 
@@ -2036,7 +2035,7 @@ DLLEXPORT void oapiClearSurfaceColourKey (SURFHANDLE surf)
 	if (!surf) return;
 	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
 	//if (gc) gc->clbClearSurfaceColourKey (surf); // TODO
-	((LPDIRECTDRAWSURFACE7)surf)->SetColorKey (DDCKEY_SRCBLT, 0);
+	if (gc) gc->clbkSetSurfaceColourKey (surf, SURF_NO_CK); // DirectDraw SetColorKey (DDCKEY_SRCBLT, NULL) removed the key
 }
 
 DLLEXPORT DWORD oapiGetColour (DWORD red, DWORD green, DWORD blue)
@@ -2126,7 +2125,7 @@ DLLEXPORT bool oapiAcceptDelayedKey (char key, double interval)
 
 DLLEXPORT LAUNCHPADITEM_HANDLE oapiRegisterLaunchpadItem (LaunchpadItem *item, LAUNCHPADITEM_HANDLE parent)
 {
-	return (LAUNCHPADITEM_HANDLE)g_pOrbiter->Launchpad()->RegisterExtraParam (item, (HTREEITEM)parent);
+	return (LAUNCHPADITEM_HANDLE)g_pOrbiter->Launchpad()->RegisterExtraParam (item, (QTreeWidgetItem*)parent);
 }
 
 DLLEXPORT bool oapiUnregisterLaunchpadItem (LaunchpadItem *item)
@@ -2136,7 +2135,7 @@ DLLEXPORT bool oapiUnregisterLaunchpadItem (LaunchpadItem *item)
 
 DLLEXPORT LAUNCHPADITEM_HANDLE oapiFindLaunchpadItem (const char *name, LAUNCHPADITEM_HANDLE parent)
 {
-	return g_pOrbiter->Launchpad()->FindExtraParam (name, (HTREEITEM)parent);
+	return g_pOrbiter->Launchpad()->FindExtraParam (name, (QTreeWidgetItem*)parent);
 }
 
 DLLEXPORT DWORD oapiRegisterCustomCmd (char *label, char *desc, CustomFunc func, void *context)
@@ -2159,12 +2158,12 @@ DLLEXPORT void oapiUnregisterCustomMenuCmd (int cmdId)
 	return g_pOrbiter->UnregisterMenuCmd (cmdId);
 }
 
-DLLEXPORT HWND oapiOpenDialog (HINSTANCE hDLLInst, int resourceId, DLGPROC msgProc, void *context)
+DLLEXPORT QWidget *oapiOpenDialog (void *hDLLInst, int resourceId, DLGINIT msgProc, void *context)
 {
 	return g_pOrbiter->OpenDialog (hDLLInst, resourceId, msgProc, context);
 }
 
-DLLEXPORT HWND oapiOpenDialogEx (HINSTANCE hDLLInst, int resourceId, DLGPROC msgProc, DWORD flag, void *context)
+DLLEXPORT QWidget *oapiOpenDialogEx (void *hDLLInst, int resourceId, DLGINIT msgProc, DWORD flag, void *context)
 {
 	return g_pOrbiter->OpenDialogEx (hDLLInst, resourceId, msgProc, flag, context);
 }
@@ -2175,12 +2174,12 @@ DLLEXPORT void oapiOpenDialog(ImGuiDialog *e)
 	e->Activate();
 }
 
-DLLEXPORT HWND oapiFindDialog (HINSTANCE hDLLInst, int resourceId)
+DLLEXPORT QWidget *oapiFindDialog (void *hDLLInst, int resourceId)
 {
 	return g_pOrbiter->IsDialog (hDLLInst, resourceId);
 }
 
-DLLEXPORT void oapiCloseDialog (HWND hDlg)
+DLLEXPORT void oapiCloseDialog (QWidget *hDlg)
 {
 	g_pOrbiter->CloseDialog (hDlg);
 }
@@ -2192,39 +2191,36 @@ DLLEXPORT void oapiCloseDialog(ImGuiDialog *e)
 		dmgr->DelEntry(e);
 }
 
-DLLEXPORT void *oapiGetDialogContext (HWND hDlg)
+DLLEXPORT void *oapiGetDialogContext (QWidget *hDlg)
 {
 	DialogManager *dlgmgr = g_pOrbiter->DlgMgr();
 	return (dlgmgr ? dlgmgr->GetDialogContext (hDlg) : NULL);
 }
 
-DLLEXPORT bool oapiRegisterWindow (HINSTANCE hDLLInst, HWND hWnd, DWORD flag)
+DLLEXPORT bool oapiRegisterWindow (void *hDLLInst, QWidget *hWnd, DWORD flag)
 {
 	return g_pOrbiter->RegisterWindow (hDLLInst, hWnd, flag); 
 }
 
-DLLEXPORT bool oapiAddTitleButton (DWORD msgid, HBITMAP hBmp, DWORD flag)
+DLLEXPORT bool oapiAddTitleButton (DWORD msgid, QImage *hBmp, DWORD flag)
 {
 	DialogManager *dlgmgr = g_pOrbiter->DlgMgr();
 	return (dlgmgr ? dlgmgr->AddTitleButton (msgid, hBmp, flag) : false);
 }
 
-DLLEXPORT DWORD oapiGetTitleButtonState (HWND hDlg, DWORD msgid)
+DLLEXPORT DWORD oapiGetTitleButtonState (QWidget *hDlg, DWORD msgid)
 {
 	DialogManager *dlgmgr = g_pOrbiter->DlgMgr();
 	return (dlgmgr ? dlgmgr->GetTitleButtonState (hDlg, msgid) : 0);
 }
 
-DLLEXPORT bool oapiSetTitleButtonState (HWND hDlg, DWORD msgid, DWORD state)
+DLLEXPORT bool oapiSetTitleButtonState (QWidget *hDlg, DWORD msgid, DWORD state)
 {
 	DialogManager *dlgmgr = g_pOrbiter->DlgMgr();
 	return (dlgmgr ? dlgmgr->SetTitleButtonState (hDlg, msgid, state) : false);
 }
 
-DLLEXPORT INT_PTR oapiDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	return OrbiterDefDialogProc (hDlg, uMsg, wParam, lParam);
-}
+// oapiDefDialogProc left out: on Qt, oapiOpenDialog wires the default dialog behaviour itself
 
 DLLEXPORT bool oapiOpenHelp (HELPCONTEXT *hcontext)
 {
@@ -2394,7 +2390,7 @@ DLLEXPORT bool oapiReadScenario_nextline (FILEHANDLE file, char *&line)
 	char *cbuf = readline(ifs);
 	if (!cbuf) return false;
 	line = trim_string (cbuf);
-	if (!_stricmp (line, "END")) return false;
+	if (!strcasecmp (line, "END")) return false;
 	return true;
 }
 
@@ -2571,19 +2567,19 @@ DLLEXPORT DWORD oapiDeflate (const BYTE *inp, DWORD ninp, BYTE *outp, DWORD nout
 
 DLLEXPORT DWORD oapiInflate (const BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp)
 {
-	DWORD ndata = noutp;
+	uLongf ndata = noutp; // uLongf is 64-bit on Linux
 	if (uncompress (outp, &ndata, inp, ninp) != Z_OK)
 		return 0;
-	return ndata;
+	return (DWORD)ndata;
 }
 
 // ------------------------------------------------------------------------------
 // Undocumented interface functions
 // ------------------------------------------------------------------------------
 
-DLLEXPORT void InitLib (HINSTANCE hModule)
+DLLEXPORT void InitLib (void *hModule)
 {
-	typedef void (*OPC_DLLInit)(HINSTANCE hDLL);
+	typedef void (*OPC_DLLInit)(void *hDLL);
 	OPC_DLLInit DLLInit;
 	char cbuf[256], mname[256], *mp;
 	int i, len;
@@ -2591,16 +2587,16 @@ DLLEXPORT void InitLib (HINSTANCE hModule)
 	if (td.SimT0 < 1) {
 		// don't write during simulation, since unnecessary file access
 		// can cause time waste
-		GetModuleFileName (hModule, mname, 256);
+		strncpy (mname, ModuleFileName (hModule), 255); mname[255] = '\0'; // GetModuleFileName
 		for (i = 0, mp = mname; mname[i]; i++)
-			if (mname[i] == '\\') mp = mname+i+1;
+			if (mname[i] == '/') mp = mname+i+1;
 		sprintf (cbuf, "Module %s ", mp);
 		if ((len = strlen(cbuf)) < 30) {
 			for (i = len; i < 30; i++) cbuf[i] = '.';
 			cbuf[i] = '\0';
 		}
 
-		char *(*mdate)() = (char*(*)())GetProcAddress (hModule, "ModuleDate");
+		char *(*mdate)() = (char*(*)())ModuleProc (hModule, "ModuleDate");
 		if (mdate) {
 			int Date2Int (char *date);
 			sprintf (cbuf+strlen(cbuf), " [Build %06d", Date2Int(mdate()));
@@ -2608,7 +2604,7 @@ DLLEXPORT void InitLib (HINSTANCE hModule)
 			strcat (cbuf, " [Build ******");
 		}
 
-		int (*fversion)() = (int(*)())GetProcAddress (hModule, "GetModuleVersion");
+		int (*fversion)() = (int(*)())ModuleProc (hModule, "GetModuleVersion");
 		if (fversion) {
 			sprintf (cbuf+strlen(cbuf), ", API %06d]", fversion());
 		} else {
@@ -2618,17 +2614,17 @@ DLLEXPORT void InitLib (HINSTANCE hModule)
 		LOGOUT (cbuf);
 	}
 
-	DLLInit = (OPC_DLLInit)GetProcAddress (hModule, "InitModule");
-	if (!DLLInit) DLLInit = (OPC_DLLInit)GetProcAddress (hModule, "opcDLLInit");
+	DLLInit = (OPC_DLLInit)ModuleProc (hModule, "InitModule");
+	if (!DLLInit) DLLInit = (OPC_DLLInit)ModuleProc (hModule, "opcDLLInit");
 	if (DLLInit) (*DLLInit)(hModule);
 }
 
-DLLEXPORT void ExitLib (HINSTANCE hModule)
+DLLEXPORT void ExitLib (void *hModule)
 {
-	typedef void (*OPC_DLLExit)(HINSTANCE hDLL);
+	typedef void (*OPC_DLLExit)(void *hDLL);
 	OPC_DLLExit DLLExit;
-	DLLExit = (OPC_DLLExit)GetProcAddress (hModule, "ExitModule");
-	if (!DLLExit) DLLExit = (OPC_DLLExit)GetProcAddress (hModule, "opcDLLExit");
+	DLLExit = (OPC_DLLExit)ModuleProc (hModule, "ExitModule");
+	if (!DLLExit) DLLExit = (OPC_DLLExit)ModuleProc (hModule, "opcDLLExit");
 	if (DLLExit) (*DLLExit)(hModule);
 }
 
@@ -2639,7 +2635,7 @@ DLLEXPORT int Date2Int (char *date)
 	int day, month, year, v;
 	sscanf (date, "%s%d%d", ms, &day, &year);
 	for (month = 0; month < 12; month++)
-		if (!_strnicmp (ms, mstr[month], 3)) break;
+		if (!strncasecmp (ms, mstr[month], 3)) break;
 	v = (year%100)*10000 + (month+1)*100 + day;
 	return v;
 }

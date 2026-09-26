@@ -12,8 +12,7 @@
 #ifndef __PANEL2D_H
 #define __PANEL2D_H
 
-#define STRICT 1
-#include <windows.h>
+#include "OrbiterPlatform.h"
 #include "Mfd.h"
 
 // =======================================================================
@@ -193,7 +192,7 @@ protected:
 private:
 	oapi::GraphicsClient *gc; // graphics client object
 	Pane *pane;               // logical cockpit object
-	HWND cwnd;                // window handle for mouse position offset calculations
+	QWindow *cwnd;            // window handle for mouse position offset calculations
 	int id;                   // panel identifier (0=main)
 	int connect[4];           // neighbour panel identifiers
 	bool visible;             // panel visible in viewport?

@@ -124,10 +124,10 @@ bool DlgMap::SetSelection(const char *name)
 	if ((selectionfilter & DISP_VESSEL) && (vectormap->GetDisplayFlags() & DISP_VESSEL)) { // search for vessel
 		for (i = 0; i < g_psys->nVessel(); i++) {
 			Vessel *v = g_psys->GetVessel(i);
-			if (!_strnicmp (v->Name(), name, len)) {
+			if (!strncasecmp (v->Name(), name, len)) {
 				if (nhit < maxhit) hitstr[nhit] = v->Name();
 				nhit++;
-				if (!found_exact && !_stricmp (v->Name(), name)) {
+				if (!found_exact && !strcasecmp (v->Name(), name)) {
 					sel.type = DISP_VESSEL;
 					sel.obj = v;
 					found_exact = true;
@@ -140,10 +140,10 @@ bool DlgMap::SetSelection(const char *name)
 		if (planet) {
 			for (i = 0; i < planet->nBase(); i++) {
 				const Base *base = planet->GetBase(i);
-				if (!_strnicmp (base->Name(), name, len)) {
+				if (!strncasecmp (base->Name(), name, len)) {
 					if (nhit < maxhit) hitstr[nhit] = base->Name();
 					nhit++;
-					if (!found_exact && !_stricmp (base->Name(), name)) {
+					if (!found_exact && !strcasecmp (base->Name(), name)) {
 						sel.type = DISP_BASE;
 						sel.obj = base;
 						found_exact = true;
@@ -159,10 +159,10 @@ bool DlgMap::SetSelection(const char *name)
 				const Nav *nav = planet->NavMgr().GetNav(i);
 				if (nav->Type() == TRANSMITTER_VOR) {
 					const Nav_VOR *vor = (const Nav_VOR*)nav;
-					if (!_strnicmp (vor->GetId(), name, len)) {
+					if (!strncasecmp (vor->GetId(), name, len)) {
 						if (nhit < maxhit) hitstr[nhit] = vor->GetId();
 						nhit++;
-						if (!found_exact && !_stricmp (vor->GetId(), name)) {
+						if (!found_exact && !strcasecmp (vor->GetId(), name)) {
 							sel.type = DISP_NAVAID;
 							sel.obj = vor;
 							found_exact = true;
@@ -175,10 +175,10 @@ bool DlgMap::SetSelection(const char *name)
 	if ((selectionfilter & DISP_MOON) && vectormap->GetDisplayFlags() & DISP_MOON) { // search for moons
 		for (i = 0; i < vectormap->GetCBody()->nSecondary(); i++) {
 			const CelestialBody *moon = vectormap->GetCBody()->Secondary (i);
-			if (!_strnicmp (moon->Name(), name, len)) {
+			if (!strncasecmp (moon->Name(), name, len)) {
 				if (nhit < maxhit) hitstr[nhit] = moon->Name();
 				nhit++;
-				if (!found_exact && !_stricmp (moon->Name(), name)) {
+				if (!found_exact && !strcasecmp (moon->Name(), name)) {
 					sel.type = DISP_MOON;
 					sel.obj = moon;
 					found_exact = true;

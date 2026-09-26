@@ -7,6 +7,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include <QWidget>
+#include <QWindow>
+#include <QCursor>
+#include <QScreen>
+#include <QGuiApplication>
 #include <dlfcn.h>
 #include <link.h>
 #include <sstream>
@@ -83,6 +87,19 @@ RECT GetClientPos (QWidget *hWnd, QWidget *hChild)
 	r.left = p.x(), r.top = p.y();
 	r.right = r.left + hChild->width(), r.bottom = r.top + hChild->height();
 	return r;
+}
+
+POINT CursorPos (const QWindow *hWnd)
+{
+	QPoint p = QCursor::pos ();
+	qreal dpr = 1.0;
+	if (hWnd) {
+		p = hWnd->mapFromGlobal (p);
+		dpr = hWnd->devicePixelRatio ();
+	} else if (QScreen *s = QGuiApplication::screenAt (p))
+		dpr = s->devicePixelRatio ();
+	POINT pt = { (LONG)(p.x()*dpr), (LONG)(p.y()*dpr) };
+	return pt;
 }
 
 void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r)
@@ -302,4 +319,10 @@ void *ModuleProc (void *hModule, const char *name)
 	Dl_info info;
 	if (proc && (dlinfo (hModule, RTLD_DI_LINKMAP, &lm) || !dladdr (proc, &info) || strcmp (info.dli_fname, lm->l_name))) proc = 0;
 	return proc;
+}
+
+const char *ModuleFileName (void *hModule)
+{
+	struct link_map *lm;
+	return (hModule && !dlinfo (hModule, RTLD_DI_LINKMAP, &lm) && lm->l_name ? lm->l_name : "");
 }

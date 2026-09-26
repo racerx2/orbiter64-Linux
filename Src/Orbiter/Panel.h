@@ -9,8 +9,7 @@
 #ifndef __PANEL_H
 #define __PANEL_H
 
-#define STRICT 1
-#include <windows.h>
+#include "OrbiterPlatform.h"
 #include <fstream>
 
 // =======================================================================
@@ -46,13 +45,13 @@ public:
 	void Move (LONG dx, LONG dy);
 	// scrolls panel by the specified amount in x and y
 
-	void Point2Screen (long srcX, long srcY, long &tgtX, long &tgtY) const;
+	void Point2Screen (LONG srcX, LONG srcY, LONG &tgtX, LONG &tgtY) const;
 	// converts point from unscaled panel space to viewport space
 
 	void Area2Screen (const RECT &srcR, RECT &tgtR) const;
 	// converts rectangle from unscaled panel space to viewport space
 
-	void DefineBackground (HBITMAP hBmp, DWORD flag, DWORD ck = (DWORD)-1);
+	void DefineBackground (QImage *hBmp, DWORD flag, DWORD ck = (DWORD)-1);
 
 	void DefineArea (int aid, const RECT &pos, int draw_mode, int mouse_mode, int bkmode);
 	void ReleaseAreas ();
@@ -107,7 +106,7 @@ private:
 	LONG tgtW, tgtH;            // panel target width, height
 	LONG srcW, srcH;            // panel source width, height
 	LONG X0, Y0;                // coordinates of upper left corner of scaled source rectangle in target space
-	HWND cwnd;                  // window handle for mouse position offset calculations
+	QWindow *cwnd;              // window handle for mouse position offset calculations
 	double scale, iscale;       // panel scaling factor src->tgt and tgt->src
 	RECT tgtRect;               // corners of visible part of target rectangle
 	RECT srcRect;				// visible panel area in source rectangle

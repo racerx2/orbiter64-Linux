@@ -143,22 +143,13 @@ set(Orbiter_depends
 	DlgCtrl
 )
 
-# not upstream: until every Src/Orbiter file is ported, the exe target is OrbiterPort (built on request only)
-# and Orbiter is an empty target the modules depend on
-if(ORBITER_PORT_COMPLETE)
-	set(OrbiterExe Orbiter)
-else()
-	set(OrbiterExe OrbiterPort)
-	add_custom_target(Orbiter)
-endif()
-
 # Orbiter executable (graphics server version)
-add_executable(${OrbiterExe} ${common_src})
+add_executable(Orbiter ${common_src})
 
 # the dialog templates, bitmaps, icons and strings of Orbiter.rc as a C++ resource table
-orbiter_rc_resources(${OrbiterExe} Orbiter.rc EXE SYMBOL OrbiterResources)
+orbiter_rc_resources(Orbiter Orbiter.rc EXE SYMBOL OrbiterResources)
 
-set_target_properties(${OrbiterExe}
+set_target_properties(Orbiter
 	PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
 	OUTPUT_NAME Orbiter
@@ -166,23 +157,18 @@ set_target_properties(${OrbiterExe}
 	FOLDER Core
 	AUTOMOC ON
 )
-if(NOT ORBITER_PORT_COMPLETE)
-	set_target_properties(${OrbiterExe} PROPERTIES EXCLUDE_FROM_ALL ON)
-endif()
 
-target_include_directories(${OrbiterExe} PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
+target_include_directories(Orbiter PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
 
-target_link_libraries(${OrbiterExe} ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
+target_link_libraries(Orbiter ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
 
-add_dependencies(${OrbiterExe} ${Orbiter_depends})
+add_dependencies(Orbiter ${Orbiter_depends})
 
 # Installation: Orbiter executable (graphics-server versions)
-if(ORBITER_PORT_COMPLETE)
-	install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
-endif()
+install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
 
 # If the standard Orbiter executable is not built...
-set_target_properties(${OrbiterExe} PROPERTIES ENABLE_EXPORTS 1)
+set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
 
 # no import library on ELF: modules bind the exe's exported oapi* symbols when they are loaded
 

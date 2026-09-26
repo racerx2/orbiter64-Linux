@@ -1,16 +1,13 @@
 #include "ConsoleManager.h"
 
-#include <windows.h>
+#include <unistd.h>
 
+// GetConsoleProcessList: Orbiter owns the console alone when it was not started from a terminal
 bool ConsoleManager::IsConsoleExclusive(void) {
-    DWORD pids[2];
-    DWORD num_pids = GetConsoleProcessList(pids, 2);
-    return num_pids <= 1;
+    return !isatty(STDIN_FILENO);
 }
 
+// GetConsoleWindow/ShowWindow: the launching terminal is not an Orbiter window, nothing to show or hide
 void ConsoleManager::ShowConsole(bool show)
 {
-    HWND wnd = GetConsoleWindow();
-    if (wnd)
-        ShowWindow(wnd, show ? SW_SHOW : SW_HIDE);
 }

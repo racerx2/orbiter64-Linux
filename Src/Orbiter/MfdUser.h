@@ -8,7 +8,6 @@
 #ifndef __MFD_USER_H
 #define __MFD_USER_H
 
-#define STRICT 1
 #include "Mfd.h"
 #include "OrbiterAPI.h"
 
@@ -26,7 +25,7 @@ public:
 	inline const char *BtnLabel (int bt) const { return mfd->ButtonLabel (bt); }
 	inline int BtnMenu (const MFDBUTTONMENU **menu) const { return (mfd ? mfd->ButtonMenu (menu) : 0); }
 	void UpdateDraw (oapi::Sketchpad *skp);
-	void UpdateDraw (HDC hDC);
+	void UpdateDraw (QPainter *hDC);
 
 protected:
 	bool ReadParams (std::ifstream &ifs);

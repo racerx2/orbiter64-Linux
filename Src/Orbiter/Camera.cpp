@@ -24,7 +24,9 @@
 #include "Log.h"
 #include "OrbiterAPI.h"
 #include "Vobject.h"
-#include <zmouse.h>
+// zmouse.h left out: WM_MOUSEWHEEL is in OrbiterPlatform.h
+#include <QCursor>
+#include <QWindow>
 
 using namespace std;
 
@@ -69,7 +71,8 @@ Camera::Camera (double _nearplane, double _farplane)
 	has_tref = false;
 	movehead = false;
 	ExtCtrlMode = 0;
-	GetCursorPos (&pm);
+	QPoint p0 = QCursor::pos (); // GetCursorPos
+	pm.x = p0.x(), pm.y = p0.y();
 	mmoveT = -1000.0;
 	ap_int = ap_ext = RAD*25.0;
 	ap = &ap_ext;
@@ -133,8 +136,8 @@ bool Camera::ProcessMouse (UINT event, DWORD state, DWORD x, DWORD y, const char
 
 void Camera::UpdateMouse ()
 {
-	POINT pt;
-	GetCursorPos (&pt);
+	QPoint gpt = QCursor::pos (); // GetCursorPos
+	POINT pt = { gpt.x(), gpt.y() };
 	if (pt.x != pm.x || pt.y != pm.y) {
 		pm.x = pt.x, pm.y = pt.y;
 		mmoveT = td.SysT0;
@@ -143,11 +146,12 @@ void Camera::UpdateMouse ()
 	if (mbdown[1]) {
 		int dx, dy, x0, y0;
 		x0 = pt.x, y0 = pt.y;
-		if (!g_pOrbiter->IsFullscreen())
-			ScreenToClient (g_pOrbiter->GetRenderWnd(), &pt);
+		QWindow *hWnd = g_pOrbiter->GetRenderWnd();
+		pt = CursorPos (hWnd); // ScreenToClient, also when fullscreen: the window need not sit at the screen origin
 		dx = pt.x - mx;
 		dy = pt.y - my;
-		SetCursorPos (x0-dx, y0-dy);
+		qreal dpr = (hWnd ? hWnd->devicePixelRatio() : 1.0);
+		QCursor::setPos (x0-qRound(dx/dpr), y0-qRound(dy/dpr)); // SetCursorPos; Wayland ignores it
 		if (!(dx || dy)) return;
 
 		if (external_view) {
@@ -408,7 +412,7 @@ void Camera::Attach (Body *_target, int mode)
 
 bool Camera::Direction2Viewport(const Vector &dir, int &x, int &y)
 {
-	D3DVECTOR homog;
+	oapi::FVECTOR3 homog;
 	D3DMath_VectorMatrixMultiply (homog, D3DMath_Vector(dir.x, dir.y, dir.z), *D3D_ProjViewMatrix());
 	if (homog.x >= -1.0f && homog.y <= 1.0f && homog.z <= 1.0f) {
 		if (std::hypot(homog.x, homog.y) < 1e-6) {
@@ -1269,7 +1273,7 @@ MATRIX4 Camera::ViewMatrix() const
 	return mat;
 }
 
-D3DMATRIX *Camera::D3D_ProjViewMatrix ()
+oapi::FMATRIX4 *Camera::D3D_ProjViewMatrix ()
 {
 	if (!pv_mat_valid) {
 		D3DMath_MatrixMultiply (pv_mat, proj_mat, view_mat);
@@ -1280,16 +1284,16 @@ D3DMATRIX *Camera::D3D_ProjViewMatrix ()
 
 void Camera::UpdateProjectionMatrix ()
 {
-	ZeroMemory (&proj_mat, sizeof (D3DMATRIX));
-	proj_mat._11 = (FLOAT)(aspect / tan_ap);
-	proj_mat._22 = (FLOAT)(1.0    / tan_ap);
+	memset (&proj_mat, 0, sizeof (oapi::FMATRIX4)); // ZeroMemory
+	proj_mat.m11 = (FLOAT)(aspect / tan_ap);
+	proj_mat.m22 = (FLOAT)(1.0    / tan_ap);
 	if (farplane >= 1e20) {
-		proj_mat._33 = 1.0f;
-		proj_mat._43 = -nearplane;
+		proj_mat.m33 = 1.0f;
+		proj_mat.m43 = -nearplane;
 	} else {
-		proj_mat._43 = (proj_mat._33 = farplane / (farplane-nearplane)) * (-nearplane);
+		proj_mat.m43 = (proj_mat.m33 = farplane / (farplane-nearplane)) * (-nearplane);
 	}
-	proj_mat._34 = 1.0f;
+	proj_mat.m34 = 1.0f;
 
 	// register new projection matrix with device
     //pDev->SetTransform (D3DTRANSFORMSTATE_PROJECTION, &proj_mat);
@@ -1380,39 +1384,39 @@ bool Camera::Read (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_CAMERA", 10)) break;
-		if (!_strnicmp (pc, "TARGET", 6)) {
+		if (!strncasecmp (pc, "END_CAMERA", 10)) break;
+		if (!strncasecmp (pc, "TARGET", 6)) {
 			pc = trim_string (pc+6);
 			if (!(tg = g_psys->GetObj (pc, true)))
 				tg = g_psys->GetBase (pc, true);
-		} else if (!_strnicmp (pc, "MODE", 4)) {
+		} else if (!strncasecmp (pc, "MODE", 4)) {
 			pc = trim_string (pc+4);
-			if (!_strnicmp (pc, "Extern", 6)) external_view = true;
+			if (!strncasecmp (pc, "Extern", 6)) external_view = true;
 			else                             external_view = false;
-		} else if (!_strnicmp (pc, "POS", 3)) {
+		} else if (!strncasecmp (pc, "POS", 3)) {
 			n = sscanf (pc+3, "%lf%lf%lf", &rd, &ph, &th);
 			ph *= RAD, th *= RAD;
-		} else if (!_strnicmp (pc, "FOV", 3)) {
+		} else if (!strncasecmp (pc, "FOV", 3)) {
 			double a;
 			n = sscanf (pc+3, "%lf", &a);
 			if (a < 10.0) a = 10.0;
 			else if (a > 160.0) a = 160.0;
 			a *= RAD*0.5;
 			ap_int = ap_ext = a;
-		} else if (!_strnicmp (pc, "TRACKMODE", 9)) {
+		} else if (!strncasecmp (pc, "TRACKMODE", 9)) {
 			n = sscanf (pc+9, "%s%s", ctrackmode, cdirref);
-		} else if (!_strnicmp (pc, "GROUNDLOCATION", 14)) {
+		} else if (!strncasecmp (pc, "GROUNDLOCATION", 14)) {
 			n = sscanf (pc+14, "%lf%lf%lf", &go.lng, &go.lat, &go.alt);
 			go.lng *= RAD, go.lat *= RAD;
-		} else if (!_strnicmp (pc, "GROUNDDIRECTION", 15)) {
+		} else if (!strncasecmp (pc, "GROUNDDIRECTION", 15)) {
 			n = sscanf (pc+15, "%lf%lf", &go.phi, &go.tht);
 			go.phi *= RAD, go.tht *= RAD;
 			go.tgtlock = false;
-		} else if (!_strnicmp (pc, "BEGIN_PRESET", 12)) {
+		} else if (!strncasecmp (pc, "BEGIN_PRESET", 12)) {
 			for (;;) {
 				if (!ifs.getline (cbuf, 256)) break;
 				pc = trim_string (cbuf);
-				if (!_strnicmp (pc, "END_PRESET", 10)) break;
+				if (!strncasecmp (pc, "END_PRESET", 10)) break;
 				AddPreset (CameraMode::Create (pc));
 			}
 		}
@@ -1420,15 +1424,15 @@ bool Camera::Read (ifstream &ifs)
 	if (tg && external_view) target = tg;
 	if (external_view) {
 		rdist = rd, ephi = ph, etheta = th;
-		if (!_stricmp (ctrackmode, "AbsoluteDirection"))
+		if (!strcasecmp (ctrackmode, "AbsoluteDirection"))
 			extmode = CAMERA_ABSDIRECTION;
-		else if (!_stricmp (ctrackmode, "GlobalFrame"))
+		else if (!strcasecmp (ctrackmode, "GlobalFrame"))
 			extmode = CAMERA_GLOBALFRAME;
-		else if (!_stricmp (ctrackmode, "TargetTo") && (dirref = g_psys->GetObj (cdirref, true)))
+		else if (!strcasecmp (ctrackmode, "TargetTo") && (dirref = g_psys->GetObj (cdirref, true)))
 			extmode = CAMERA_TARGETTOOBJECT;
-		else if (!_stricmp (ctrackmode, "TargetFrom") && (dirref = g_psys->GetObj (cdirref, true)))
+		else if (!strcasecmp (ctrackmode, "TargetFrom") && (dirref = g_psys->GetObj (cdirref, true)))
 			extmode = CAMERA_TARGETFROMOBJECT;
-		else if (!_stricmp (ctrackmode, "Ground") && (dirref = g_psys->GetObj (cdirref, true)))
+		else if (!strcasecmp (ctrackmode, "Ground") && (dirref = g_psys->GetObj (cdirref, true)))
 			extmode = CAMERA_GROUNDOBSERVER;
 		else 
 			extmode = CAMERA_TARGETRELATIVE;
@@ -1540,11 +1544,11 @@ CameraMode *CameraMode::Create (char *str)
 
 	if (!(pc = strtok (str, ":"))) return 0;
 	tc = trim_string (pc);
-	if (!_stricmp (tc, "Cockpit")) {
+	if (!strcasecmp (tc, "Cockpit")) {
 		cm = new CameraMode_Cockpit; TRACENEW
-	} else if (!_stricmp (tc, "Track")) {
+	} else if (!strcasecmp (tc, "Track")) {
 		cm = new CameraMode_Track; TRACENEW
-	} else if (!_stricmp (tc, "Ground")) {
+	} else if (!strcasecmp (tc, "Ground")) {
 		cm = new CameraMode_Ground; TRACENEW
 	} else {
 		cm = new CameraMode_Cockpit; TRACENEW
@@ -1578,15 +1582,15 @@ void CameraMode_Cockpit::Init (char *str)
 {
 	if (!str || str[0] == '\0') return;
 
-	if (!strnicmp(str, "generic", 7)) {
+	if (!strncasecmp(str, "generic", 7)) {
 		cmode = CM_GENERIC;
 		str += 7;
-	} else if (!strnicmp(str, "panel2d", 7)) {
+	} else if (!strncasecmp(str, "panel2d", 7)) {
 		cmode = CM_PANEL2D;
 		str += 7;
 		if (str[0] == ':' && sscanf(++str, "%d", &pos))
 			while (*str != ' ' && *str != '\0') str++;
-	} else if (!strnicmp(str, "vc", 2)) {
+	} else if (!strncasecmp(str, "vc", 2)) {
 		cmode = CM_VC;
 		str += 2;
 		if (str[0] == ':' && sscanf(++str, "%d", &pos)) {
@@ -1600,7 +1604,7 @@ void CameraMode_Cockpit::Init (char *str)
 				}
 			}
 		}
-	} else if (!strnicmp(str, "current", 7)) {
+	} else if (!strncasecmp(str, "current", 7)) {
 		cmode = CM_CURRENT;
 		str += 7;
 	}
@@ -1632,18 +1636,18 @@ void CameraMode_Track::Init (char *str)
 {
 	char tm[64], rf[256];
 	sscanf (str, "%s%lf%lf%lf%s", tm, &reldist, &phi, &theta, rf);
-	if (!_stricmp (tm, "RELATIVE"))
+	if (!strcasecmp (tm, "RELATIVE"))
 		tmode = TM_RELATIVE;
-	else if (!_stricmp (tm, "ABSDIR"))
+	else if (!strcasecmp (tm, "ABSDIR"))
 		tmode = TM_ABSDIR;
-	else if (!_stricmp (tm, "GLOBAL"))
+	else if (!strcasecmp (tm, "GLOBAL"))
 		tmode = TM_GLOBAL;
-	else if (!_stricmp (tm, "TARGETTOREF")) {
+	else if (!strcasecmp (tm, "TARGETTOREF")) {
 		tmode = TM_TARGETTOREF;
 		Body *r = g_psys->GetObj (rf, true);
 		if (r) ref = (OBJHANDLE)r;
 		else tmode = TM_CURRENT;
-	} else if (!_stricmp (tm, "TARGETFROMREF")) {
+	} else if (!strcasecmp (tm, "TARGETFROMREF")) {
 		tmode = TM_TARGETFROMREF;
 		Body *r = g_psys->GetObj (rf, true);
 		if (r) ref = (OBJHANDLE)r;
@@ -1654,7 +1658,7 @@ void CameraMode_Track::Init (char *str)
 void CameraMode_Track::Store (char *str)
 {
 	static const char *tmstr[6] = {"CURRENT","RELATIVE", "ABSDIR", "GLOBAL", "TARGETTOREF", "TARGETFROMREF"};
-	sprintf (str, "Track:%s%:%0.2f:%s %0.3f %0.3f %0.3f", 
+	sprintf (str, "Track:%s:%0.2f:%s %0.3f %0.3f %0.3f", // "%s%:" typo: MSVC printed ":", glibc prints "%:"
 		target ? ((Body*)target)->Name() : "-", fov,
 		tmstr[tmode], reldist, phi, theta);
 	if (tmode == TM_TARGETTOREF || tmode == TM_TARGETFROMREF) {

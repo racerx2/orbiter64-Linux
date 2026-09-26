@@ -8,9 +8,10 @@
 #ifndef __MENUINFOBAR_H
 #define __MENUINFOBAR_H
 
-#define STRICT 1
-
 #include "OrbiterAPI.h"
+#include <memory>
+#include <string>
+#include <vector>
 
 // =======================================================================
 // class MenuInfoBar

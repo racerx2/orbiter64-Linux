@@ -9,9 +9,7 @@
 #ifndef __PANE_H
 #define __PANE_H
 
-#define STRICT 1
-#include <windows.h>
-#include <mmsystem.h>
+#include "OrbiterPlatform.h"
 #include "Orbiter.h"
 #include "Body.h"
 #include "Mfd.h"
@@ -29,6 +27,11 @@
 
 class HUD;
 class Vessel;
+class DefaultPanel;
+class Panel2D;
+class Panel;
+class VirtualCockpit;
+class MenuInfoBar;
 
 struct MFDspec {        // panel MFD specs
 	Instrument *instr;  // pointer to MFD instance
@@ -55,7 +58,7 @@ class Pane {
 	friend class MenuInfoBar;
 
 public:
-	Pane (oapi::GraphicsClient *gclient, HWND hwnd, int width, int height, int bpp);
+	Pane (oapi::GraphicsClient *gclient, QWindow *hwnd, int width, int height, int bpp);
 	// Create a new pane with dimension width x height x bpp
 
 	~Pane ();
@@ -65,8 +68,7 @@ public:
 	int BitsPerPixel() const { return BPP; }
 	// Return pane dimensions
 
-	void RestoreDeviceObjects (LPDIRECT3D7 d3d, LPDIRECT3DDEVICE7 dev);
-	// Restore all devices (e.g. after render window is re-openend
+	// RestoreDeviceObjects(LPDIRECT3D7, LPDIRECT3DDEVICE7) left out: Direct3D 7 inline render path
 
 	void Update (double simt, double syst);
 	// Update GDI pane display for simulation time simt and system time syst
@@ -212,7 +214,7 @@ public:
 
 	Panel2D *GetPanel2D() { return panel2d; }
 
-	void RegisterPanelBackground (HBITMAP hBmp, DWORD flag, DWORD ck);
+	void RegisterPanelBackground (QImage *hBmp, DWORD flag, DWORD ck);
 	void RegisterPanelBackground (SURFHANDLE hSurf, DWORD flag);
 	void RegisterPanelArea (int id, const RECT &pos, int draw_mode, int mouse_mode, int bkmode);
 	void SetPanelNeighbours (int left, int right, int top, int bottom);
@@ -231,7 +233,7 @@ public:
 
 	void SetPanel2DBlink (VECTOR3 v[4]);
 
-	bool GlobalToHomog (const Vector &glob, D3DVECTOR &homog) const;
+	bool GlobalToHomog (const Vector &glob, oapi::FVECTOR3 &homog) const;
 	// transform global position glob into homogeneous viewport
 	// coordinates (x=-1: left edge of viewing fustrum etc.)
 	// return value indicates point within fustrum (does not check
@@ -265,7 +267,7 @@ private:
 	oapi::GraphicsClient *gc; // client instance
 	int W, H, BPP;            // pane dimensions
 	int scaleW;
-	HWND hWnd;               // window handle
+	QWindow *hWnd;           // window handle
 	int colidx;              // HUD colour index
 	COLORREF hudCol;         // HUD colour
 	double hudIntens;        // HUD intensity (VC only)

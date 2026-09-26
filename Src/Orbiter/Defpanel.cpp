@@ -387,11 +387,7 @@ void DefaultPanel::InitDeviceObjects ()
 	mfdFont = gc->clbkCreateFont (fh1, true, "Sans");
 }
 
-void DefaultPanel::RestoreDeviceObjects (LPDIRECT3D7 d3d, LPDIRECT3DDEVICE7 dev)
-{
-	// This method is currently only supported by the inline client
-	rcsmode = -1;
-}
+// RestoreDeviceObjects left out: Direct3D 7 inline render path
 
 void DefaultPanel::DestroyDeviceObjects ()
 {
@@ -693,9 +689,7 @@ void DefaultPanel::PressTrimButton (int btn)
 void DefaultPanel::GetButtonState (int &state, int &mfd, int &btn)
 {
 	if (activemfd >= 0 && mstate & PANEL_MOUSE_PRESSED) {
-		POINT pt;
-		GetCursorPos (&pt);
-		g_pOrbiter->ScreenToClient (&pt);
+		POINT pt = CursorPos (g_pOrbiter->GetRenderWnd());
 		if (GetMFDButton (pt.x, pt.y, mfd, btn) && mfd == activemfd && btn == activebtn) {
 			if (btn < 12) {
 				state = mstate;

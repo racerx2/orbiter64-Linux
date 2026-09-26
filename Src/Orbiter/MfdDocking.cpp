@@ -781,16 +781,16 @@ bool Instrument_Docking::ReadParams (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) return false;
 		pc = trim_string (cbuf);
-		if (!_strnicmp (pc, "END_MFD", 7)) break;
-		if (!_strnicmp (pc, "NAV", 3)) {
+		if (!strncasecmp (pc, "END_MFD", 7)) break;
+		if (!strncasecmp (pc, "NAV", 3)) {
 			smode = NAV;
 			sscanf (trim_string (pc+3), "%d", &nv);
-		} else if (!_strnicmp (pc, "VIS", 3)) {
+		} else if (!strncasecmp (pc, "VIS", 3)) {
 			smode = VIS;
-		} else if (!_strnicmp (pc, "TARGET", 6)) {
+		} else if (!strncasecmp (pc, "TARGET", 6)) {
 			SetTarget (trim_string (pc+6));
 		}
-		else if (!_strnicmp(pc, "SCALE", 5)) {
+		else if (!strncasecmp(pc, "SCALE", 5)) {
 			sscanf(trim_string(pc + 5), "%d", &scale);
 		}
 	}

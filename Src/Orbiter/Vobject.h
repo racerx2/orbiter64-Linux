@@ -8,7 +8,7 @@
 #ifndef __VOBJECT_H
 #define __VOBJECT_H
 
-#include <d3d.h>
+// d3d.h left out: D3DMATRIX -> oapi::FMATRIX4, D3DCOLORVALUE -> COLOUR4
 #include "Vecmat.h"
 #include "GraphicsAPI.h"
 
@@ -30,7 +30,7 @@ public:
 	static void CreateDeviceObjects (OrbiterGraphics *gclient);
 	static void DestroyDeviceObjects ();
 
-	static D3DCOLORVALUE ColorToD3D(Vector4 col) { return { (float)col.x, (float)col.y, (float)col.z, (float)col.w }; };
+	static COLOUR4 ColorToD3D(Vector4 col) { return { (float)col.x, (float)col.y, (float)col.z, (float)col.w }; };
 
 	virtual unsigned long GetCaps () const
 	{ return 0; }
@@ -56,21 +56,14 @@ public:
 	// objects return the near and far distance limits of the rendered object
 	// (including any applied scaling)
 
-	virtual void Render (LPDIRECT3DDEVICE7 dev) = 0;
-	// Object renders itself in the 3d device
-
-	virtual void RenderExhaust (LPDIRECT3DDEVICE7, LPDIRECTDRAWSURFACE7) {}
-	// all classes which define VOCAPS_HASENGINES should implement this
-
-	virtual void RenderBeacons (LPDIRECT3DDEVICE7) {}
-	// allows objects to render light beacons or similar
+	// Render, RenderExhaust, RenderBeacons left out: Direct3D 7 inline render path
 
 	inline double CDist () const { return cdist; }
 	inline const Vector &CPos () const { return cpos; }
 	inline double ScaleFactor () const { return apprad_factor; }
 	inline double AppRad () const { return 1.0/iapprad; }
 
-	inline const D3DMATRIX &MWorld() const { return mWorld; }
+	inline const oapi::FMATRIX4 &MWorld() const { return mWorld; }
 
 	virtual void clbkEvent (DWORD msg, DWORD_PTR content) {}
 	// Notification of visual event (e.g. mesh addition/deletion)
@@ -87,33 +80,21 @@ public:
 		float lsize;
 	};
 
-	virtual void RenderVectors(LPDIRECT3DDEVICE7 dev);
-	virtual void RenderVectorLabels(LPDIRECT3DDEVICE7 dev);
+	// RenderVectors, RenderVectorLabels left out: Direct3D 7 inline render path
 
 protected:
 	static OrbiterGraphics *gc;
 	// inline graphics client instance
 
-	void RenderAsPixel (LPDIRECT3DDEVICE7 dev);
-	// Render distant object as 2x2 pixel block
-
-	void RenderAsDisc (LPDIRECT3DDEVICE7 dev);
-	// Render distant object as a billboard disc texture
-
-	void RenderSpot (LPDIRECT3DDEVICE7 dev, const Vector *ofs, float size, const Vector &col, bool lighting, int shape = 0);
-	// Render a spot with the given parameters (representing either a
-	// complete object, or a beacon etc.)
-
-	void RenderAsSpot (LPDIRECT3DDEVICE7 dev, D3DCOLORVALUE *illumination = 0);
-	// Render distant object as circular blob with a billboard texture
+	// RenderAsPixel, RenderAsDisc, RenderSpot, RenderAsSpot left out: Direct3D 7 inline render path
 
 	void AddVector(const Vector& v, const Vector& orig, double rad, const std::string& label, const Vector& col, float alpha = 1.0f, DWORD lcol = 0, float lsize = -1.0);
 
-	bool DrawVector(LPDIRECT3DDEVICE7 dev, const Vector& end, const Vector& orig, double rad = 1.0);
+	// DrawVector left out: Direct3D 7 inline render path
 
 	const Body *body;    // reference to logical object
 	static Scene *scene; // reference to scene
-	D3DMATRIX mWorld;    // world transform matrix
+	oapi::FMATRIX4 mWorld; // world transform matrix
 	MATRIX4 dmWorld;     // world transformation matrix in double precision
 
 	Vector cpos;         // object position relative to camera in global frame
@@ -125,7 +106,7 @@ protected:
 private:
 	double apprad_factor; // auxiliary variable for apprad calculation
 	double isdist_old;    // old inverse distance camera -> object surface
-	static LPDIRECTDRAWSURFACE7 blobtex[3]; // billboard blob texture for distant objects
+	// blobtex left out: DirectDraw billboard textures for distant objects
 };
 
 // =======================================================================

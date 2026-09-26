@@ -5,8 +5,10 @@
 #include "Panel.h"
 #include "Pane.h"
 #include "Vessel.h"
-#include "Texture.h"
+// Texture.h left out: DirectDraw texture manager, nothing used here
 #include "Log.h"
+#include "Util.h"
+#include <QImage>
 
 using namespace std;
 
@@ -30,10 +32,7 @@ Panel::Panel (int _id, const Pane *_pane, double _scale)
 	surf    = NULL;
 	visible = false;
 	has_ck  = false;
-	if (g_pOrbiter->IsFullscreen())
-		cwnd = 0;
-	else
-		cwnd = g_pOrbiter->GetRenderWnd();
+	cwnd = g_pOrbiter->GetRenderWnd(); // also when fullscreen: the window need not sit at the screen origin
 	narea   = nareabuf = 0;
 	idx_mfocus = aid_mfocus = mstate = 0;
 
@@ -137,19 +136,17 @@ void Panel::MFDMoved ()
 	}
 }
 
-void Panel::DefineBackground (HBITMAP hBmp, DWORD flag, DWORD _ck)
+void Panel::DefineBackground (QImage *hBmp, DWORD flag, DWORD _ck)
 {
 	if (!gc) return;
 
 	//HRESULT res;
-	BITMAP bm;
 
 	if (surf) gc->clbkReleaseSurface (surf);
 
 	// bitmap size
-    GetObject (hBmp, sizeof(bm), &bm);
-    srcW = bm.bmWidth;
-	srcH = bm.bmHeight;
+    srcW = hBmp->width();
+	srcH = hBmp->height();
 	tgtW = (int)(scale*srcW);
 	tgtH = (int)(scale*srcH);
 
@@ -357,7 +354,7 @@ void Panel::RegisterMFD (int id, const MFDSPEC &spec)
 	mfd[id].exist = true;
 }
 
-void Panel::Point2Screen (long srcX, long srcY, long &tgtX, long &tgtY) const
+void Panel::Point2Screen (LONG srcX, LONG srcY, LONG &tgtX, LONG &tgtY) const
 {
 	if (scaled) {
 		srcX = (long)(srcX*scale);
@@ -420,10 +417,7 @@ bool Panel::ProcessMouse (UINT event, DWORD state, int x, int y)
 void Panel::GetMouseState (int &idx, int &state, int &mx, int &my) const
 {
 	if (mstate & PANEL_MOUSE_PRESSED) {
-		POINT pt;
-		GetCursorPos (&pt);
-		if (cwnd) // need to subtract client window offset
-			ScreenToClient (cwnd, &pt);
+		POINT pt = CursorPos (cwnd); // need to subtract client window offset
 		pt.x -= X0, pt.y -= Y0;
 		if (scaled) pt.x = (int)(pt.x*iscale), pt.y = (int)(pt.y*iscale);
 		mousex = pt.x - area[idx_mfocus]->pos.left;

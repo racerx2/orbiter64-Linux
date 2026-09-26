@@ -17,7 +17,7 @@
 #include <iomanip>
 #include "Log.h"
 #include "Util.h"
-#include <windows.h>
+#include <QPainter>
 
 using namespace std;
 
@@ -82,12 +82,12 @@ void Instrument_User::UpdateDraw (oapi::Sketchpad *skp)
 	if (mfd2) {
 		mfd2->Update (skp);
 	} else if (mfd) {
-		HDC hDC = skp->GetDC ();
+		QPainter *hDC = skp->GetDC ();
 		if (hDC) mfd->Update (hDC); // this should directly use skp
 	}
 }
 
-void Instrument_User::UpdateDraw (HDC hDC)
+void Instrument_User::UpdateDraw (QPainter *hDC)
 {
 	if (hDC && mfd) mfd->Update (hDC);
 }
@@ -98,7 +98,7 @@ bool Instrument_User::ReadParams (ifstream &ifs)
 	MFDMODESPECEX *spec;
 	if (!ifs.getline (cbuf, 256)) return false;
 	pc = trim_string (cbuf);
-	if (_strnicmp (pc, "MODE", 4)) return false;
+	if (strncasecmp (pc, "MODE", 4)) return false;
 	modestr = trim_string (pc+4);
 	int tp = ModeFromName (modestr, &spec);
 	if (tp <= BUILTIN_MFD_MODES)
@@ -156,7 +156,7 @@ MFD::MFD (DWORD w, DWORD h, VESSEL *vessel)
 MFD::~MFD ()
 {}
 
-void MFD::Title (HDC hDC, const char *title) const
+void MFD::Title (QPainter *hDC, const char *title) const
 {
 	// GDI legacy code
 	instr->DisplayTitle (hDC, title);
@@ -172,13 +172,13 @@ void MFD::InvalidateButtons ()
 	instr->RepaintButtons ();
 }
 
-HPEN MFD::SelectDefaultPen (HDC hDC, DWORD i) const
+QPen *MFD::SelectDefaultPen (QPainter *hDC, DWORD i) const
 {
 	// GDI legacy code
 	return instr->SelectDefaultPen (hDC, i);
 }
 
-HFONT MFD::SelectDefaultFont (HDC hDC, DWORD i) const
+QFont *MFD::SelectDefaultFont (QPainter *hDC, DWORD i) const
 {
 	// GDI legacy code
 	return instr->SelectDefaultFont (hDC, i);
@@ -357,8 +357,25 @@ void GraphMFD::SetAxisTitle (int g, int axis, char *title)
 		strncpy (graph[g].absc_title, title, 63);
 }
 
-void GraphMFD::Plot (HDC hDC, int g, int h0, int h1, const char *title)
+void GraphMFD::Plot (QPainter *hDC, int g, int h0, int h1, const char *title)
 {
+	// GDI state QPainter lacks: a text colour apart from the pen, text alignment and a current position
+	QColor textcol;
+	int textalign = Qt::AlignLeft;
+	QPoint cp;
+	auto moveTo = [&](int x, int y) { cp = QPoint (x, y); };
+	auto lineTo = [&](int x, int y) { hDC->drawLine (cp, QPoint (x, y)); cp = QPoint (x, y); };
+	auto textOut = [&](int x, int y, const char *str) { // GDI places the top edge at y, QPainter the baseline
+		QString s = QString::fromLatin1 (str);
+		QFontMetrics fm = hDC->fontMetrics ();
+		if (textalign == Qt::AlignHCenter) x -= fm.horizontalAdvance (s)/2;
+		else if (textalign == Qt::AlignRight) x -= fm.horizontalAdvance (s);
+		QPen pen = hDC->pen ();
+		hDC->setPen (textcol);
+		hDC->drawText (x, y + fm.ascent(), s);
+		hDC->setPen (pen);
+	};
+
 	GRAPH &gf = graph[g];
 	char cbuf[64];
 	float minx, maxx, miny, maxy, ixrange, iyrange, f;
@@ -371,75 +388,79 @@ void GraphMFD::Plot (HDC hDC, int g, int h0, int h1, const char *title)
 	iyrange = (y0-y1)/(maxy-miny);
 
 	SelectDefaultFont (hDC, 1);
-	SetTextColor (hDC, 0x00A000);
+	textcol = QColor (0x00, 0xA0, 0x00); // SetTextColor (0x00A000)
 
 	// abscissa ticks/labels
 	SelectDefaultPen (hDC, 3);
-	SetTextAlign (hDC, TA_CENTER);
+	textalign = Qt::AlignHCenter; // SetTextAlign (TA_CENTER)
 	for (f = gf.absc_tickmin; f <= gf.absc_max; f += gf.absc_dtick) {
 		x = x0 + (int)((f-minx)*ixrange+0.5);
-		MoveToEx (hDC, x, y0, 0);
-		LineTo (hDC, x, y1);
+		moveTo (x, y0);
+		lineTo (x, y1);
 		sprintf (cbuf, "%0.0f", f*gf.absc_tickscale);
-		TextOut (hDC, x, y0, cbuf, strlen(cbuf));
+		textOut (x, y0, cbuf);
 	}
 	if (gf.absc_minortick > 1) {
 		SelectDefaultPen (hDC, 4);
 		for (f = gf.absc_tickmin, i = 0; f > gf.absc_min; f -= gf.absc_dtick/(float)gf.absc_minortick, i++) {
 			if (!(i%gf.absc_minortick)) continue;
 			x = x0 + (int)((f-minx)*ixrange+0.5);
-			MoveToEx (hDC, x, y0, 0); LineTo (hDC, x, y1);
+			moveTo (x, y0); lineTo (x, y1);
 		}
 		for (f = gf.absc_tickmin, i = 0; f < gf.absc_max; f += gf.absc_dtick/(float)gf.absc_minortick, i++) {
 			if (!(i%gf.absc_minortick)) continue;
 			x = x0 + (int)((f-minx)*ixrange+0.5);
-			MoveToEx (hDC, x, y0, 0); LineTo (hDC, x, y1);
+			moveTo (x, y0); lineTo (x, y1);
 		}
 	}
 	if (gf.absc_title[0]) {
-		ostringstream oss(cbuf, 64);
+		ostringstream oss; // MSVC bound (cbuf, 64) to (initial string, openmode); writing starts at 0 either way
 		oss << gf.absc_title;
 		if (gf.absc_tickscale != 1.0f) oss << " x " << 1.0/gf.absc_tickscale;
 		oss << '\0';
-		TextOut (hDC, (x0+x1)/2, y0+(3*ch)/4, oss.str().c_str(), strlen(oss.str().c_str()));
+		textOut ((x0+x1)/2, y0+(3*ch)/4, oss.str().c_str());
 	}
 
 	// ordinate ticks/labels
 	SelectDefaultPen (hDC, 3);
-	SetTextAlign (hDC, TA_RIGHT);
+	textalign = Qt::AlignRight; // SetTextAlign (TA_RIGHT)
 	for (f = gf.data_tickmin; f <= gf.data_max; f += gf.data_dtick) {
 		y = y0 - (int)((f-miny)*iyrange+0.5);
-		MoveToEx (hDC, x0, y, 0);
-		LineTo (hDC, x1, y);
+		moveTo (x0, y);
+		lineTo (x1, y);
 		sprintf (cbuf, "%0.0f", f*gf.data_tickscale);
-		TextOut (hDC, x0, y-ch/2, cbuf, strlen(cbuf));
+		textOut (x0, y-ch/2, cbuf);
 	}
 	if (gf.data_minortick > 1) {
 		SelectDefaultPen (hDC, 4);
 		for (f = gf.data_tickmin, i = 0; f > gf.data_min; f -= gf.data_dtick/(float)gf.data_minortick, i++) {
 			if (!(i%gf.data_minortick)) continue;
 			y = y0 - (int)((f-miny)*iyrange+0.5);
-			MoveToEx (hDC, x0, y, 0); LineTo (hDC, x1, y);
+			moveTo (x0, y); lineTo (x1, y);
 		}
 		for (f = gf.data_tickmin, i = 0; f < gf.data_max; f += gf.data_dtick/(float)gf.data_minortick, i++) {
 			if (!(i%gf.data_minortick)) continue;
 			y = y0 - (int)((f-miny)*iyrange+0.5);
-			MoveToEx (hDC, x0, y, 0); LineTo (hDC, x1, y);
+			moveTo (x0, y); lineTo (x1, y);
 		}
 	}
-	SetTextAlign (hDC, TA_CENTER);
+	textalign = Qt::AlignHCenter; // SetTextAlign (TA_CENTER)
 	if (gf.data_title[0]) {
 		SelectDefaultFont (hDC, 2);
-		ostringstream oss(cbuf, 64);
+		ostringstream oss; // MSVC bound (cbuf, 64) to (initial string, openmode); writing starts at 0 either way
 		oss << gf.data_title;
 		if (gf.data_tickscale != 1.0f) oss << " x " << 1.0/gf.data_tickscale;
 		oss << '\0';
-		TextOut (hDC, 0, (y0+y1)/2, oss.str().c_str(), strlen(oss.str().c_str()));
+		hDC->save (); // font 2 has a 90 degree escapement in GDI; QFont has none, so the painter is rotated
+		hDC->translate (0, (y0+y1)/2);
+		hDC->rotate (-90.0);
+		textOut (0, 0, oss.str().c_str());
+		hDC->restore ();
 	}
 
 	// plot frame
 	SelectDefaultPen (hDC, 2);
-	Rectangle (hDC, x0, y1, x1+1, y0+1);
+	hDC->drawRect (x0, y1, x1-x0, y0-y1); // Rectangle (x0, y1, x1+1, y0+1): right and bottom edges are exclusive
 
 	// plot line
 	for (pl = 0; pl < gf.nplot; pl++) {
@@ -472,7 +493,7 @@ void GraphMFD::Plot (HDC hDC, int g, int h0, int h1, const char *title)
 						if (xb > maxx) vis = false;
 						else ya += (maxx-xa)/(xb-xa)*(yb-ya), xa = maxx;
 					}
-					if (vis) MoveToEx (hDC, x0 + (int)((xa-minx)*ixrange), y0 - (int)((ya-miny)*iyrange), 0);
+					if (vis) moveTo (x0 + (int)((xa-minx)*ixrange), y0 - (int)((ya-miny)*iyrange));
 				} else vis = true;
 
 				if (vis) { // clip second point
@@ -495,7 +516,7 @@ void GraphMFD::Plot (HDC hDC, int g, int h0, int h1, const char *title)
 						else yb += (maxx-xb)/(xa-xb)*(ya-yb), xb = maxx;
 						clip = true;
 					}
-					if (vis) LineTo (hDC, x0 + (int)((xb-minx)*ixrange), y0 - (int)((yb-miny)*iyrange));
+					if (vis) lineTo (x0 + (int)((xb-minx)*ixrange), y0 - (int)((yb-miny)*iyrange));
 				} else clip = true;
 			}
 			pfx = fx, pfy = fy;
@@ -504,8 +525,8 @@ void GraphMFD::Plot (HDC hDC, int g, int h0, int h1, const char *title)
 
 	if (title) {
 		SelectDefaultFont (hDC, 1);
-		SetTextColor (hDC, 0x00FF00);
-		TextOut (hDC, (x0+x1)/2, y1, title, strlen(title));
+		textcol = QColor (0x00, 0xFF, 0x00); // SetTextColor (0x00FF00)
+		textOut ((x0+x1)/2, y1, title);
 	}
 }
 

@@ -9,7 +9,7 @@
 #include "D3D9Surface.h"
 #include "Scene.h"
 #include "Mesh.h"
-#include <d3dx9.h>
+// d3dx9.h left out: D3DXMath.h (via D3D9Pad.h)
 #include <sstream>
 
 
@@ -89,7 +89,7 @@ void D3D9Pad::AddRectIdx(WORD aV)
 //
 RECT D3D9Pad::GetFullRect(SURFHANDLE hSrc)
 {
-	return {0, 0, static_cast<long>(SURFACE(hSrc)->GetWidth()), static_cast<long>(SURFACE(hSrc)->GetHeight())};
+	return {0, 0, static_cast<LONG>(SURFACE(hSrc)->GetWidth()), static_cast<LONG>(SURFACE(hSrc)->GetHeight())}; // LONG: RECT fields are 32-bit
 }
 
 
@@ -282,7 +282,7 @@ void D3D9Pad::ColorKeyStretch(const SURFHANDLE hSrc, const LPRECT _s, const LPRE
 
 // ===============================================================================================
 //
-void D3D9Pad::CopyRectNative(const LPDIRECT3DTEXTURE9 pSrc, const LPRECT _s, int tx, int ty)
+void D3D9Pad::CopyRectNative(VkTex *pSrc, const LPRECT _s, int tx, int ty)
 {
 #ifdef SKPDBG 
 	Log("CopyRectNative(0x%X)", DWORD(pSrc));
@@ -316,7 +316,7 @@ void D3D9Pad::CopyRectNative(const LPDIRECT3DTEXTURE9 pSrc, const LPRECT _s, int
 
 // ===============================================================================================
 //
-void D3D9Pad::StretchRectNative(const LPDIRECT3DTEXTURE9 pSrc, const RECT *_s, const RECT *_t)
+void D3D9Pad::StretchRectNative(VkTex *pSrc, const RECT *_s, const RECT *_t)
 {
 #ifdef SKPDBG 
 	Log("StretchRectNative(0x%X)", DWORD(pSrc));
@@ -366,10 +366,10 @@ void D3D9Pad::CopyTetragon(const SURFHANDLE hSrc, const LPRECT _s, const FVECTOR
 	{
 		auto s = _s ? *_s : GetFullRect(hSrc);
 
-		sp[0] = FVECTOR2{s.left , s.top   };
-		sp[1] = FVECTOR2{s.left , s.bottom};
-		sp[2] = FVECTOR2{s.right, s.bottom};
-		sp[3] = FVECTOR2{s.right, s.top   };
+		sp[0] = FVECTOR2{float(s.left) , float(s.top)   }; // float(): g++ rejects the LONG narrowing in braces
+		sp[1] = FVECTOR2{float(s.left) , float(s.bottom)};
+		sp[2] = FVECTOR2{float(s.right), float(s.bottom)};
+		sp[3] = FVECTOR2{float(s.right), float(s.top)   };
 
 		// Create indices
 		for (int j = 0; j < (n-1); j++)
@@ -713,7 +713,7 @@ void D3D9Pad::SetGlobalLineScale(float width, float pat)
 
 // ===============================================================================================
 //
-void D3D9Pad::SetFontTextureNative(LPDIRECT3DTEXTURE9 hNew)
+void D3D9Pad::SetFontTextureNative(VkTex *hNew)
 {
 	if (hNew == hFontTex) return;
 	Change |= SKPCHG_FONT;
@@ -723,7 +723,7 @@ void D3D9Pad::SetFontTextureNative(LPDIRECT3DTEXTURE9 hNew)
 
 // ===============================================================================================
 //
-bool D3D9Pad::TexChangeNative(LPDIRECT3DTEXTURE9 hNew)
+bool D3D9Pad::TexChangeNative(VkTex *hNew)
 {
 	if (hNew == hTexture) return false;
 	Change |= SKPCHG_TEXTURE;
@@ -779,11 +779,11 @@ int D3D9Pad::DrawMeshGroup(const MESHHANDLE hMesh, DWORD grp, Sketchpad::MeshFla
 	//
 	pMesh->Init();
 
-	if (flags & Sketchpad::MeshFlags::CULL_NONE) pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-	else pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	if (flags & Sketchpad::MeshFlags::CULL_NONE) pDev->SetCullMode(VK_CULL_MODE_NONE);
+	else pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
 	HR(FX->SetTechnique(eDrawMesh));
-	HR(FX->Begin(&num, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&num, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	HR(FX->SetBool(eShade, (flags & Sketchpad::MeshFlags::SMOOTH_SHADE) != 0));
@@ -826,11 +826,9 @@ int D3D9Pad::DrawMeshGroup(const MESHHANDLE hMesh, DWORD grp, Sketchpad::MeshFla
 
 // ===============================================================================================
 //
-RECT D3D9Pad::GetFullRectNative(LPDIRECT3DTEXTURE9 hSrc)
+RECT D3D9Pad::GetFullRectNative(VkTex *hSrc)
 {
-	D3DSURFACE_DESC desc;
-	hSrc->GetLevelDesc(0, &desc);
-	return {0, 0, static_cast<long>(desc.Width), static_cast<long>(desc.Height)};
+	return {0, 0, static_cast<LONG>(hSrc->w), static_cast<LONG>(hSrc->h)}; // GetLevelDesc(0)
 }
 
 
@@ -841,18 +839,20 @@ RECT D3D9Pad::GetFullRectNative(LPDIRECT3DTEXTURE9 hSrc)
 
 
 
-D3D9PolyLine::D3D9PolyLine(LPDIRECT3DDEVICE9 pDev, const FVECTOR2 *pt, int npt, bool bConnect) : D3D9PolyBase(0)
+D3D9PolyLine::D3D9PolyLine(VkDev *pDev, const FVECTOR2 *pt, int npt, bool bConnect) : D3D9PolyBase(0)
 {
 	nPt = npt + 2;
 	nVtx = 2 * nPt;
 	nIdx = 6 * nPt;
 
-	HR(pDev->CreateVertexBuffer(nVtx * sizeof(SkpVtx), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &pVB, NULL));
-	HR(pDev->CreateIndexBuffer(nIdx * sizeof(WORD), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &pIB, NULL));
+	this->pDev = pDev; // not upstream: kept for Update
+
+	pVB = new VkBuf(pDev, nVtx * sizeof(SkpVtx), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true); // D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY: host visible
+	pIB = new VkBuf(pDev, nIdx * sizeof(WORD), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true); // D3DFMT_INDEX16
 
 	WORD *Idx = NULL;
 
-	HR(pIB->Lock(0, 0, (LPVOID*)&Idx, D3DLOCK_DISCARD));
+	Idx = (WORD *)pIB->Map(); // Lock: a new buffer, nothing reads it yet
 
 	iI = 0;
 
@@ -866,7 +866,7 @@ D3D9PolyLine::D3D9PolyLine(LPDIRECT3DDEVICE9 pDev, const FVECTOR2 *pt, int npt, 
 		i += 2;
 	}
 
-	HR(pIB->Unlock());
+	// Unlock left out: host buffers stay mapped
 
 	if (pt) Update(pt, npt, bConnect);
 }
@@ -884,19 +884,19 @@ D3D9PolyLine::~D3D9PolyLine()
 //
 void D3D9PolyLine::Release()
 {
-	SAFE_RELEASE(pVB);
-	SAFE_RELEASE(pIB);
+	SAFE_DELETE(pVB);
+	SAFE_DELETE(pIB);
 }
 
 
 // ===============================================================================================
 //
-void D3D9PolyLine::Draw(D3D9Pad *pSkp, LPDIRECT3DDEVICE9 pDev)
+void D3D9PolyLine::Draw(D3D9Pad *pSkp, VkDev *pDev)
 {
 	pDev->SetStreamSource(0, pVB, 0, sizeof(SkpVtx));
 	pDev->SetIndices(pIB);
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, vI, 0, vI-2);
+	pDev->SetCullMode(VK_CULL_MODE_NONE);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, vI-2));
 }
 
 
@@ -907,7 +907,9 @@ void D3D9PolyLine::Update(const FVECTOR2 *_pt, int _npt, bool bConnect)
 	SkpVtx *Vtx = NULL;
 	D3DXVECTOR2 *pt = (D3DXVECTOR2 *)_pt;
 
-	HR(pVB->Lock(0, 0, (LPVOID*)&Vtx, D3DLOCK_DISCARD));
+	SAFE_DELETE(pVB); // Lock (D3DLOCK_DISCARD): a new buffer, the old one goes when the GPU is done with it
+	pVB = new VkBuf(pDev, nVtx * sizeof(SkpVtx), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+	Vtx = (SkpVtx *)pVB->Map();
 
 	WORD npt = WORD(_npt);
 	WORD li = WORD(npt - 1);
@@ -959,7 +961,7 @@ void D3D9PolyLine::Update(const FVECTOR2 *_pt, int _npt, bool bConnect)
 		Vtx[vI++] = Vtx[1];
 	}
 
-	HR(pVB->Unlock());
+	// Unlock left out: host buffers stay mapped
 }
 
 
@@ -975,11 +977,12 @@ void D3D9PolyLine::Update(const FVECTOR2 *_pt, int _npt, bool bConnect)
 
 
 
-D3D9Triangle::D3D9Triangle(LPDIRECT3DDEVICE9 pDev, const gcCore::clrVtx *pt, int npt, int _style) : D3D9PolyBase(1)
+D3D9Triangle::D3D9Triangle(VkDev *pDev, const gcCore::clrVtx *pt, int npt, int _style) : D3D9PolyBase(1)
 {
 	nPt = npt;
 	style = _style;
-	HR(pDev->CreateVertexBuffer(nPt * sizeof(SkpVtx), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &pVB, NULL));
+	this->pDev = pDev; // not upstream: kept for Update
+	pVB = new VkBuf(pDev, nPt * sizeof(SkpVtx), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true); // D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY: host visible
 	if (pt) Update(pt, npt);
 }
 
@@ -996,18 +999,18 @@ D3D9Triangle::~D3D9Triangle()
 //
 void D3D9Triangle::Release()
 {
-	SAFE_RELEASE(pVB);
+	SAFE_DELETE(pVB);
 }
 
 
 // ===============================================================================================
 //
-void D3D9Triangle::Draw(D3D9Pad* pSkp, LPDIRECT3DDEVICE9 pDev)
+void D3D9Triangle::Draw(D3D9Pad* pSkp, VkDev *pDev)
 {
 	pDev->SetStreamSource(0, pVB, 0, sizeof(SkpVtx));
-	if (style == PF_TRIANGLES) 	pDev->DrawPrimitive(D3DPT_TRIANGLELIST, 0, nPt / 3);
-	if (style == PF_FAN) pDev->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, nPt - 2);
-	if (style == PF_STRIP) pDev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, nPt - 2);
+	if (style == PF_TRIANGLES) 	pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, nPt / 3));
+	if (style == PF_FAN) pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, nPt - 2));
+	if (style == PF_STRIP) pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, nPt - 2));
 }
 
 
@@ -1016,7 +1019,9 @@ void D3D9Triangle::Draw(D3D9Pad* pSkp, LPDIRECT3DDEVICE9 pDev)
 void D3D9Triangle::Update(const gcCore::clrVtx *pt, int npt)
 {
 	SkpVtx *Vtx = NULL;
-	HR(pVB->Lock(0, 0, (LPVOID*)&Vtx, D3DLOCK_DISCARD));
+	SAFE_DELETE(pVB); // Lock (D3DLOCK_DISCARD): a new buffer, the old one goes when the GPU is done with it
+	pVB = new VkBuf(pDev, nPt * sizeof(SkpVtx), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+	Vtx = (SkpVtx *)pVB->Map();
 
 	memset(Vtx, 0, sizeof(SkpVtx)*npt);
 
@@ -1026,6 +1031,6 @@ void D3D9Triangle::Update(const gcCore::clrVtx *pt, int npt)
 		Vtx[i].clr = pt[i].color;
 		Vtx[i].fnc = SKPSW_CENTER | SKPSW_FRAGMENT;
 	}
-	HR(pVB->Unlock());
+	// Unlock left out: host buffers stay mapped
 }
 

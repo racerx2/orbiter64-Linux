@@ -22,13 +22,40 @@
 #include "DebugControls.h"
 #include "IProcess.h"
 #include "VectorHelpers.h"
+#include "D3D9Frame.h" // not upstream: GetDepthFormat
 #include <algorithm>
 #include <sstream>
 #include <vector>
+#include <QMessageBox>
 
 #define IKernelSize 150
 
 using namespace oapi;
+
+// not upstream: D3DUSAGE_RENDERTARGET and D3DUSAGE_DEPTHSTENCIL as Vulkan image usage
+static const VkImageUsageFlags RTUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+static const VkImageUsageFlags DSUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+// not upstream: D3DSURFACE_DESC (the size) from GetDesc/GetLevelDesc
+struct SurfSizeDesc { UINT Width, Height; };
+static SurfSizeDesc GetDesc(const VkSurf *s) { return { s->w, s->h }; }
+static SurfSizeDesc GetLevelDesc(const VkTex *t, UINT l) { return { std::max(1u, t->w >> l), std::max(1u, t->h >> l) }; }
+
+// not upstream: D3DXCreateTexture/D3DXCreateCubeTexture, NULL when the image can't be created
+static VkTex *CreateTex(VkDev *pDev, UINT w, UINT h, UINT levels, VkFormat fmt, VkImageUsageFlags usage, bool cube = false)
+{
+	VkTex *t = new VkTex(pDev, w, h, levels, fmt, usage, cube ? 6 : 1, cube);
+	if (!t->img) SAFE_DELETE(t);
+	return t;
+}
+
+// not upstream: D3DUSAGE_AUTOGENMIPMAP, the mips are rebuilt after level 0 was drawn
+static void AutoGenMips(VkDev *pDev, VkTex *pTex)
+{
+	if (!pTex || !pDev->IsRecording()) return;
+	pDev->EndRendering();
+	pTex->GenerateMips(pDev->Cmd());
+}
 
 static D3DXMATRIX ident;
 
@@ -42,12 +69,12 @@ struct PList { // auxiliary structure for object distance sorting
 const int MAXPLANET = 512; // hard limit; should be fixed
 static PList plist[MAXPLANET];
 
-ID3DXEffect * Scene::FX = 0;
-D3DXHANDLE Scene::eLine = 0;
-D3DXHANDLE Scene::eStar = 0;
-D3DXHANDLE Scene::eWVP = 0;
-D3DXHANDLE Scene::eColor = 0;
-D3DXHANDLE Scene::eTex0 = 0;
+VkEffect *Scene::FX = 0;
+VkFxHandle Scene::eLine = 0;
+VkFxHandle Scene::eStar = 0;
+VkFxHandle Scene::eWVP = 0;
+VkFxHandle Scene::eColor = 0;
+VkFxHandle Scene::eTex0 = 0;
 
 
 D3DXVECTOR4 IKernel[IKernelSize];
@@ -61,7 +88,7 @@ bool sort_vessels(const vVessel *a, const vVessel *b)
 
 float Rand()
 {
-	return float(rand()) / 32768.0f;
+	return float(rand()) / (float(RAND_MAX) + 1.0f); // 32768: MSVC's RAND_MAX + 1, glibc's RAND_MAX is 2^31-1
 }
 
 // ===========================================================================================
@@ -169,7 +196,7 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 	// ------------------------------------------------------------------------------
 	// Read Sun glare sampling kernel file
 
-	ifstream fs("Modules/D3D9Client/GKernel.txt");
+	ifstream fs("Modules/VulkanClient/GKernel.txt");
 	if (fs.good()) {
 		string line; vector<FVECTOR2> data;
 		while (getline(fs, line)) {
@@ -177,10 +204,10 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 			char c;	float a, b;	iss >> a >> c >> b;
 			data.push_back(FVECTOR2(a, b));
 		}
-		if (data.size() != ARRAYSIZE(DepthSampleKernel)) LogErr("Modules/D3D9Client/GKernel.txt Size missmatch. Expecting 57 entries");
-		else for (int i = 0; i < ARRAYSIZE(DepthSampleKernel); i++) DepthSampleKernel[i] = data[i];
+		if (data.size() != std::size(DepthSampleKernel)) LogErr("Modules/VulkanClient/GKernel.txt Size missmatch. Expecting 57 entries");
+		else for (int i = 0; i < (int)std::size(DepthSampleKernel); i++) DepthSampleKernel[i] = data[i];
 		data.clear();
-	} else LogErr("Failed to read: Modules/D3D9Client/GKernel.txt");
+	} else LogErr("Failed to read: Modules/VulkanClient/GKernel.txt");
 	fs.close();
 
 	CreateSunGlare();
@@ -191,10 +218,10 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 
 	if (Config->bGlares || Config->bLocalGlares)
 	{
-		pRenderGlares = new ShaderClass(pDevice, "Modules/D3D9Client/Glare.hlsl", "GlareVS", "GlarePS", "RenderGlares", "");
-		pLocalCompute = new ShaderClass(pDevice, "Modules/D3D9Client/Glare.hlsl", "VisibilityVS", "VisibilityPS", "LocalVisCheck", "");
-		D3DXCreateTexture(pDevice, 32, 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R16F, D3DPOOL_DEFAULT, &pLocalResults);
-		HR(pLocalResults->GetSurfaceLevel(0, &pLocalResultsSL));
+		pRenderGlares = new ShaderClass(pDevice, "Modules/VulkanClient/Glare.glsl", "GlareVS", "GlarePS", "RenderGlares", "");
+		pLocalCompute = new ShaderClass(pDevice, "Modules/VulkanClient/Glare.glsl", "VisibilityVS", "VisibilityPS", "LocalVisCheck", "");
+		pLocalResults = new VkTex(pDevice, 32, 1, 1, VK_FORMAT_R16_SFLOAT, RTUsage); // D3DXCreateTexture D3DUSAGE_RENDERTARGET, D3DFMT_R16F
+		pLocalResultsSL = new VkSurf(pLocalResults, 0); // GetSurfaceLevel
 	}
 
 
@@ -202,7 +229,7 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 	//
 
 	if (Config->bGlares || Config->bLocalGlares) {
-		pVisDepth = new ImageProcessing(pDevice, "Modules/D3D9Client/LightBlur.hlsl", "PSDepth", NULL);
+		pVisDepth = new ImageProcessing(pDevice, "Modules/VulkanClient/LightBlur.glsl", "PSDepth", NULL);
 		pVisDepth->CompileShader("PSNormal");
 	}
 
@@ -212,20 +239,20 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 	DWORD ShmMapSize = Config->ShadowMapSize;
 
 	if (Config->EnvMapMode) {
-		HR(pDevice->CreateDepthStencilSurface(EnvMapSize, EnvMapSize, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, true, &pEnvDS, NULL));
+		pEnvDS = new VkSurf(pDevice, EnvMapSize, EnvMapSize, gc->GetFramework()->GetDepthFormat(), DSUsage); // CreateDepthStencilSurface D3DFMT_D24S8
 	}
 
 	if (Config->bIrradiance) {
-		HR(pDevice->CreateDepthStencilSurface(128, 128, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, true, &pIrradDS, NULL));
+		pIrradDS = new VkSurf(pDevice, 128, 128, gc->GetFramework()->GetDepthFormat(), DSUsage); // CreateDepthStencilSurface D3DFMT_D24S8
 	}
 
 
 	if (Config->ShadowMapMode) {
 		UINT size = ShmMapSize;
 		for (int i = 0; i < SHM_LOD_COUNT; i++) {
-			HR(pDevice->CreateDepthStencilSurface(size, size, D3DFMT_D24X8, D3DMULTISAMPLE_NONE, 0, true, &psShmDS[i], NULL));
-			HR(pDevice->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &ptShmRT[i], NULL));
-			HR(ptShmRT[i]->GetSurfaceLevel(0, &psShmRT[i]));
+			psShmDS[i] = new VkSurf(pDevice, size, size, gc->GetFramework()->GetDepthFormat(), DSUsage); // CreateDepthStencilSurface D3DFMT_D24X8
+			ptShmRT[i] = new VkTex(pDevice, size, size, 1, VK_FORMAT_R32_SFLOAT, RTUsage); // CreateTexture D3DUSAGE_RENDERTARGET, D3DFMT_R32F
+			psShmRT[i] = new VkSurf(ptShmRT[i], 0); // GetSurfaceLevel
 			size >>= 1;
 		}
 
@@ -237,8 +264,9 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 	// Create auxiliary color buffer for on screen GDI
 	//
 	if (Config->GDIOverlay) {
-		HR(D3DXCreateTexture(pDevice, viewW, viewH, 1, D3DUSAGE_DYNAMIC, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &ptgBuffer[GBUF_GDI]));
-		pGDIOverlay = new ImageProcessing(pDevice, "Modules/D3D9Client/GDIOverlay.hlsl", "PSMain");
+		ptgBuffer[GBUF_GDI] = new VkTex(pDevice, viewW, viewH, 1, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT); // D3DUSAGE_DYNAMIC, D3DFMT_X8R8G8B8
+		ptgBuffer[GBUF_GDI]->SetSwizzle(VkSwizzleMap(SWZ_NOALPHA)); // X8: alpha reads 1
+		pGDIOverlay = new ImageProcessing(pDevice, "Modules/VulkanClient/GDIOverlay.glsl", "PSMain");
 	}
 	else pGDIOverlay = NULL;
 
@@ -246,8 +274,8 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 	// Create an auxiliary screen space normal and depth buffer (i.e. Shader readable depth buffer)
 	//
 	if (Config->bGlares || Config->bLocalGlares) {
-		HR(pDevice->CreateDepthStencilSurface(viewW, viewH, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, true, &pDepthNormalDS, NULL));
-		HR(D3DXCreateTexture(pDevice, viewW, viewH, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &ptgBuffer[GBUF_DEPTH]));
+		pDepthNormalDS = new VkSurf(pDevice, viewW, viewH, gc->GetFramework()->GetDepthFormat(), DSUsage); // CreateDepthStencilSurface D3DFMT_D24S8
+		ptgBuffer[GBUF_DEPTH] = new VkTex(pDevice, viewW, viewH, 1, VK_FORMAT_R16G16B16A16_SFLOAT, RTUsage); // D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F
 	}
 
 
@@ -261,61 +289,57 @@ Scene::Scene(D3D9Client *_gc, DWORD w, DWORD h)
 		int BufFmt = 0;
 
 		// Get the actual back buffer description
-		D3DSURFACE_DESC desc;
-		gc->GetBackBuffer()->GetDesc(&desc);
+		VkSurf *pBB = gc->GetBackBuffer(); // D3DSURFACE_DESC: format and multisampling of the backbuffer
 
 		char flags[32] = { 0 };
-		if (Config->ShaderDebug) strcpy_s(flags, 32, "DISASM");
+		if (Config->ShaderDebug) snprintf(flags, 32, "%s", "DISASM");
 
 		// Load postprocessing effects
 		if (Config->PostProcess == PP_DEFAULT)
-			pLightBlur = new ImageProcessing(pDevice, "Modules/D3D9Client/LightBlur.hlsl", "PSMain", flags);
+			pLightBlur = new ImageProcessing(pDevice, "Modules/VulkanClient/LightBlur.glsl", "PSMain", flags);
 
 		if (pLightBlur) {
 			BufSize = pLightBlur->FindDefine("BufferDivider");
 			BufFmt = pLightBlur->FindDefine("BufferFormat");
 		}
 
-		D3DFORMAT BackBuffer = desc.Format;
-		if (BufFmt == 1) BackBuffer = D3DFMT_A16B16G16R16F;
-		if (BufFmt == 2) BackBuffer = D3DFMT_A2R10G10B10;
+		VkFormat BackBuffer = pBB->tex->fmt;
+		if (BufFmt == 1) BackBuffer = VK_FORMAT_R16G16B16A16_SFLOAT; // D3DFMT_A16B16G16R16F
+		if (BufFmt == 2) BackBuffer = VK_FORMAT_A2B10G10R10_UNORM_PACK32; // D3DFMT_A2R10G10B10: the 10-bit order Vulkan guarantees for render targets
 
 		// Create auxiliary color buffer for color operations
-		HR(D3DXCreateTexture(pDevice, viewW, viewH, 1, D3DUSAGE_RENDERTARGET, BackBuffer, D3DPOOL_DEFAULT, &ptgBuffer[GBUF_COLOR]));
+		ptgBuffer[GBUF_COLOR] = new VkTex(pDevice, viewW, viewH, 1, BackBuffer, RTUsage); // D3DXCreateTexture D3DUSAGE_RENDERTARGET
 
 		// Load some textures
 		char buff[MAX_PATH];
-		if (gc->TexturePath("D3D9Noise.dds", buff)) HR(D3DXCreateTextureFromFileA(pDevice, buff, &pTextures[TEX_NOISE]));
-		if (gc->TexturePath("D3D9CLUT.dds", buff)) HR(D3DXCreateTextureFromFileA(pDevice, buff, &pTextures[TEX_CLUT]));
+		const VkImageUsageFlags TexUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // not upstream
+		if (gc->TexturePath("D3D9Noise.dds", buff)) pTextures[TEX_NOISE] = VkCreateTextureFromFile(pDevice, buff, 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, TexUsage); // D3DXCreateTextureFromFileA
+		if (gc->TexturePath("D3D9CLUT.dds", buff)) pTextures[TEX_CLUT] = VkCreateTextureFromFile(pDevice, buff, 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, TexUsage);
 
 		if (pLightBlur) {
-			HR(D3DXCreateTexture(pDevice, viewW / BufSize, viewH / BufSize, 1, D3DUSAGE_RENDERTARGET, BackBuffer, D3DPOOL_DEFAULT, &ptgBuffer[GBUF_BLUR]));
-			HR(D3DXCreateTexture(pDevice, viewW / BufSize, viewH / BufSize, 1, D3DUSAGE_RENDERTARGET, BackBuffer, D3DPOOL_DEFAULT, &ptgBuffer[GBUF_TEMP]));
+			ptgBuffer[GBUF_BLUR] = new VkTex(pDevice, viewW / BufSize, viewH / BufSize, 1, BackBuffer, RTUsage);
+			ptgBuffer[GBUF_TEMP] = new VkTex(pDevice, viewW / BufSize, viewH / BufSize, 1, BackBuffer, RTUsage);
 		}
 
 		if (pLightBlur) {
 			// Construct an offscreen backbuffer with custom pixel format
-			if (pDevice->CreateRenderTarget(viewW, viewH, BackBuffer, desc.MultiSampleType, desc.MultiSampleQuality, false, &pOffscreenTarget, NULL) != S_OK) {
+			pOffscreenTarget = new VkSurf(pDevice, viewW, viewH, BackBuffer, RTUsage, pBB->tex->samples); // CreateRenderTarget
+			if (!pOffscreenTarget->tex->img) {
+				SAFE_DELETE(pOffscreenTarget);
 				LogErr("Creation of Offscreen render target failed");
 				SAFE_DELETE(pLightBlur);
 			}
 		}
 	}
 
-	for (int i = 0; i < ARRAYSIZE(ptgBuffer);i++)  if (ptgBuffer[i]) ptgBuffer[i]->GetSurfaceLevel(0, &psgBuffer[i]);
+	for (int i = 0; i < (int)std::size(ptgBuffer);i++)  if (ptgBuffer[i]) psgBuffer[i] = new VkSurf(ptgBuffer[i], 0); // GetSurfaceLevel
 
 
 	if (Config->GDIOverlay) {
-		HDC hDC;
 		// Clear the GDI Overlay with transparency
-		if (psgBuffer[GBUF_GDI]->GetDC(&hDC) == S_OK) {
-			DWORD color = 0xF08040; // BGR "Color Key" value for transparency
-			HBRUSH hBrush = CreateSolidBrush((COLORREF)color);
-			RECT r = _RECT( 0, 0, viewW, viewH );
-			FillRect(hDC, &r, hBrush);
-			DeleteObject(hBrush);
-			psgBuffer[GBUF_GDI]->ReleaseDC(hDC);
-		}
+		DWORD color = 0xF08040; // BGR "Color Key" value for transparency
+		// GetDC, CreateSolidBrush, FillRect: a GPU fill with the same colour (COLORREF to ARGB)
+		pDevice->ColorFill(psgBuffer[GBUF_GDI], NULL, 0xFF000000 | (GetRValue(color) << 16) | (GetGValue(color) << 8) | GetBValue(color));
 	}
 
 	LogAlw("================ Scene Created ===============");
@@ -327,14 +351,11 @@ Scene::~Scene ()
 {
 	_TRACE;
 
-	pDevice->SetRenderTarget(0, NULL);
-	pDevice->SetRenderTarget(1, NULL);
-	pDevice->SetRenderTarget(2, NULL);
-	pDevice->SetRenderTarget(3, NULL);
+	pDevice->SetRenderTarget(NULL, NULL); // SetRenderTarget(0..3, NULL): one target here, and no reference counts, so the depth goes too
 
-	for (int i = 0; i < ARRAYSIZE(psgBuffer); i++) SAFE_RELEASE(psgBuffer[i]);
-	for (int i = 0; i < ARRAYSIZE(ptgBuffer); i++) SAFE_RELEASE(ptgBuffer[i]);
-	for (int i = 0; i < ARRAYSIZE(pTextures); i++) SAFE_RELEASE(pTextures[i]);
+	for (int i = 0; i < (int)std::size(psgBuffer); i++) SAFE_DELETE(psgBuffer[i]);
+	for (int i = 0; i < (int)std::size(ptgBuffer); i++) SAFE_DELETE(ptgBuffer[i]);
+	for (int i = 0; i < (int)std::size(pTextures); i++) SAFE_DELETE(pTextures[i]);
 
 	SAFE_DELETE(pGDIOverlay);
 	SAFE_DELETE(pBlur);
@@ -346,24 +367,24 @@ Scene::~Scene ()
 	SAFE_DELETE(pRenderGlares);
 	SAFE_DELETE(pCreateGlare);
 
-	SAFE_RELEASE(pOffscreenTarget);
-	SAFE_RELEASE(pEnvDS);
-	SAFE_RELEASE(pIrradDS);
-	SAFE_RELEASE(pIrradTemp);
-	SAFE_RELEASE(pIrradTemp2);
-	SAFE_RELEASE(pIrradTemp3);
-	SAFE_RELEASE(pDepthNormalDS);
-	SAFE_RELEASE(pLocalResults);
-	SAFE_RELEASE(pLocalResultsSL);
-	SAFE_RELEASE(pSunTex);
-	SAFE_RELEASE(pLightGlare);
-	SAFE_RELEASE(pSunGlare);
-	SAFE_RELEASE(pSunGlareAtm);
+	SAFE_DELETE(pOffscreenTarget);
+	SAFE_DELETE(pEnvDS);
+	SAFE_DELETE(pIrradDS);
+	SAFE_DELETE(pIrradTemp);
+	SAFE_DELETE(pIrradTemp2);
+	SAFE_DELETE(pIrradTemp3);
+	SAFE_DELETE(pDepthNormalDS);
+	SAFE_DELETE(pLocalResultsSL); // surfaces before their textures: no reference counts here
+	SAFE_DELETE(pLocalResults);
+	SAFE_DELETE(pSunTex);
+	SAFE_DELETE(pLightGlare);
+	SAFE_DELETE(pSunGlare);
+	SAFE_DELETE(pSunGlareAtm);
 
-	for (int i = 0; i < ARRAYSIZE(psShmDS); i++) SAFE_RELEASE(psShmDS[i]);
-	for (int i = 0; i < ARRAYSIZE(ptShmRT); i++) SAFE_RELEASE(ptShmRT[i]);
-	for (int i = 0; i < ARRAYSIZE(psShmRT); i++) SAFE_RELEASE(psShmRT[i]);
-	for (int i = 0; i < ARRAYSIZE(pBlrTemp); i++) SAFE_RELEASE(pBlrTemp[i]);
+	for (int i = 0; i < (int)std::size(psShmDS); i++) SAFE_DELETE(psShmDS[i]);
+	for (int i = 0; i < (int)std::size(psShmRT); i++) SAFE_DELETE(psShmRT[i]); // before ptShmRT (upstream releases it after)
+	for (int i = 0; i < (int)std::size(ptShmRT); i++) SAFE_DELETE(ptShmRT[i]);
+	for (int i = 0; i < (int)std::size(pBlrTemp); i++) SAFE_DELETE(pBlrTemp[i]);
 
 	if (Lights) {
 		delete []Lights;
@@ -394,7 +415,7 @@ void Scene::CreateSunGlare()
 
 	if (pCreateGlare) SAFE_DELETE(pCreateGlare);
 
-	pCreateGlare = new ImageProcessing(pDevice, "Modules/D3D9Client/Glare.hlsl", "CreateSunGlarePS");
+	pCreateGlare = new ImageProcessing(pDevice, "Modules/VulkanClient/Glare.glsl", "CreateSunGlarePS");
 	pCreateGlare->CompileShader("CreateLocalGlarePS");
 	pCreateGlare->CompileShader("CreateSunGlareAtmPS");
 	pCreateGlare->CompileShader("CreateSunTexPS");
@@ -402,37 +423,41 @@ void Scene::CreateSunGlare()
 
 	if (!pSunTex) {
 		UINT ts = (viewH >> 4) & 0xFFFC; // "ts" will be 64 for a Full HD display;  
-		HR(D3DXCreateTexture(pDevice, ts * 5, ts * 5, 0, D3DUSAGE_RENDERTARGET | D3DUSAGE_AUTOGENMIPMAP, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pSunTex));
-		HR(D3DXCreateTexture(pDevice, ts * 4, ts * 4, 0, D3DUSAGE_RENDERTARGET | D3DUSAGE_AUTOGENMIPMAP, D3DFMT_R16F, D3DPOOL_DEFAULT, &pLightGlare));
-		HR(D3DXCreateTexture(pDevice, ts * 12, ts * 12, 0, D3DUSAGE_RENDERTARGET | D3DUSAGE_AUTOGENMIPMAP, D3DFMT_R16F, D3DPOOL_DEFAULT, &pSunGlare));
-		HR(D3DXCreateTexture(pDevice, ts * 12, ts * 12, 0, D3DUSAGE_RENDERTARGET | D3DUSAGE_AUTOGENMIPMAP, D3DFMT_R16F, D3DPOOL_DEFAULT, &pSunGlareAtm));
+		pSunTex = new VkTex(pDevice, ts * 5, ts * 5, 0, VK_FORMAT_B8G8R8A8_UNORM, RTUsage); // D3DUSAGE_RENDERTARGET | D3DUSAGE_AUTOGENMIPMAP, D3DFMT_A8R8G8B8
+		pLightGlare = new VkTex(pDevice, ts * 4, ts * 4, 0, VK_FORMAT_R16_SFLOAT, RTUsage); // D3DFMT_R16F
+		pSunGlare = new VkTex(pDevice, ts * 12, ts * 12, 0, VK_FORMAT_R16_SFLOAT, RTUsage);
+		pSunGlareAtm = new VkTex(pDevice, ts * 12, ts * 12, 0, VK_FORMAT_R16_SFLOAT, RTUsage);
 	}
 
-	LPDIRECT3DSURFACE9 pTgt = NULL;
+	VkSurf *pTgt = NULL;
 
 	pCreateGlare->Activate("CreateSunGlarePS");
-	pSunGlare->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pSunGlare, 0); // GetSurfaceLevel
 	pCreateGlare->SetOutputNative(0, pTgt);
 	if (!pCreateGlare->Execute(false)) LogErr("pCreateGlare Execute Failed (CreateSunGlarePS)");
-	SAFE_RELEASE(pTgt);
+	AutoGenMips(pDevice, pSunGlare);
+	SAFE_DELETE(pTgt);
 
 	pCreateGlare->Activate("CreateSunGlareAtmPS");
-	pSunGlareAtm->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pSunGlareAtm, 0); // GetSurfaceLevel
 	pCreateGlare->SetOutputNative(0, pTgt);
 	if (!pCreateGlare->Execute(false)) LogErr("pCreateGlare Execute Failed (CreateSunGlareAtmPS)");
-	SAFE_RELEASE(pTgt);
+	AutoGenMips(pDevice, pSunGlareAtm);
+	SAFE_DELETE(pTgt);
 
 	pCreateGlare->Activate("CreateLocalGlarePS");
-	pLightGlare->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pLightGlare, 0); // GetSurfaceLevel
 	pCreateGlare->SetOutputNative(0, pTgt);
 	if (!pCreateGlare->Execute(false)) LogErr("pCreateGlare Execute Failed (CreateLocalGlarePS)");
-	SAFE_RELEASE(pTgt);
+	AutoGenMips(pDevice, pLightGlare);
+	SAFE_DELETE(pTgt);
 
 	pCreateGlare->Activate("CreateSunTexPS");
-	pSunTex->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pSunTex, 0); // GetSurfaceLevel
 	pCreateGlare->SetOutputNative(0, pTgt);
 	if (!pCreateGlare->Execute(false)) LogErr("pCreateGlare Execute Failed (CreateSunTexPS)");
-	SAFE_RELEASE(pTgt);
+	AutoGenMips(pDevice, pSunTex);
+	SAFE_DELETE(pTgt);
 }
 
 
@@ -1189,12 +1214,12 @@ void Scene::ComputeLocalLightsVisibility()
 		FVECTOR3 vDir;
 	} ComputeData;
 
-	D3DSURFACE_DESC desc;
-	pLocalResultsSL->GetDesc(&desc);
+	SurfSizeDesc desc;
+	desc = GetDesc(pLocalResultsSL);
 
 	D3DXMatrixOrthoOffCenterLH(&ComputeData.mVP, 0.0f, (float)desc.Width, (float)desc.Height, 0.0f, 0.0f, 1.0f);
 
-	psgBuffer[GBUF_DEPTH]->GetDesc(&desc);
+	desc = GetDesc(psgBuffer[GBUF_DEPTH]);
 
 	ComputeData.vSrc = FVECTOR4((float)desc.Width, (float)desc.Height, 1.0f / (float)desc.Width, 1.0f / (float)desc.Height);
 	ComputeData.vDir = Camera.z;
@@ -1212,7 +1237,7 @@ void Scene::ComputeLocalLightsVisibility()
 	pLocalCompute->UpdateTextures();
 
 	// Compute local lights visibility
-	HR(pDevice->DrawPrimitiveUP(D3DPT_POINTLIST, nGlares, &LLCBuf, sizeof(LocalLightsCompute)));
+	pDevice->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, nGlares), &LLCBuf, sizeof(LocalLightsCompute));
 
 	pLocalCompute->DetachTextures();
 	gc->PopRenderTargets();
@@ -1223,17 +1248,15 @@ void Scene::ComputeLocalLightsVisibility()
 //
 void Scene::RecallDefaultState()
 {
-	HR(pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID));
-	HR(pDevice->SetRenderState(D3DRS_STENCILENABLE, false));
-	HR(pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
-	HR(pDevice->SetRenderState(D3DRS_ZENABLE, true));
-	HR(pDevice->SetRenderState(D3DRS_ZWRITEENABLE, true));
-	HR(pDevice->SetRenderState(D3DRS_ALPHATESTENABLE, false));
-	HR(pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, false));
-	HR(pDevice->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD));
-	HR(pDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
-	HR(pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
-	HR(pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW));
+	pDevice->SetFillMode(VK_POLYGON_MODE_FILL);
+	{ VkDev::State s = pDevice->GetState(); s.stencil = false; pDevice->SetState(s); } // D3DRS_STENCILENABLE
+	pDevice->SetColorWrite(0xF);
+	pDevice->SetDepthTest(true);
+	pDevice->SetDepthWrite(true);
+	// D3DRS_ALPHATESTENABLE left out: alpha tests are shader discards
+	pDevice->SetBlend(false);
+	pDevice->SetBlendFunc(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD); // D3DRS_BLENDOP, SRCBLEND, DESTBLEND
+	pDevice->SetCullMode(VK_CULL_MODE_BACK_BIT);
 }
 
 
@@ -1249,8 +1272,8 @@ void Scene::RenderMainScene()
 	D3D9SetTime(D3D9Stats.Timer.CamVis, scene_time);
 
 	if (!UpdateCamVis()) {
-		if (SUCCEEDED(gc->BeginScene())) {
-			HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0L));
+		if (gc->BeginScene() >= 0) { // SUCCEEDED
+			pDevice->Clear(true, true, true, 0, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL
 			gc->EndScene();
 		}
 		return; // Scene not yet properly inilialized, return
@@ -1269,7 +1292,7 @@ void Scene::RenderMainScene()
 
 	if (vFocus == NULL) return;
 
-	LPDIRECT3DSURFACE9 pBackBuffer;
+	VkSurf *pBackBuffer;
 
 	if (pOffscreenTarget) pBackBuffer = pOffscreenTarget;
 	else				  pBackBuffer = gc->GetBackBuffer();
@@ -1277,7 +1300,7 @@ void Scene::RenderMainScene()
 
 	// Begin a Scene ------------------------------------------------------------------------------------
 	//
-	if (FAILED (gc->BeginScene())) return;
+	if (gc->BeginScene() < 0) return; // FAILED
 
 
 
@@ -1305,7 +1328,7 @@ void Scene::RenderMainScene()
 		{
 			if (camCurrent == CustomCams.cend()) camCurrent = CustomCams.cbegin();
 
-			OBJHANDLE hVessel = vFocus->GetObjectA();
+			OBJHANDLE hVessel = vFocus->GetObject(); // GetObjectA: the windows.h macro name
 			
 			vObject *vO = GetVisObject((*camCurrent)->hVessel);
 			double maxd = min(500e3, GetCameraAltitude() + 15e3);
@@ -1384,7 +1407,7 @@ void Scene::RenderMainScene()
 	// ---------------------------------------------------------------------------------------------
 
 	VOBJREC* pv = NULL;
-	LPDIRECT3DTEXTURE9 pShdMap = NULL;
+	VkTex *pShdMap = NULL;
 
 	UpdateCameraFromOrbiter(RENDERPASS_MAINSCENE);
 	UpdateCamVis();
@@ -1420,7 +1443,7 @@ void Scene::RenderMainScene()
 		RecallDefaultState();
 
 		// Clear buffers
-		HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0L));
+		pDevice->Clear(true, true, true, 0, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL
 
 		// Render vessels
 		for (auto* vVes : RenderList) vVes->Render(pDevice, false);
@@ -1451,14 +1474,14 @@ void Scene::RenderMainScene()
 
 
 	if (DebugControls::IsActive()) {
-		HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0L));
+		pDevice->Clear(true, true, true, 0, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL
 		DWORD flags = *(DWORD*)gc->GetConfigParam(CFGPRM_GETDEBUGFLAGS);
-		if (flags&DBG_FLAGS_WIREFRAME) pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_WIREFRAME);
-		else						   pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+		if (flags&DBG_FLAGS_WIREFRAME) pDevice->SetFillMode(VK_POLYGON_MODE_LINE);
+		else						   pDevice->SetFillMode(VK_POLYGON_MODE_FILL);
 	}
 	else {
 		// Clear the viewport
-		HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0L));
+		pDevice->Clear(true, true, true, 0, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL
 	}
 
 
@@ -1478,7 +1501,7 @@ void Scene::RenderMainScene()
 	// render celestial sphere background
 	// -------------------------------------------------------------------------------------------------------
 
-	pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
+	pDevice->SetCullMode(VK_CULL_MODE_FRONT_BIT);
 
 	bool bEnableAtmosphere = false;
 
@@ -1497,7 +1520,7 @@ void Scene::RenderMainScene()
 	if (bClearZBuffer) SetCameraFrustumLimits(1e3, 3e8f);
 	else			   SetCameraFrustumLimits(znear_for_vessels, 3e8f);
 
-	pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	pDevice->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
 	// ---------------------------------------------------------------------------------------------
 	// Create a caster list for shadow mapping
@@ -1776,7 +1799,7 @@ void Scene::RenderMainScene()
 
 	// Set near clip plane for vessel exterior rendering
 	if (bClearZBuffer) {
-		pDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER, 0, 1.0f, 0L); // clear z-buffer
+		pDevice->Clear(false, true, false, 0, 1.0f, 0); // clear z-buffer
 		SetCameraFrustumLimits(znear_for_vessels, 1e8f);
 	}
 
@@ -1933,7 +1956,7 @@ void Scene::RenderMainScene()
 	if (bfvmode & BFV_ENABLE || favmode & FAV_ENABLE)
 	{
 
-		pDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER,  0, 1.0f, 0L); // clear z-buffer
+		pDevice->Clear(false, true, false, 0, 1.0f, 0); // clear z-buffer
 
 		pSketch = GetPooledSketchpad(SKETCHPAD_LABELS);
 		pSketch->SetFont(pAxisFont);
@@ -1973,7 +1996,7 @@ void Scene::RenderMainScene()
 			}
 		}
 
-		pDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER,  0, 1.0f, 0L); // clear z-buffer
+		pDevice->Clear(false, true, false, 0, 1.0f, 0); // clear z-buffer
 		double znear = Config->VCNearPlane;
 		if (znear<0.01) znear=0.01;
 		if (znear>1.0)  znear=1.0;
@@ -1982,7 +2005,7 @@ void Scene::RenderMainScene()
 		vFocus->Render(pDevice, true);
 	}
 
-	pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+	pDevice->SetFillMode(VK_POLYGON_MODE_FILL);
 
 
 	// End Of Main Scene Rendering ---------------------------------------------
@@ -2004,11 +2027,11 @@ void Scene::RenderMainScene()
 
 		int iGensPerFrame = pLightBlur->FindDefine("PassCount");
 
-		D3DSURFACE_DESC colr;
-		D3DSURFACE_DESC blur;
+		SurfSizeDesc colr;
+		SurfSizeDesc blur;
 
-		psgBuffer[GBUF_BLUR]->GetDesc(&blur);
-		psgBuffer[GBUF_COLOR]->GetDesc(&colr);
+		blur = GetDesc(psgBuffer[GBUF_BLUR]);
+		colr = GetDesc(psgBuffer[GBUF_COLOR]);
 
 		D3DXVECTOR2 scr = D3DXVECTOR2(1.0f / float(colr.Width), 1.0f / float(colr.Height));
 		D3DXVECTOR2 sbf = D3DXVECTOR2(1.0f / float(blur.Width), 1.0f / float(blur.Height));
@@ -2022,7 +2045,7 @@ void Scene::RenderMainScene()
 			float fGam = float(Config->GFXGamma);
 
 			// Grap a copy of a backbuffer
-			pDevice->StretchRect(pOffscreenTarget, NULL, psgBuffer[GBUF_COLOR], NULL, D3DTEXF_POINT);
+			pDevice->StretchRect(pOffscreenTarget, NULL, psgBuffer[GBUF_COLOR], NULL, VK_FILTER_NEAREST);
 
 			pLightBlur->SetFloat("vSB", &sbf, sizeof(D3DXVECTOR2));
 			pLightBlur->SetBool("bBlendIn", false);
@@ -2233,22 +2256,22 @@ void Scene::RenderMainScene()
 		pSketch->SetBlendState(Sketchpad::COPY);
 		int x = 0, y = ViewH();
 
-		LPDIRECT3DTEXTURE9 pTab = vP->GetScatterTable(RAY_LAND);
-		D3DSURFACE_DESC desc;
+		VkTex *pTab = vP->GetScatterTable(RAY_LAND);
+		SurfSizeDesc desc;
 		if (pTab) {
-			pTab->GetLevelDesc(0, &desc);
+			desc = GetLevelDesc(pTab, 0);
 			pSketch->StretchRectNative(pTab, NULL, ptr(_R(0, y - desc.Height, desc.Width, y)));
 			y -= (desc.Height + 5);
 		}
 		pTab = vP->GetScatterTable(MIE_LAND);
 		if (pTab) {
-			pTab->GetLevelDesc(0, &desc);
+			desc = GetLevelDesc(pTab, 0);
 			pSketch->StretchRectNative(pTab, NULL, ptr(_R(0, y - desc.Height, desc.Width, y)));
 			y -= (desc.Height + 5);
 		}
 		pTab = vP->GetScatterTable(ATN_LAND);
 		if (pTab) {
-			pTab->GetLevelDesc(0, &desc);
+			desc = GetLevelDesc(pTab, 0);
 			pSketch->StretchRectNative(pTab, NULL, ptr(_R(0, y - desc.Height, desc.Width, y)));
 			y -= (desc.Height + 5);
 		}
@@ -2257,7 +2280,7 @@ void Scene::RenderMainScene()
 			if (i == RAY_LAND || i == MIE_LAND || i == ATN_LAND) continue;
 			pTab = vP->GetScatterTable(i);
 			if (!pTab) continue;
-			pTab->GetLevelDesc(0, &desc);
+			desc = GetLevelDesc(pTab, 0);
 			pSketch->CopyRectNative(pTab, NULL, x, y - desc.Height);
 			x += desc.Width + 5;
 		}
@@ -2271,7 +2294,7 @@ void Scene::RenderMainScene()
 	// -------------------------------------------------------------------------------------------------------
 
 	const char* dbgString = oapiDebugString();
-	int len = lstrlen(dbgString);
+	int len = (int)strlen(dbgString);
 
 	if (len>0 || !D3D9DebugQueue.empty()) {
 
@@ -2293,7 +2316,7 @@ void Scene::RenderMainScene()
 		while (!D3D9DebugQueue.empty()) {
 			pos -= (height * 3) / 2;
 			std::string str = D3D9DebugQueue.front();
-			len = lstrlen(str.c_str());
+			len = (int)strlen(str.c_str());
 			DWORD width = pSketch->GetTextWidth(str.c_str(), len);
 			pSketch->Rectangle(-1, pos - height - 1, width + 4, pos);
 			pSketch->Text(2, pos - 2, str.c_str(), len);
@@ -2542,7 +2565,7 @@ int Scene::RenderShadowMap(D3DXVECTOR3 &pos, D3DXVECTOR3 &ld, float rad, bool bI
 	gc->PushRenderTarget(psShmRT[smap.lod], psShmDS[smap.lod], RENDERPASS_SHADOWMAP);
 
 	// Clear the viewport
-	HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0, 1.0f, 0L));
+	pDevice->Clear(true, true, false, 0, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER
 
 
 	// render the vessel objects --------------------------------
@@ -2603,7 +2626,7 @@ void Scene::RenderSecondaryScene(std::set<vVessel*> &RndList, std::set<vVessel*>
 	D3D9Effect::UpdateEffectCamera(GetCameraProxyBody());
 
 	// Clear the viewport
-	HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0xFF000000, 1.0f, 0L));
+	pDevice->Clear(true, true, true, 0xFF000000, 1.0f, 0); // D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL
 
 	
 	// render planets -------------------------------------------
@@ -2656,14 +2679,14 @@ void Scene::RenderSecondaryScene(std::set<vVessel*> &RndList, std::set<vVessel*>
 
 // ===========================================================================================
 //
-bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc)
+bool Scene::RenderBlurredMap(VkDev *pDev, VkTex *pSrc)
 {
 	bool bQuality = true;
 
 	if (!pSrc) return false;
 
 	if (!pBlur) {
-		pBlur = new ImageProcessing(pDev, "Modules/D3D9Client/EnvMapBlur.hlsl", "PSBlur");
+		pBlur = new ImageProcessing(pDev, "Modules/VulkanClient/EnvMapBlur.glsl", "PSBlur");
 	}
 
 	if (!pBlur->IsOK()) {
@@ -2676,32 +2699,33 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 		return false;
 	}
 
-	D3DSURFACE_DESC desc;
-	pEnvDS->GetDesc(&desc);
+	SurfSizeDesc desc;
+	desc = GetDesc(pEnvDS);
 	DWORD width = min((UINT)512, desc.Width);
 
 
 	if (!pBlrTemp[0]) {
-		if (D3DXCreateCubeTexture(pDev, width >> 0, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pBlrTemp[0]) != S_OK) return false;
-		if (D3DXCreateCubeTexture(pDev, width >> 1, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pBlrTemp[1]) != S_OK) return false;
-		if (D3DXCreateCubeTexture(pDev, width >> 2, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pBlrTemp[2]) != S_OK) return false;
-		if (D3DXCreateCubeTexture(pDev, width >> 3, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pBlrTemp[3]) != S_OK) return false;
-		if (D3DXCreateCubeTexture(pDev, width >> 4, 1, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pBlrTemp[4]) != S_OK) return false;
+		if (!(pBlrTemp[0] = CreateTex(pDev, width >> 0, width >> 0, 1, VK_FORMAT_B8G8R8A8_UNORM, RTUsage, true))) return false; // D3DFMT_X8R8G8B8
+		if (!(pBlrTemp[1] = CreateTex(pDev, width >> 1, width >> 1, 1, VK_FORMAT_B8G8R8A8_UNORM, RTUsage, true))) return false;
+		if (!(pBlrTemp[2] = CreateTex(pDev, width >> 2, width >> 2, 1, VK_FORMAT_B8G8R8A8_UNORM, RTUsage, true))) return false;
+		if (!(pBlrTemp[3] = CreateTex(pDev, width >> 3, width >> 3, 1, VK_FORMAT_B8G8R8A8_UNORM, RTUsage, true))) return false;
+		if (!(pBlrTemp[4] = CreateTex(pDev, width >> 4, width >> 4, 1, VK_FORMAT_B8G8R8A8_UNORM, RTUsage, true))) return false;
+		for (int i = 0; i < 5; i++) pBlrTemp[i]->SetSwizzle(VkSwizzleMap(SWZ_NOALPHA)); // X8: alpha reads 1 (the face surfaces render through their own views)
 	}
 
 
 	D3DXVECTOR3 dir, up, cp;
-	LPDIRECT3DSURFACE9 pSrf = NULL;
-	LPDIRECT3DSURFACE9 pTmp = NULL;
+	VkSurf *pSrf = NULL;
+	VkSurf *pTmp = NULL;
 
 	// Create clurred mip sub-levels
 	//
 	for (DWORD i = 0; i < 6; i++) {
-		pSrc->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pSrf);
-		pBlrTemp[0]->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pTmp);
-		pDevice->StretchRect(pSrf, NULL, pTmp, NULL, D3DTEXF_POINT);
-		SAFE_RELEASE(pSrf);
-		SAFE_RELEASE(pTmp);
+		pSrf = new VkSurf(pSrc, 0, i); // GetCubeMapSurface
+		pTmp = new VkSurf(pBlrTemp[0], 0, i);
+		pDevice->StretchRect(pSrf, NULL, pTmp, NULL, VK_FILTER_NEAREST);
+		SAFE_DELETE(pSrf);
+		SAFE_DELETE(pTmp);
 	}
 
 
@@ -2719,7 +2743,7 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 			D3DXVec3Cross(&cp, &up, &dir);
 			D3DXVec3Normalize(&cp, &cp);
 
-			pSrc->GetCubeMapSurface(D3DCUBEMAP_FACES(i), mip, &pSrf);
+			pSrf = new VkSurf(pSrc, mip, i); // GetCubeMapSurface
 
 			pBlur->SetOutputNative(0, pSrf);
 			pBlur->SetFloat("vDir", &dir, sizeof(D3DXVECTOR3));
@@ -2731,10 +2755,10 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 				return false;
 			}
 
-			pBlrTemp[mip-1]->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pTmp);
-			pDevice->StretchRect(pSrf, NULL, pTmp, NULL, D3DTEXF_POINT);
-			SAFE_RELEASE(pSrf);
-			SAFE_RELEASE(pTmp);
+			pTmp = new VkSurf(pBlrTemp[mip-1], 0, i);
+			pDevice->StretchRect(pSrf, NULL, pTmp, NULL, VK_FILTER_NEAREST);
+			SAFE_DELETE(pSrf);
+			SAFE_DELETE(pTmp);
 		}
 
 		pBlur->SetBool("bDir", true);
@@ -2745,7 +2769,7 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 			D3DXVec3Cross(&cp, &up, &dir);
 			D3DXVec3Normalize(&cp, &cp);
 
-			pSrc->GetCubeMapSurface(D3DCUBEMAP_FACES(i), mip, &pSrf);
+			pSrf = new VkSurf(pSrc, mip, i); // GetCubeMapSurface
 
 			pBlur->SetOutputNative(0, pSrf);
 			pBlur->SetFloat("vDir", &dir, sizeof(D3DXVECTOR3));
@@ -2757,10 +2781,10 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 				return false;
 			}
 
-			pBlrTemp[mip]->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pTmp);
-			pDevice->StretchRect(pSrf, NULL, pTmp, NULL, D3DTEXF_POINT);
-			SAFE_RELEASE(pSrf);
-			SAFE_RELEASE(pTmp);
+			pTmp = new VkSurf(pBlrTemp[mip], 0, i);
+			pDevice->StretchRect(pSrf, NULL, pTmp, NULL, VK_FILTER_NEAREST);
+			SAFE_DELETE(pSrf);
+			SAFE_DELETE(pTmp);
 		}
 	}
 
@@ -2769,12 +2793,12 @@ bool Scene::RenderBlurredMap(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DCUBETEXTURE9 pSrc
 
 // ===========================================================================================
 //
-bool Scene::IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRECT3DTEXTURE9 pOut)
+bool Scene::IntegrateIrradiance(vVessel *vV, VkTex *pSrc, VkTex *pOut)
 {
 	if (!pSrc) return false;
 
 	if (!pIrradiance) {
-		pIrradiance = new ImageProcessing(pDevice, "Modules/D3D9Client/IrradianceInteg.hlsl", "PSPreInteg");
+		pIrradiance = new ImageProcessing(pDevice, "Modules/VulkanClient/IrradianceInteg.glsl", "PSPreInteg");
 		pIrradiance->CompileShader("PSInteg");
 		pIrradiance->CompileShader("PSPostBlur");
 	}
@@ -2789,36 +2813,36 @@ bool Scene::IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRE
 		return false;
 	}
 
-	LPDIRECT3DSURFACE9 pOuts = NULL;
-	HR(pOut->GetSurfaceLevel(0, &pOuts));
+	VkSurf *pOuts = NULL;
+	pOuts = new VkSurf(pOut, 0); // GetSurfaceLevel
 
-	D3DSURFACE_DESC desc, desc_out;
-	pIrradDS->GetDesc(&desc);
-	pOuts->GetDesc(&desc_out);
+	SurfSizeDesc desc, desc_out;
+	desc = GetDesc(pIrradDS);
+	desc_out = GetDesc(pOuts);
 	
 	if (!pIrradTemp) {
-		if (D3DXCreateCubeTexture(pDevice, 16, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pIrradTemp) != S_OK) {
+		if (!(pIrradTemp = CreateTex(pDevice, 16, 16, 1, VK_FORMAT_R16G16B16A16_SFLOAT, RTUsage, true))) { // D3DXCreateCubeTexture D3DFMT_A16B16G16R16F
 			LogErr("Failed to create irradiance temp");
 			return false;
 		}
-		if (D3DXCreateTexture(pDevice, 128, 128, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pIrradTemp2) != S_OK) {
+		if (!(pIrradTemp2 = CreateTex(pDevice, 128, 128, 1, VK_FORMAT_R16G16B16A16_SFLOAT, RTUsage))) {
 			LogErr("Failed to create irradiance temp");
 			return false;
 		}
-		if (D3DXCreateTexture(pDevice, desc_out.Width, desc_out.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pIrradTemp3) != S_OK) {
+		if (!(pIrradTemp3 = CreateTex(pDevice, desc_out.Width, desc_out.Height, 1, VK_FORMAT_R16G16B16A16_SFLOAT, RTUsage))) {
 			LogErr("Failed to create irradiance temp");
 			return false;
 		}
 	}
 
 	D3DXVECTOR3 nr, up, cp;
-	LPDIRECT3DSURFACE9 pSrf = NULL;
-	LPDIRECT3DSURFACE9 pTgt = NULL;
-	LPDIRECT3DSURFACE9 pTmp2 = NULL;
-	LPDIRECT3DSURFACE9 pTmp3 = NULL;
+	VkSurf *pSrf = NULL;
+	VkSurf *pTgt = NULL;
+	VkSurf *pTmp2 = NULL;
+	VkSurf *pTmp3 = NULL;
 	
-	HR(pIrradTemp2->GetSurfaceLevel(0, &pTmp2));
-	HR(pIrradTemp3->GetSurfaceLevel(0, &pTmp3));
+	pTmp2 = new VkSurf(pIrradTemp2, 0); // GetSurfaceLevel
+	pTmp3 = new VkSurf(pIrradTemp3, 0);
 
 
 	// ---------------------------------------------------------------------
@@ -2829,10 +2853,10 @@ bool Scene::IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRE
 
 	for (DWORD i = 0; i < 6; i++)
 	{
-		pSrc->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pSrf);
-		pIrradTemp->GetCubeMapSurface(D3DCUBEMAP_FACES(i), 0, &pTgt);
+		pSrf = new VkSurf(pSrc, 0, i); // GetCubeMapSurface
+		pTgt = new VkSurf(pIrradTemp, 0, i);
 		
-		pDevice->StretchRect(pSrf, NULL, pTmp2, NULL, D3DTEXF_POINT);
+		pDevice->StretchRect(pSrf, NULL, pTmp2, NULL, VK_FILTER_NEAREST);
 
 		pIrradiance->SetOutputNative(0, pTgt);
 		pIrradiance->SetTextureNative("tSrc", pIrradTemp2, IPF_POINT | IPF_CLAMP);
@@ -2842,8 +2866,8 @@ bool Scene::IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRE
 			return false;
 		}
 
-		SAFE_RELEASE(pTgt);
-		SAFE_RELEASE(pSrf);
+		SAFE_DELETE(pTgt);
+		SAFE_DELETE(pSrf);
 	}
 
 	
@@ -2893,9 +2917,9 @@ bool Scene::IntegrateIrradiance(vVessel *vV, LPDIRECT3DCUBETEXTURE9 pSrc, LPDIRE
 		return false;
 	}
 
-	SAFE_RELEASE(pTmp2);
-	SAFE_RELEASE(pTmp3);
-	SAFE_RELEASE(pOuts);
+	SAFE_DELETE(pTmp2);
+	SAFE_DELETE(pTmp3);
+	SAFE_DELETE(pOuts);
 
 	return true;
 }
@@ -2913,24 +2937,24 @@ void Scene::ClearOmitFlags()
 
 // ===========================================================================================
 //
-void Scene::VisualizeCubeMap(LPDIRECT3DCUBETEXTURE9 pCube, int mip)
+void Scene::VisualizeCubeMap(VkTex *pCube, int mip)
 {
 	if (!pCube) return;
 
-	LPDIRECT3DSURFACE9 pSrf = NULL;
-	LPDIRECT3DSURFACE9 pBack = gc->GetBackBuffer();
+	VkSurf *pSrf = NULL;
+	VkSurf *pBack = gc->GetBackBuffer();
 
-	D3DSURFACE_DESC bdesc;
+	SurfSizeDesc bdesc;
 
 	if (!pBack) return;
 
-	HR(pBack->GetDesc(&bdesc));
+	bdesc = GetDesc(pBack);
 
 	DWORD x, y, h = bdesc.Height / 3;
 
 	for (DWORD i=0;i<6;i++) {
 
-		HR(pCube->GetCubeMapSurface(D3DCUBEMAP_FACES(i), mip, &pSrf));
+		pSrf = new VkSurf(pCube, mip, i); // GetCubeMapSurface
 
 		switch (i) {
 			case 0:	x = 2*h; y=h; break;
@@ -2947,9 +2971,9 @@ void Scene::VisualizeCubeMap(LPDIRECT3DCUBETEXTURE9 pCube, int mip)
 		dr.bottom = y+h;
 		dr.right = x+h;
 
-		HR(pDevice->StretchRect(pSrf, NULL, pBack, &dr, D3DTEXF_POINT));
+		pDevice->StretchRect(pSrf, NULL, pBack, &dr, VK_FILTER_NEAREST);
 
-		SAFE_RELEASE(pSrf);
+		SAFE_DELETE(pSrf);
 	}
 }
 
@@ -2971,10 +2995,10 @@ void Scene::RenderVesselShadows (OBJHANDLE hPlanet, float depth) const
 	}
 
 	// reset device parameters
-	pDevice->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	{ VkDev::State s = pDevice->GetState(); s.stencil = false; pDevice->SetState(s); } // D3DRS_STENCILENABLE
 
 	// render particle shadows
-	LPDIRECT3DTEXTURE9 tex = 0;
+	VkTex *tex = 0;
 	for (DWORD j=0;j<nstream;j++) pstream[j]->RenderGroundShadow(pDevice, tex);
 }
 
@@ -3128,7 +3152,7 @@ void Scene::DelParticleStream (DWORD idx)
 //
 void Scene::InitGDIResources ()
 {
-	char dbgfnt[64]; sprintf_s(dbgfnt,64,"*%s",Config->DebugFont);
+	char dbgfnt[64]; snprintf(dbgfnt,64,"*%s",Config->DebugFont);
 	pAxisFont  = oapiCreateFont(24, false, "Arial", FONT_NORMAL, 0);
 	pLabelFont = oapiCreateFont(15, false, "Arial", FONT_NORMAL, 0);
 	pDebugFont = oapiCreateFont(Config->DebugFontSize, true, dbgfnt, FONT_NORMAL, 0);
@@ -3303,7 +3327,7 @@ D3D9Pick Scene::PickMesh(DEVMESHHANDLE hMesh, const LPD3DXMATRIX pW, short xpos,
 void Scene::GetAdjProjViewMatrix(LPD3DXMATRIX pMP, float znear, float zfar)
 {
 	float tanap = tan(Camera.aperture);
-	ZeroMemory(pMP, sizeof(D3DXMATRIX));
+	memset(pMP, 0, sizeof(D3DXMATRIX));
 	pMP->_11 = (Camera.aspect / tanap);
 	pMP->_22 = (1.0f / tanap);
 	pMP->_43 = (pMP->_33 = zfar / (zfar - znear)) * (-znear);
@@ -3319,7 +3343,7 @@ void Scene::SetCameraAperture(float ap, float as)
 
 	float tanap = tan(ap);
 
-	ZeroMemory(&Camera.mProj, sizeof(D3DXMATRIX));
+	memset(&Camera.mProj, 0, sizeof(D3DXMATRIX));
 
 	Camera.mProj._11 = (as / tanap);
 	Camera.mProj._22 = (1.0f / tanap);
@@ -3657,8 +3681,8 @@ void Scene::RenderCustomCameraView(CAMREC *cCur)
 	DWORD w = SURFACE(cCur->hSurface)->GetWidth();
 	DWORD h = SURFACE(cCur->hSurface)->GetHeight();
 
-	LPDIRECT3DSURFACE9 pSrf = SURFACE(cCur->hSurface)->GetSurface();
-	LPDIRECT3DSURFACE9 pDSs = SURFACE(cCur->hSurface)->GetDepthStencil();
+	VkSurf *pSrf = SURFACE(cCur->hSurface)->GetSurface();
+	VkSurf *pDSs = SURFACE(cCur->hSurface)->GetDepthStencil();
 
 	if (!pSrf) cCur->iError = -1;
 	if (!pDSs) cCur->iError = -2;
@@ -3743,12 +3767,12 @@ void Scene::RenderGlares()
 	{
 		static SMVERTEX Vertex[4] = { {-1, -1, 0, 0, 0}, {-1, 1, 0, 0, 1}, {1, 1, 0, 1, 1}, {1, -1, 0, 1, 0} };
 		static WORD cIndex[6] = { 0, 2, 1, 0, 3, 2 };
-		D3DSURFACE_DESC desc; FVECTOR2 pt;
+		SurfSizeDesc desc; FVECTOR2 pt;
 		struct { D3DXMATRIX	mVP; float4	Pos, Color;	float GPUId, Alpha, Blend; } Const;
 
 		Const.Color = FVECTOR4(1, 1, 1, 1);
 		D3DXMatrixOrthoOffCenterLH(&Const.mVP, 0.0f, (float)viewW, (float)viewH, 0.0f, 0.0f, 1.0f);
-		pLocalResultsSL->GetDesc(&desc);
+		desc = GetDesc(pLocalResultsSL);
 
 		pRenderGlares->ClearTextures();
 		pRenderGlares->Setup(pPosTexDecl, false, 1);
@@ -3792,7 +3816,7 @@ void Scene::RenderGlares()
 
 				pRenderGlares->SetVSConstants("Const", &Const, sizeof(Const));
 				pRenderGlares->SetPSConstants("Const", &Const, sizeof(Const));
-				HR(pDevice->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, &cIndex, D3DFMT_INDEX16, &Vertex, sizeof(SMVERTEX)));		
+				pDevice->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), &cIndex, VK_INDEX_TYPE_UINT16, &Vertex, sizeof(SMVERTEX));		
 			}
 		}
 
@@ -3814,7 +3838,7 @@ void Scene::RenderGlares()
 						Const.Blend = 1.0f;
 						pRenderGlares->SetVSConstants("Const", &Const, sizeof(Const));
 						pRenderGlares->SetPSConstants("Const", &Const, sizeof(Const));
-						HR(pDevice->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, &cIndex, D3DFMT_INDEX16, &Vertex, sizeof(SMVERTEX)));
+						pDevice->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), &cIndex, VK_INDEX_TYPE_UINT16, &Vertex, sizeof(SMVERTEX));
 					}
 				}
 			}
@@ -3871,41 +3895,23 @@ bool Scene::CameraDirection2Viewport(const VECTOR3 &dir, int &x, int &y)
 //
 void Scene::GlobalExit()
 {
-	SAFE_RELEASE(FX);
+	SAFE_DELETE(FX);
 }
 
 // ===========================================================================================
 //
-void Scene::D3D9TechInit(LPDIRECT3DDEVICE9 pDev, const char *folder)
+void Scene::D3D9TechInit(VkDev *pDev, const char *folder)
 {
 	char name[256];
-	sprintf_s(name,256,"Modules/%s/SceneTech.fx", folder);
+	snprintf(name,256,"Modules/%s/SceneTech.fx", folder);
 
 	// Create the Effect from a .fx file.
-	ID3DXBuffer* errors = 0;
-
-	HR(D3DXCreateEffectFromFile(pDev, name, 0, 0, 0, 0, &FX, &errors));
-
-	if (errors) {
-
-		// It's an error
-		//
-		if (strstr((char*)errors->GetBufferPointer(),"warning")==NULL) {
-			LogErr("Effect Error: %s",(char*)errors->GetBufferPointer());
-			MessageBoxA(0, (char*)errors->GetBufferPointer(), "SceneTech.fx Error", 0);
-			return;
-		}
-
-		// It's a warning
-		//
-		else {
-			LogErr("[Effect Warning: %s]",(char*)errors->GetBufferPointer());
-			//MessageBoxA(0, (char*)errors->GetBufferPointer(), "CelSphereTech.fx Warning", 0);
-		}
-	}
+	// errors (ID3DXBuffer) left out: VkEffect logs the compiler's errors and warnings, a failed effect is NULL
+	FX = VkEffect::Create(pDev, name, VkMacros()); // D3DXCreateEffectFromFile
 
 	if (FX==0) {
 		LogErr("Failed to create an Effect (%s)",name);
+		QMessageBox::critical(NULL, "SceneTech.fx Error", QString("Failed to create an Effect (%1). See the log.").arg(name)); // MessageBoxA with the errors
 		return;
 	}
 

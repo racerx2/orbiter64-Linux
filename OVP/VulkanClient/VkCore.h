@@ -156,6 +156,7 @@ public:
 	void Flush ();                                   // submit the recorded commands and wait (uploads outside a frame)
 	void WaitIdle ();
 	VkResult QueuePresent (const VkPresentInfoKHR *pi); // vkQueuePresentKHR under the queue lock
+	std::mutex &QueueLock () { return queueLock; }  // for code that submits to the queue itself (ImGui backend)
 	void Defer (std::function<void()> release);      // SAFE_RELEASE: freed once the GPU is done with this frame
 
 	// one-off commands (uploads, readbacks) outside the frame command buffer
@@ -169,12 +170,16 @@ public:
 	// render targets: dynamic rendering, begun lazily at the first draw or clear
 	void SetRenderTarget (VkSurf *color, VkSurf *depth); // SetRenderTarget(0,..) + SetDepthStencilSurface
 	VkSurf *GetRenderTarget () const { return rtColor; }
+	void SetRenderTargetN (UINT idx, VkSurf *color);  // SetRenderTarget(idx, s): 0 = SetRenderTarget(color, current depth), 1-3 extra MRT colour targets
+	VkSurf *GetRenderTargetN (UINT idx) const { return idx == 0 ? rtColor : (idx < 4 ? rtExtra[idx - 1] : NULL); }
+	void ForgetTarget (const VkSurf *s);             // a target surface is deleted: unbind it (a new VkSurf may reuse the address)
 	VkSurf *GetDepthStencil () const { return rtDepth; }
 	void BeginRendering ();                          // no-op while rendering to the same targets
 	void EndRendering ();
 	bool IsRendering () const { return rendering; }
 	void Clear (bool color, bool depth, bool stencil, DWORD argb, float z, DWORD s, const RECT *r = NULL);
 	void SetViewport (float x, float y, float w, float h, float minz = 0.0f, float maxz = 1.0f);
+	VkViewport GetViewport () const { return { viewport.x, viewport.y + viewport.height, viewport.width, -viewport.height, viewport.minDepth, viewport.maxDepth }; } // as passed to SetViewport
 	void SetScissor (const RECT *r);                 // NULL = whole target (D3DRS_SCISSORTESTENABLE off)
 
 	// dynamic state with D3D9 persistence (replayed into each new command buffer)
@@ -274,6 +279,7 @@ private:
 	std::mutex queueLock;                            // D3DCREATE_MULTITHREADED: loader threads upload textures
 
 	VkSurf *rtColor, *rtDepth;
+	VkSurf *rtExtra[3];                                  // MRT colour targets 1-3 (a list ending at the first NULL)
 	UINT streamStride[2];
 	bool rendering;
 	VkViewport viewport;

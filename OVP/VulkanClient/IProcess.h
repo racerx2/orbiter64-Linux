@@ -127,7 +127,7 @@ private:
 	struct {
 		VkTex *hTex;
 		DWORD flags;
-	} pTextures[8];
+	} pTextures[VkDev::MAXBINDINGS - VkDev::NUBOS];   // [sampler binding - NUBOS]
 
 	gcIPInterface::ipicull mesh_cull;
 
@@ -138,6 +138,8 @@ private:
 	VkSurf *pDepth, *pDepthBak;
 	VkConstTable *pVSConst;
 	VkConstTable *pPSConst;
+	VkConstBuffer *pCB;             // not upstream: the constant registers and sampler stages the tables set (device state in D3D9)
+	std::vector<VkSamplerSlot> smpSlots; // not upstream: sampler bindings the active shader pair reads
 	VkShaderEXT pVertex;
 	VkShaderEXT pPixel;
 	struct { UINT Width, Height; } desc;	// D3DSURFACE_DESC: size of the first render target

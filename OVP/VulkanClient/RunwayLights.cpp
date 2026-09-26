@@ -33,7 +33,7 @@ RunwayLights::RunwayLights(class vBase *_vB, const class Scene *scn)
 	apr_length = 257.0;
 	iCategory = 0;
 	nPAPI = 0;
-	hObj = vB->GetObjectA();
+	hObj = vB->GetObject();
 	nVASI = 0;
 	bSingleEnded = false;
 	bDisp2 = false;
@@ -693,7 +693,7 @@ void RunwayLights::Update(class vPlanet *vP)
 }
 
 
-void RunwayLights::Render(LPDIRECT3DDEVICE9 dev, LPD3DXMATRIX world, bool night)
+void RunwayLights::Render(VkDev *dev, LPD3DXMATRIX world, bool night)
 {
 	_TRACE;
 	currentTime = float(fmod(1.7*oapiGetSimTime(), 1.0));
@@ -748,7 +748,7 @@ int RunwayLights::CreateRunwayLights(class vBase *vB, const class Scene *scn, co
 	char cbuf[256];
 	
 	FILE* file = NULL;
-	fopen_s(&file, filename, "r");
+	file = fopen(oapiResolvePath(filename).c_str(), "r");
 
 	if (file == NULL) {
 		LogErr("Could not open %s file.", filename);
@@ -828,7 +828,7 @@ int RunwayLights::CreateRunwayLights(class vBase *vB, const class Scene *scn, co
 				{
 					VECTOR3 vec; DWORD u, q;
 				
-					int n = sscanf(cbuf, "PAPI %lf %lf %lf %lu %lu", &vec.x, &vec.y, &vec.z, &u, &q);
+					int n = sscanf(cbuf, "PAPI %lf %lf %lf %u %u", &vec.x, &vec.y, &vec.z, &u, &q); // %lu: 64-bit write into a DWORD on LP64
 
 					if (n==3) {
 						lights[numRunwayLights-1]->AddPAPI(vec,  1, 0);
@@ -855,7 +855,7 @@ int RunwayLights::CreateRunwayLights(class vBase *vB, const class Scene *scn, co
 				else if(!strncmp(cbuf, "VASI", 4))
 				{
 					VECTOR3 vec; DWORD e;
-					int n = sscanf(cbuf, "VASI %lf %lf %lf %lu", &vec.x, &vec.y, &vec.z, &e);
+					int n = sscanf(cbuf, "VASI %lf %lf %lf %u", &vec.x, &vec.y, &vec.z, &e); // %lu: 64-bit write into a DWORD on LP64
 					if (n==3) {
 						lights[numRunwayLights-1]->AddVASI(vec, 0);
 						lights[numRunwayLights-1]->AddVASI(vec, 1);
@@ -990,7 +990,7 @@ void TaxiLights::Init()
 }
 
 
-void TaxiLights::Render(LPDIRECT3DDEVICE9 dev, LPD3DXMATRIX world, bool night)
+void TaxiLights::Render(VkDev *dev, LPD3DXMATRIX world, bool night)
 {
 	if (night) beacons1->Render(dev, world, 0.5f);
 }
@@ -1002,7 +1002,7 @@ int TaxiLights::CreateTaxiLights(OBJHANDLE base, const class Scene *scn, const c
 	char cbuf[256];
 	
 	FILE* file = NULL;
-	fopen_s(&file, filename, "r");
+	file = fopen(oapiResolvePath(filename).c_str(), "r");
 
 	if (file == NULL) {
 		LogErr("Could not open %s file.", filename);

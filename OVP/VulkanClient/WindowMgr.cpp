@@ -1,4 +1,5 @@
 
+
 // =================================================================================================================================
 //
 // Copyright (C) 2019-2026 Jarmo Nikkanen
@@ -20,16 +21,25 @@
 // =================================================================================================================================
 
 
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 #include "WindowMgr.h"
-#include "windows.h"
-#include "WindowsX.h"
+// windows.h, WindowsX.h left out: Qt widgets, painters and events
 #include "resource.h"
 #include "OapiExtension.h"
 #include "D3D9Config.h"
 #include "Log.h"
 #include "D3D9Client.h"
+#include "OrbiterResource.h"
+#include <list>
+#include <QWidget>
+#include <QWindow>
+#include <QScreen>
+#include <QPainter>
+#include <QImage>
+#include <QFont>
+#include <QFontMetricsF>
+#include <QMouseEvent>
+#include <QWheelEvent>
 
 #define APPNODE(x) ((Node *)x)
 
@@ -79,36 +89,70 @@ inline FVECTOR4 _Colour(DWORD dwABGR)
 	return c;
 }
 // ===============================================================================================
+// not upstream: COLORREF (0x00BBGGRR) ↔ QImage pixel (GetPixel/SetPixel/SetTextColor)
+inline COLORREF _CR(QRgb p) { return RGB(qRed(p), qGreen(p), qBlue(p)); }
+inline QRgb _QRgb(COLORREF c) { return qRgb(GetRValue(c), GetGValue(c), GetBValue(c)); }
+
+// not upstream: Win32's IntersectRect (empty rect when they don't overlap)
+static void IntersectRect(RECT *o, const RECT *a, const RECT *b)
+{
+	*o = { std::max(a->left, b->left), std::max(a->top, b->top), std::min(a->right, b->right), std::min(a->bottom, b->bottom) };
+	if (o->left >= o->right || o->top >= o->bottom) *o = { 0, 0, 0, 0 };
+}
+
+// not upstream: CreateFont counterpart (height > 0: cell height, < 0: character height; weight 0 = FW_DONTCARE)
+static QFont *CreateFont(int height, int weight, const char *face)
+{
+	QFont *f = new QFont(QString::fromLatin1(face));
+	f->setPixelSize(std::max(1, abs(height)));
+	f->setWeight(QFont::Weight(std::clamp(weight ? weight : 400, 1, 1000)));
+	f->setStyleHint(QFont::TypeWriter); // pitch and family 49: FF_MODERN | FIXED_PITCH when the face is missing
+	if (height > 0) { QFontMetricsF fm(*f); if (fm.height() > 0) f->setPixelSize(std::max(1, int(round(height * height / fm.height())))); }
+	return f;
+}
+
+// not upstream: the "SideBarWnd" and "Floater" window classes: a widget that hands its events to SideBarWndProc
+class SideBarWnd : public QWidget
+{
+public:
+	SideBarWnd(const char *title, Qt::WindowFlags flags) : QWidget(NULL, flags)
+	{
+		setWindowTitle(title);
+		setAttribute(Qt::WA_OpaquePaintEvent); // WM_ERASEBKGND returns 1: no background erase (hbrBackground BLACK_BRUSH unused)
+		setMouseTracking(true);                // WM_MOUSEMOVE comes without a button held too
+		setCursor(Qt::ArrowCursor);            // hCursor IDC_ARROW
+	}
+protected:
+	bool event(QEvent *e) override
+	{
+		if (::SideBarWndProc(this, e)) return true;
+		return QWidget::event(e);
+	}
+};
+
+// ===============================================================================================
 //
-LRESULT CALLBACK SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool SideBarWndProc(QWidget *hWnd, QEvent *event)
 {
 	if (g_pWM) {
 		SideBar *pBar = g_pWM->GetSideBar(hWnd);
-		if (pBar) return pBar->SideBarWndProc(hWnd, uMsg, wParam, lParam);
+		if (pBar) return pBar->SideBarWndProc(hWnd, event);
 	}
-	return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	return false; // DefWindowProc: the widget's own handling
 }
 // ===============================================================================================
 //
-INT_PTR CALLBACK DummyDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void DummyDlgProc(QWidget *hDlg, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		return true;
-	}
-	return false;
+	// WM_INITDIALOG: nothing to set up
 }
 
 
 // ===============================================================================================
 //
-INT_PTR CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void DlgProc(QWidget *hDlg, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		return true;
-	}
-	return false;
+	// WM_INITDIALOG: nothing to set up
 }
 
 
@@ -162,20 +206,20 @@ void OpenTestClbk(void *context)
 // Node Implementation
 // ===============================================================================================
 //
-Node::Node(SideBar *pSB, const char *label, HWND hDlg, DWORD color, Node *pP) :
+Node::Node(SideBar *pSB, const char *label, QWidget *hDlg, DWORD color, Node *pP) :
 	pSB(pSB), pParent(pP), hBmp(NULL), hDlg(hDlg), pApp(NULL), bOpen(true), bClose(false)
 {
 
-	memset(&bm, 0, sizeof(BITMAP));
+	bm = QSize(0, 0); // memset(&bm, 0, sizeof(BITMAP))
 
 	WindowManager *pMgr = pSB->GetWM();
 
 	pSB->AddWindow(this);
 
-	if (label) Label = _strdup(label);
+	if (label) strcpy(Label = new char[strlen(label) + 1], label); // _strdup: a new[] copy, the destructor frees it with delete[]
 	else Label = NULL;
 
-	HBITMAP hTit;
+	QImage *hTit;
 
 	if ((pParent == NULL) && (Config->gcGUIMode == 3) && hDlg) return;	// No Title Bar
 
@@ -188,40 +232,30 @@ Node::Node(SideBar *pSB, const char *label, HWND hDlg, DWORD color, Node *pP) :
 	FVECTOR4 clr = _Colour(color);
 	FVECTOR4 white = _Colour(0xFFFFFFFF);
 
-	HDC hDC = pSB->GetDC();
-	HDC hSrc = CreateCompatibleDC(hDC);
-	HDC hTgt = CreateCompatibleDC(hDC);
+	// GetDC, CreateCompatibleDC, SelectObject left out: the pixels are read and written on the QImages
 
 	
-	GetObject(hTit, sizeof(BITMAP), &bm);
+	bm = hTit ? hTit->size() : QSize(0, 0); // GetObject
 	
-	hBmp = CreateCompatibleBitmap(hDC, bm.bmWidth, bm.bmHeight);
-
-	pSB->ReleaseDC(hDC);
-
-	SelectObject(hSrc, hTit);
-	SelectObject(hTgt, hBmp);
+	hBmp = new QImage(bm, QImage::Format_RGB32); // CreateCompatibleBitmap
 
 	// Recolorize the title bar
 
-	for (int y = 0; y < bm.bmHeight; y++) {
-		for (int x = 0; x < bm.bmWidth; x++) {		
-			COLORREF cr = GetPixel(hSrc, x, y);
+	for (int y = 0; y < bm.height(); y++) {
+		for (int x = 0; x < bm.width(); x++) {		
+			COLORREF cr = _CR(hTit->pixel(x, y)); // GetPixel
 			FVECTOR4 c = _Colour(cr);
 			FVECTOR4 out = (clr * c.b) + (white * c.g);
-			SetPixel(hTgt, x, y, _Colour(&out));	
+			hBmp->setPixel(x, y, _QRgb(_Colour(&out))); // SetPixel
 		}
 	}
-
-	DeleteDC(hSrc);
-	DeleteDC(hTgt);
 }
 
 // ===============================================================================================
 //
 Node::~Node()
 {
-	if (hBmp) DeleteObject(hBmp);
+	if (hBmp) delete hBmp; // DeleteObject
 	if (Label) delete[] Label;
 }
 
@@ -236,11 +270,11 @@ void Node::SetApp(gcGUIApp *_pApp)
 //
 void Node::ReColorize(DWORD color)
 {
-	memset(&bm, 0, sizeof(BITMAP));
+	bm = QSize(0, 0); // memset(&bm, 0, sizeof(BITMAP))
 
 	WindowManager *pMgr = pSB->GetWM();
 
-	HBITMAP hTit;
+	QImage *hTit;
 
 	if ((pParent == NULL) && (Config->gcGUIMode == 3) && hDlg) return;	// No Title Bar
 
@@ -250,34 +284,24 @@ void Node::ReColorize(DWORD color)
 	FVECTOR4 clr = _Colour(color);
 	FVECTOR4 white = _Colour(0xFFFFFFFF);
 
-	HDC hDC = pSB->GetDC();
-	HDC hSrc = CreateCompatibleDC(hDC);
-	HDC hTgt = CreateCompatibleDC(hDC);
+	// GetDC, CreateCompatibleDC, SelectObject left out: the pixels are read and written on the QImages
 
-	GetObject(hTit, sizeof(BITMAP), &bm);
+	bm = hTit ? hTit->size() : QSize(0, 0); // GetObject
 
-	if (hBmp) DeleteObject(hBmp);
+	if (hBmp) delete hBmp; // DeleteObject
 
-	hBmp = CreateCompatibleBitmap(hDC, bm.bmWidth, bm.bmHeight);
-
-	pSB->ReleaseDC(hDC);
-
-	SelectObject(hSrc, hTit);
-	SelectObject(hTgt, hBmp);
+	hBmp = new QImage(bm, QImage::Format_RGB32); // CreateCompatibleBitmap
 
 	// Recolorize the title bar
 
-	for (int y = 0; y < bm.bmHeight; y++) {
-		for (int x = 0; x < bm.bmWidth; x++) {
-			COLORREF cr = GetPixel(hSrc, x, y);
+	for (int y = 0; y < bm.height(); y++) {
+		for (int x = 0; x < bm.width(); x++) {
+			COLORREF cr = _CR(hTit->pixel(x, y)); // GetPixel
 			FVECTOR4 c = _Colour(cr);
 			FVECTOR4 out = (clr * c.b) + (white * c.g);
-			SetPixel(hTgt, x, y, _Colour(&out));
+			hBmp->setPixel(x, y, _QRgb(_Colour(&out))); // SetPixel
 		}
 	}
-
-	DeleteDC(hSrc);
-	DeleteDC(hTgt);
 }
 
 
@@ -286,11 +310,10 @@ void Node::ReColorize(DWORD color)
 int Node::CellSize()
 {
 	int y = 0;
-	if (hBmp) y += bm.bmHeight;
+	if (hBmp) y += bm.height();
 	if (bOpen && hDlg) {
-		RECT r;
-		GetWindowRect(hDlg, &r);
-		y += (r.bottom - r.top);
+		QRect r = hDlg->frameGeometry(); // GetWindowRect
+		y += r.height();
 	}
 	return y;
 }
@@ -298,7 +321,7 @@ int Node::CellSize()
 
 // ===============================================================================================
 //
-int Node::Paint(HDC hDC, int y)
+int Node::Paint(QPainter *hDC, int y)
 {
 	WindowManager *pMgr = pSB->GetWM();
 
@@ -311,14 +334,14 @@ int Node::Paint(HDC hDC, int y)
 		
 	if (hBmp) {
 		if (pParent) {
-			SelectObject(hDC, pMgr->GetSubTitleFont());
-			SetTextColor(hDC, pMgr->cfg.txt_sub_clr);
+			hDC->setFont(*pMgr->GetSubTitleFont()); // SelectObject
+			hDC->setPen(QColor(_QRgb(pMgr->cfg.txt_sub_clr))); // SetTextColor
 			wof = pMgr->cfg.txt_sub_x;
 			hof = pMgr->cfg.txt_sub_y;
 		}
 		else {
-			SelectObject(hDC, pMgr->GetAppTitleFont());
-			SetTextColor(hDC, pMgr->cfg.txt_main_clr);
+			hDC->setFont(*pMgr->GetAppTitleFont()); // SelectObject
+			hDC->setPen(QColor(_QRgb(pMgr->cfg.txt_main_clr))); // SetTextColor
 			wof = pMgr->cfg.txt_main_x;
 			hof = pMgr->cfg.txt_main_y;
 		}
@@ -329,32 +352,30 @@ int Node::Paint(HDC hDC, int y)
 	//
 	if (hBmp) {
 		
-		HDC hSr = CreateCompatibleDC(hDC);
-		int z = width - bm.bmHeight - 3;
+		// CreateCompatibleDC left out: the painter draws the QImage
+		int z = width - bm.height() - 3;
 
-		trect = { 0, y, width, y + bm.bmHeight };
-		crect = { z, y, width, y + bm.bmHeight };
+		trect = { 0, y, width, y + bm.height() };
+		crect = { z, y, width, y + bm.height() };
 
-		SelectObject(hSr, hBmp);
-		BitBlt(hDC, x, y, width - 10,  bm.bmHeight, hSr, 0, 0, SRCCOPY);
-		BitBlt(hDC, width - 10 - x, y, 10, bm.bmHeight, hSr, bm.bmWidth - 10, 0, SRCCOPY);	
-		TextOut(hDC, wof, y + hof, Label, lstrlen(Label));
+		hDC->drawImage(QPoint(x, y), *hBmp, QRect(0, 0, width - 10, bm.height())); // BitBlt SRCCOPY
+		hDC->drawImage(QPoint(width - 10 - x, y), *hBmp, QRect(bm.width() - 10, 0, 10, bm.height()));	// BitBlt SRCCOPY
+		hDC->drawText(wof, y + hof + hDC->fontMetrics().ascent(), QString::fromLatin1(Label ? Label : "")); // TextOut: top edge → baseline
 		
-		DeleteDC(hSr);
+		// DeleteDC left out
 
 		if (bOpen) PaintIcon(hDC, x, y, 0);
 		else PaintIcon(hDC, x, y, 1);
 		if (bClose) PaintIcon(hDC, z, y, 2);
 			
-		y += bm.bmHeight;
+		y += bm.height();
 	}
 
 	pos = { x, y };
 	
 	if (bOpen && hDlg) {
-		RECT r;
-		GetWindowRect(hDlg, &r);
-		y += (r.bottom - r.top);
+		QRect r = hDlg->frameGeometry(); // GetWindowRect
+		y += r.height();
 	}
 
 	return y;
@@ -363,38 +384,39 @@ int Node::Paint(HDC hDC, int y)
 
 // ===============================================================================================
 //
-void Node::PaintIcon(HDC hDC, int x, int y, int id)
+void Node::PaintIcon(QPainter *hDC, int x, int y, int id)
 {
 	WindowManager *pMgr = pSB->GetWM();
 	DWORD yell = RGB(255, 255, 0); 
 	DWORD mang = RGB(255, 0, 255); 
 	
-	HBITMAP hIco = pMgr->GetBitmap(gcGUI::BM_ICONS);
+	QImage *hIco = pMgr->GetBitmap(gcGUI::BM_ICONS);
 
 	if (hIco) {
 		DWORD ck = 0, sx = 0;
-		BITMAP ic;
-		GetObject(hIco, sizeof(BITMAP), &ic);
+		QSize ic = hIco->size(); // GetObject BITMAP
 
 		switch (id) {
-		case 0:	sx = ic.bmHeight * 0; ck = yell; break;
-		case 1: sx = ic.bmHeight * 1; ck = mang; break;
-		case 2: sx = ic.bmHeight * 2; ck = yell; break;
-		case 3: sx = ic.bmHeight * 3; ck = mang; break;
+		case 0:	sx = ic.height() * 0; ck = yell; break;
+		case 1: sx = ic.height() * 1; ck = mang; break;
+		case 2: sx = ic.height() * 2; ck = yell; break;
+		case 3: sx = ic.height() * 3; ck = mang; break;
 		}
 
-		HDC hSr = CreateCompatibleDC(hDC);
-		SelectObject(hSr, hIco);
-		int yo = (bm.bmHeight - ic.bmHeight) / 2;
-		TransparentBlt(hDC, x, y + yo, ic.bmHeight, ic.bmHeight, hSr, sx, 0, ic.bmHeight, ic.bmHeight, ck);
-		DeleteDC(hSr);
+		// CreateCompatibleDC left out: the icon cell is cut from the QImage
+		QImage cell = hIco->copy(sx, 0, ic.height(), ic.height()).convertToFormat(QImage::Format_ARGB32);
+		int yo = (bm.height() - ic.height()) / 2;
+		for (int j = 0; j < cell.height(); j++) for (int i = 0; i < cell.width(); i++)
+			if (_CR(cell.pixel(i, j)) == ck) cell.setPixel(i, j, 0); // TransparentBlt: colour key ck → transparent
+		hDC->drawImage(QPoint(x, y + yo), cell);
+		// DeleteDC left out
 	}
 }
 
 
 // ===============================================================================================
 //
-int Node::Spacer(HDC hDC, int y)
+int Node::Spacer(QPainter *hDC, int y)
 {
 	WindowManager *pMgr = pSB->GetWM();
 
@@ -403,9 +425,9 @@ int Node::Spacer(HDC hDC, int y)
 	int width = pSB->GetWidth();
 	int h = CellSize();
 	
-	SelectObject(hDC, (HBRUSH)GetStockObject(GRAY_BRUSH));
-	SelectObject(hDC, (HPEN)GetStockObject(NULL_PEN));
-	Rectangle(hDC, 0, y, width + 1, y + h + 1);
+	hDC->setBrush(QColor(128, 128, 128)); // GRAY_BRUSH
+	hDC->setPen(Qt::NoPen); // NULL_PEN
+	hDC->drawRect(0, y, width, h); // Rectangle(0, y, width + 1, y + h + 1): a NULL_PEN fill is one pixel smaller
 	
 	return y + h;
 }
@@ -416,7 +438,8 @@ int Node::Spacer(HDC hDC, int y)
 void Node::Move()
 {
 	if (!hDlg) return;
-	SetWindowPos(hDlg, NULL, pos.x, pos.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
+	hDlg->move(pos.x, pos.y); // SetWindowPos SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW
+	hDlg->show();
 }
 
 
@@ -430,7 +453,7 @@ void Node::Move()
 // WindowManager Implementation
 // ===============================================================================================
 //
-WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindowed)
+WindowManager::WindowManager(QWindow *hAppMainWindow, void *_hInst, bool bWindowed)
 {
 	char path[256];
 	char cbuf[256];
@@ -444,15 +467,17 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 	bWin = bWindowed;
 
 	hIcons = hTitle = hSub = NULL;
+	hAppFont = hSubFont = NULL; // not upstream: the early returns below left the fonts, Cmd and width unset
+	Cmd = 0;
+	width = 0;
 
-	RECT rMain;
-	GetClientRect(hAppMainWindow, &rMain);
+	RECT rMain = { 0, 0, hAppMainWindow->width(), hAppMainWindow->height() }; // GetClientRect
 
 	AutoFile file;
 
 	if (file.IsInvalid()) {
-		sprintf_s(path, 256, "%sgcGUI.cfg", OapiExtension::GetConfigDir());
-		fopen_s(&file.pFile, path, "r");
+		snprintf(path, 256, "%sgcGUI.cfg", OapiExtension::GetConfigDir());
+		file.pFile = fopen(path, "r");
 	}
 
 	if (!file.IsInvalid()) {
@@ -464,7 +489,7 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 		{
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "RESOLUTION", 10)) {
-				if (sscanf_s(cbuf, "RESOLUTION %d %d", &q, &w) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "RESOLUTION %d %d", &q, &w) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				if (q < rMain.bottom && rMain.bottom < w) bFound = true;
 				continue;
 			}
@@ -474,52 +499,52 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "FONT_MAIN", 9)) {
-				if (sscanf_s(cbuf, "FONT_MAIN \"%[^\"]\" %d %d", cfg.fnt_main, 32, &cfg.txt_main_size, &cfg.txt_main_weight) != 3) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "FONT_MAIN \"%31[^\"]\" %d %d", cfg.fnt_main, &cfg.txt_main_size, &cfg.txt_main_weight) != 3) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "FONT_SUB", 8)) {
-				if (sscanf_s(cbuf, "FONT_SUB \"%[^\"]\" %d %d", cfg.fnt_sub, 32, &cfg.txt_sub_size, &cfg.txt_sub_weight) != 3) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "FONT_SUB \"%31[^\"]\" %d %d", cfg.fnt_sub, &cfg.txt_sub_size, &cfg.txt_sub_weight) != 3) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "MAIN_OFS", 8)) {
-				if (sscanf_s(cbuf, "MAIN_OFS %d %d", &cfg.txt_main_x, &cfg.txt_main_y) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "MAIN_OFS %d %d", &cfg.txt_main_x, &cfg.txt_main_y) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "SUB_OFS", 7)) {
-				if (sscanf_s(cbuf, "SUB_OFS %d %d", &cfg.txt_sub_x, &cfg.txt_sub_y) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "SUB_OFS %d %d", &cfg.txt_sub_x, &cfg.txt_sub_y) != 2) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "MAIN_BMP", 8)) {
-				if (sscanf_s(cbuf, "MAIN_BMP %s", cfg.bmp_main, 32) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "MAIN_BMP %31s", cfg.bmp_main) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "SUB_BMP", 7)) {
-				if (sscanf_s(cbuf, "SUB_BMP %s", cfg.bmp_sub, 32) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "SUB_BMP %31s", cfg.bmp_sub) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "ICON_BMP", 8)) {
-				if (sscanf_s(cbuf, "ICON_BMP %s", cfg.bmp_icon, 32) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "ICON_BMP %31s", cfg.bmp_icon) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "MAIN_CLR", 8)) {
-				if (sscanf_s(cbuf, "MAIN_CLR %X", &cfg.txt_main_clr) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "MAIN_CLR %X", &cfg.txt_main_clr) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "SUB_CLR", 7)) {
-				if (sscanf_s(cbuf, "SUB_CLR %X", &cfg.txt_sub_clr) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "SUB_CLR %X", &cfg.txt_sub_clr) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 			// --------------------------------------------------------------------------------------------
 			if (!strncmp(cbuf, "SCROLL", 6)) {
-				if (sscanf_s(cbuf, "SCROLL %d", &cfg.scroll) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
+				if (sscanf(cbuf, "SCROLL %d", &cfg.scroll) != 1) LogErr("Invalid Line in (%s): %s", path, cbuf);
 				continue;
 			}
 		}
@@ -538,31 +563,7 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 
 	// Create window class for sidebars
 	//
-	DWORD flags = 0;
-	if (Config->gcGUIMode == 1) flags |= CS_NOCLOSE;
-
-	WNDCLASS wc; 
-	memset(&wc, 0, sizeof(WNDCLASS));
-	wc.style = flags | CS_OWNDC | CS_SAVEBITS;
-	wc.lpfnWndProc = SideBarWndProc;
-	wc.hInstance = hInst;
-#pragma warning(disable:4302)
-	wc.hCursor = LoadCursorA(NULL, MAKEINTRESOURCE(IDC_ARROW));
-	wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-	wc.lpszClassName = "SideBarWnd";
-
-	RegisterClass(&wc);
-
-	memset(&wc, 0, sizeof(WNDCLASS));
-	wc.style = flags | CS_OWNDC | CS_SAVEBITS | CS_DROPSHADOW;
-	wc.lpfnWndProc = SideBarWndProc;
-	wc.hInstance = hInst;
-	wc.hCursor = LoadCursorA(NULL, MAKEINTRESOURCE(IDC_ARROW));
-#pragma warning(default:4302)
-	wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-	wc.lpszClassName = "Floater";
-
-	RegisterClass(&wc);
+	// RegisterClass "SideBarWnd", "Floater" left out: the bars are SideBarWnd widgets (CS_NOCLOSE: mode 1 bars have no caption)
 
 	// ----------------------------------
 
@@ -570,8 +571,8 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 	hTitle = g_client->gcReadImageFromFile(cfg.bmp_main);
 	hSub = g_client->gcReadImageFromFile(cfg.bmp_sub);
 
-	hAppFont = CreateFont(cfg.txt_main_size, 0, 0, 0, cfg.txt_main_weight, false, false, 0, 0, 0, 2, CLEARTYPE_QUALITY, 49, cfg.fnt_main);
-	hSubFont = CreateFont(cfg.txt_sub_size, 0, 0, 0, cfg.txt_sub_weight, false, false, 0, 0, 0, 2, CLEARTYPE_QUALITY, 49, cfg.fnt_sub);
+	hAppFont = CreateFont(cfg.txt_main_size, cfg.txt_main_weight, cfg.fnt_main);
+	hSubFont = CreateFont(cfg.txt_sub_size, cfg.txt_sub_weight, cfg.fnt_sub);
 	
 	if (!hAppFont) LogErr("Font Not Found [%s]", cfg.fnt_main);
 	if (!hSubFont) LogErr("Font Not Found [%s]", cfg.fnt_sub);
@@ -581,13 +582,13 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 
 	// Smaple dialog for a proper size and scaling
 	//
-	HWND hDlg = CreateDialogParam(hInst, MAKEINTRESOURCE(IDD_MESHDEBUG), hAppMainWindow, DummyDlgProc, 0);
+	QWidget *hDlg = oapiCreateResDialog(hInst, IDD_MESHDEBUG, NULL); // CreateDialogParam
+	if (hDlg) DummyDlgProc(hDlg, 0); // WM_INITDIALOG
 
-	RECT r;
-	GetWindowRect(hDlg, &r);
-	width = (r.right - r.left);
+	QRect r = hDlg ? hDlg->frameGeometry() : QRect(); // GetWindowRect
+	width = r.width();
 
-	DestroyWindow(hDlg);
+	delete hDlg; // DestroyWindow
 
 	/*
 	if (Config->gcGUIMode == 2) {
@@ -597,7 +598,7 @@ WindowManager::WindowManager(HWND hAppMainWindow, HINSTANCE _hInst, bool bWindow
 		OpenTestClbk(this);
 	}*/
 
-	SetFocus(hAppMainWindow);
+	hAppMainWindow->requestActivate(); // SetFocus
 
 	// Must be last one
 	g_pWM = this;
@@ -612,14 +613,13 @@ WindowManager::~WindowManager()
 
 	for(SideBar* sb : sbList) delete sb;
 	
-	UnregisterClass("SideBarWnd", hInst);
-	UnregisterClass("Floater", hInst);
+	// UnregisterClass left out: no window classes
 
-	if (hTitle) DeleteObject(hTitle);
-	if (hSub) DeleteObject(hSub);
-	if (hIcons) DeleteObject(hIcons);
-	if (hAppFont) DeleteObject(hAppFont);
-	if (hSubFont) DeleteObject(hSubFont);
+	if (hTitle) delete hTitle; // DeleteObject
+	if (hSub) delete hSub;
+	if (hIcons) delete hIcons;
+	if (hAppFont) delete hAppFont;
+	if (hSubFont) delete hSubFont;
 }
 
 
@@ -638,7 +638,7 @@ bool WindowManager::IsOK() const
 
 // ===============================================================================================
 //
-HBITMAP	WindowManager::GetBitmap(int id) const
+QImage *	WindowManager::GetBitmap(int id) const
 {
 	switch (id) {
 	case gcGUI::BM_TITLE: return hTitle;
@@ -651,7 +651,7 @@ HBITMAP	WindowManager::GetBitmap(int id) const
 
 // ===============================================================================================
 //
-SideBar * WindowManager::GetSideBar(HWND hWnd)
+SideBar * WindowManager::GetSideBar(QWidget *hWnd)
 {
 	if (sbList.size() == 0) return NULL;
 	for (SideBar * sb : sbList) if (sb->GetHWND() == hWnd) return sb;
@@ -662,7 +662,7 @@ SideBar * WindowManager::GetSideBar(HWND hWnd)
 // ===============================================================================================
 // Virtual
 //
-HNODE WindowManager::RegisterApplication(gcGUIApp *pPtr, const char *label, HWND hDlg, DWORD docked, DWORD color)
+HNODE WindowManager::RegisterApplication(gcGUIApp *pPtr, const char *label, QWidget *hDlg, DWORD docked, DWORD color)
 {
 
 	g_gcGUIAppList.push_back(pPtr);
@@ -677,8 +677,8 @@ HNODE WindowManager::RegisterApplication(gcGUIApp *pPtr, const char *label, HWND
 	if (docked == gcGUI::DS_FLOAT) pSB = NewSideBar(NULL);
 	
 	if (Config->gcGUIMode == 3) {
-		HWND hWnd = pSB->GetHWND();
-		SetWindowText(hWnd, label);
+		QWidget *hWnd = pSB->GetHWND();
+		oapiSetDlgText(hWnd, label); // SetWindowText
 	}
 
 	Node *pAp = new Node(pSB, label, hDlg, color, NULL);
@@ -692,7 +692,7 @@ HNODE WindowManager::RegisterApplication(gcGUIApp *pPtr, const char *label, HWND
 // ===============================================================================================
 // Virtual
 //
-HNODE WindowManager::RegisterSubsection(HNODE hNode, const char *label, HWND hDlg, DWORD color)
+HNODE WindowManager::RegisterSubsection(HNODE hNode, const char *label, QWidget *hDlg, DWORD color)
 {
 	if (APPNODE(hNode)->pParent != NULL) {
 		LogErr("RegisterSubsection Failed. Parent cannot be an other subnode");
@@ -709,12 +709,12 @@ HNODE WindowManager::RegisterSubsection(HNODE hNode, const char *label, HWND hDl
 // ===============================================================================================
 // Virtual
 //
-void WindowManager::UpdateStatus(HNODE hNode, const char *label, HWND hDlg, DWORD color)
+void WindowManager::UpdateStatus(HNODE hNode, const char *label, QWidget *hDlg, DWORD color)
 {
 	Node *pAp = APPNODE(hNode);
 	pAp->hDlg = hDlg;
 	if (pAp->Label) delete[] pAp->Label;
-	if (label) pAp->Label = _strdup(label);
+	if (label) strcpy(pAp->Label = new char[strlen(label) + 1], label); // _strdup: a new[] copy, freed with delete[]
 	else pAp->Label = NULL;
 	if (color != 0) pAp->ReColorize(color);
 	SideBar *pSB = pAp->GetSideBar();
@@ -736,9 +736,9 @@ void WindowManager::DisplayWindow(HNODE hNode, bool bShow)
 				pSB->ManageButtons();
 				pSB->Sort();
 				pSB->RescaleWindow();
-				ShowWindow(pSB->GetHWND(), SW_SHOW);
+				pSB->GetHWND()->show(); // ShowWindow SW_SHOW
 			}
-			else ShowWindow(pSB->GetHWND(), SW_HIDE);
+			else pSB->GetHWND()->hide(); // ShowWindow SW_HIDE
 		}
 	}
 }
@@ -747,7 +747,7 @@ void WindowManager::DisplayWindow(HNODE hNode, bool bShow)
 // ===============================================================================================
 // Virtual
 //
-HFONT WindowManager::GetFont(int id)
+QFont * WindowManager::GetFont(int id)
 {
 	return g_pWM->GetSubTitleFont();
 }
@@ -756,7 +756,7 @@ HFONT WindowManager::GetFont(int id)
 // ===============================================================================================
 // Virtual
 //
-HWND WindowManager::GetDialog(HNODE hNode)
+QWidget * WindowManager::GetDialog(HNODE hNode)
 {
 	return ((Node *)(hNode))->hDlg;
 }
@@ -765,7 +765,7 @@ HWND WindowManager::GetDialog(HNODE hNode)
 // ===============================================================================================
 // Virtual
 //
-void WindowManager::UpdateSize(HWND hDlg)
+void WindowManager::UpdateSize(QWidget *hDlg)
 {
 	HNODE hNode = GetNode(hDlg);
 	if (hNode) UpdateStatus(hNode);
@@ -775,7 +775,7 @@ void WindowManager::UpdateSize(HWND hDlg)
 // ===============================================================================================
 // Virtual
 //
-HNODE WindowManager::GetNode(HWND hDlg)
+HNODE WindowManager::GetNode(QWidget *hDlg)
 {
 	for (SideBar* sb : sbList)
 	{
@@ -914,7 +914,7 @@ SideBar *WindowManager::NewSideBar(Node *pAN)
 void WindowManager::ReleaseSideBar(SideBar *pSB)
 {
 	pSB->SetState(gcGUI::INACTIVE);
-	ShowWindow(pSB->GetHWND(), SW_HIDE);
+	pSB->GetHWND()->hide(); // ShowWindow SW_HIDE
 }
 
 
@@ -960,8 +960,8 @@ SideBar* WindowManager::StartDrag(Node *pAN, int x, int y)
 
 	pSBNew->ResetWindow(x, y);
 	
-	InvalidateRect(pSBNew->GetHWND(), NULL, true);
-	InvalidateRect(pSBOld->GetHWND(), NULL, true);
+	pSBNew->GetHWND()->update(); // InvalidateRect
+	pSBOld->GetHWND()->update();
 
 	return pSBNew;
 }
@@ -983,22 +983,25 @@ void WindowManager::Drag(int x, int y)
 
 		if (sbDrag->GetTopNode() == NULL) return;
 
-		HWND hBar = sbDrag->GetHWND();
+		QWidget *hBar = sbDrag->GetHWND();
 		int w = sbDrag->GetWidth();
 		int h = sbDrag->GetHeight();
 		x -= ptOffset.x;
 		y -= ptOffset.y;
 
-		RECT rect; 
-		SystemParametersInfo(SPI_GETWORKAREA, 0, &rect, 0);
-		int t = sbDrag->GetTopNode()->bm.bmHeight;
+		QRect wa = hBar->screen()->availableGeometry(); // SystemParametersInfo SPI_GETWORKAREA
+		RECT rect = { wa.left(), wa.top(), wa.right() + 1, wa.bottom() + 1 };
+		int t = sbDrag->GetTopNode()->bm.height();
 
 		if (x < rect.left) x = rect.left;
 		if (y < rect.top) y = rect.top;
 		if ((x + w) > rect.right) x = rect.right - w;
 		if ((y + t) > rect.bottom) y = rect.bottom - t;
 
-		SetWindowPos(hBar, HWND_TOP, x, y, w, h, SWP_SHOWWINDOW);
+		hBar->move(x, y); // SetWindowPos HWND_TOP SWP_SHOWWINDOW
+		hBar->resize(w, h);
+		hBar->show();
+		hBar->raise();
 	}
 }
 
@@ -1008,7 +1011,7 @@ void WindowManager::Drag(int x, int y)
 void WindowManager::MouseMoved(int x, int y)
 {
 	RECT r;
-	if (hMainWnd) GetClientRect(hMainWnd, &r);
+	if (hMainWnd) r = { 0, 0, hMainWnd->width(), hMainWnd->height() }; // GetClientRect
 	int w = r.right - r.left;
 	int h = r.bottom - r.top;
 	int q = (width * 3) / 2;
@@ -1019,7 +1022,7 @@ void WindowManager::MouseMoved(int x, int y)
 //
 void WindowManager::EndDrag()
 {
-	if (sbDrag) InvalidateRect(sbDrag->GetHWND(), NULL, true);
+	if (sbDrag) sbDrag->GetHWND()->update(); // InvalidateRect
 	sbDrag = NULL;
 	sbDragSrc = NULL;
 }
@@ -1059,29 +1062,31 @@ SideBar *WindowManager::FindDestination()
 // ===============================================================================================
 // Orbiter Application Main Window Proc
 //
-bool WindowManager::MainWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool WindowManager::MainWindowProc(QObject *hWnd, QEvent *event)
 {
 	static int xpos, ypos;
-	switch (uMsg) {
+	switch (event->type()) {
 
-	case WM_MOUSELEAVE:
-	case WM_MBUTTONDOWN:
-	case WM_LBUTTONDOWN:
-	case WM_LBUTTONUP:
+	case QEvent::Leave: // WM_MOUSELEAVE
+	case QEvent::MouseButtonPress: // WM_MBUTTONDOWN, WM_LBUTTONDOWN
+	case QEvent::MouseButtonRelease: // WM_LBUTTONUP
 		return false;
 
-	case WM_KEYDOWN:
+	case QEvent::KeyPress: // WM_KEYDOWN
 	{
 		return false;
 	}
 
-	case WM_MOUSEWHEEL:
+	case QEvent::Wheel: // WM_MOUSEWHEEL
 		return false;
 
-	case WM_MOUSEMOVE:
-		xpos = GET_X_LPARAM(lParam);
-		ypos = GET_Y_LPARAM(lParam);
+	case QEvent::MouseMove: // WM_MOUSEMOVE
+		xpos = int(static_cast<QMouseEvent *>(event)->position().x()); // GET_X_LPARAM
+		ypos = int(static_cast<QMouseEvent *>(event)->position().y()); // GET_Y_LPARAM
 		MouseMoved(xpos, ypos);
+		break;
+
+	default:
 		break;
 	}
 
@@ -1103,7 +1108,7 @@ SideBar::SideBar(class WindowManager *_pMgr, DWORD _state)
 {
 	pMgr = _pMgr;
 	
-	HWND hMainWnd = pMgr->GetMainWindow();
+	QWindow *hMainWnd = pMgr->GetMainWindow();
 	hInst = pMgr->GetInstance();
 	width = pMgr->GetWidth();
 	state = _state;
@@ -1123,21 +1128,21 @@ SideBar::SideBar(class WindowManager *_pMgr, DWORD _state)
 	title_height = 0;
 	bWin = pMgr->IsWindowed();
 
-	RECT r;
-	GetClientRect(hMainWnd, &r);
+	RECT r = { 0, 0, hMainWnd->width(), hMainWnd->height() }; // GetClientRect
 	height = (r.bottom - r.top) - ypos;
 
-	DWORD exstyle = 0;
-	DWORD style = 0;
+	// window styles → window flags: every bar is a tool window owned by the render window (a QWidget can't be a QWindow's child)
+	Qt::WindowFlags exstyle = Qt::Tool;
+	Qt::WindowFlags style = Qt::FramelessWindowHint; // no WS_CAPTION, no border
 
 	if (Config->gcGUIMode == 1) {	
 		if (state == gcGUI::DS_RIGHT) xref = r.right;
 		if (state == gcGUI::DS_LEFT) xref = -width;
 		if (state == gcGUI::DS_FLOAT) xref = width, height = width;
 		if (bWin) {
-			if (state == gcGUI::DS_FLOAT) style = WS_CLIPSIBLINGS;
-			else style = WS_CHILD | WS_CLIPSIBLINGS;
-		} else style = 0;
+			if (state == gcGUI::DS_FLOAT) style = Qt::FramelessWindowHint; // WS_CLIPSIBLINGS
+			else style = Qt::FramelessWindowHint; // WS_CHILD | WS_CLIPSIBLINGS: placed in the render window's client area below
+		} else style = Qt::FramelessWindowHint;
 	}
 
 	if (Config->gcGUIMode == 2) {
@@ -1148,26 +1153,31 @@ SideBar::SideBar(class WindowManager *_pMgr, DWORD _state)
 	if (Config->gcGUIMode == 3) {
 		state = gcGUI::DS_FLOAT;
 		xref = width;
-		exstyle = 0;
-		if (bWin) style = WS_CAPTION | WS_SYSMENU;
-		else style = WS_CAPTION | WS_SYSMENU;
+		exstyle = Qt::Tool;
+		if (bWin) style = Qt::WindowTitleHint | Qt::WindowCloseButtonHint; // WS_CAPTION | WS_SYSMENU
+		else style = Qt::WindowTitleHint | Qt::WindowCloseButtonHint;
 	}
 
 	if (state == gcGUI::DS_FLOAT) width += 2, height += 1; // Border
 
-	if (state == gcGUI::DS_FLOAT) hBar = CreateWindowExA(exstyle, "Floater", "Float", style, xref, ypos, width, height, hMainWnd, NULL, hInst, 0);
-	else					      hBar = CreateWindowExA(exstyle, "SideBarWnd", "Dock", style, xref, ypos, width, height, hMainWnd, NULL, hInst, 0);
+	if (state == gcGUI::DS_FLOAT) hBar = new SideBarWnd("Float", exstyle | style); // CreateWindowExA "Floater" (CS_DROPSHADOW: the WM's shadow)
+	else					      hBar = new SideBarWnd("Dock", exstyle | style); // CreateWindowExA "SideBarWnd"
 
-	SetWindowLong(hBar, GWL_STYLE, style);	// Make it bordeless
+	QPoint p(xref, ypos);
+	if (state != gcGUI::DS_FLOAT) p = hMainWnd->mapToGlobal(p); // not upstream: docked bars use the render window's client coordinates
+	hBar->move(p);
+	hBar->resize(width, height);
+	hBar->winId();
+	if (hBar->windowHandle()) hBar->windowHandle()->setTransientParent(hMainWnd); // hWndParent: owned by the render window
+
+	// SetWindowLong GWL_STYLE left out: the flags above are the style
 
 	if (Config->gcGUIMode == 3) {
-		RECT w, c;
-		GetWindowRect(hBar, &w);
-		GetClientRect(hBar, &c);
-		title_height = (w.bottom - w.top) - c.bottom;
+		QRect w = hBar->frameGeometry(), c = hBar->geometry(); // GetWindowRect, GetClientRect
+		title_height = w.height() - c.height();
 	}
 
-	if (Config->gcGUIMode == 1) ShowWindow(hBar, SW_SHOW);
+	if (Config->gcGUIMode == 1) hBar->show(); // ShowWindow SW_SHOW
 }
 
 
@@ -1177,11 +1187,12 @@ SideBar::~SideBar()
 {	
 	for (Node *v : wList)
 	{
-		if (v->hDlg) DestroyWindow(v->hDlg);
+		if (v->hDlg) delete v->hDlg; // DestroyWindow
 		delete v;
 	}
 	wList.clear();
-	DestroyWindow(hBar);
+	hBar->hide(); // DestroyWindow: deferred, a bar can be closed from its own event handler (CloseWindow)
+	hBar->deleteLater();
 }
 
 
@@ -1216,7 +1227,7 @@ void SideBar::ManageButtons()
 void SideBar::Invalidate()
 {
 	ManageButtons();
-	InvalidateRect(hBar, NULL, true);
+	hBar->update(); // InvalidateRect
 }
 
 
@@ -1227,7 +1238,9 @@ void SideBar::ResetWindow(int x, int y)
 	if (state == gcGUI::DS_FLOAT) {
 		height = ComputeLength() + title_height + 1;
 	}
-	SetWindowPos(hBar, NULL, x, y, width, height, SWP_NOZORDER | SWP_SHOWWINDOW);
+	hBar->move(x, y); // SetWindowPos SWP_NOZORDER | SWP_SHOWWINDOW
+	hBar->resize(width, height - title_height); // the widget size is the client size
+	hBar->show();
 }
 
 
@@ -1236,7 +1249,10 @@ void SideBar::ResetWindow(int x, int y)
 RECT SideBar::GetRect() const
 {
 	RECT r = { 0, 0, 0, 0 };
-	if (hBar) GetWindowRect(hBar, &r);
+	if (hBar) {
+		QRect g = hBar->frameGeometry(); // GetWindowRect
+		r = { g.left(), g.top(), g.right() + 1, g.bottom() + 1 };
+	}
 	return r;
 }
 
@@ -1280,7 +1296,7 @@ void SideBar::Animate()
 	if (bOpening && anim_state >= 0.9999f) {
 		if (bValidate) {
 			bIsOpen = true;
-			InvalidateRect(hBar, NULL, TRUE);
+			hBar->update(); // InvalidateRect
 			bFirstTime = false;
 		}
 		bValidate = false;
@@ -1306,9 +1322,11 @@ void SideBar::Animate()
 	if (state == gcGUI::DS_LEFT) x = xref + int(as * float(width));
 
 
-	if (GetWindowLong(hBar, GWL_STYLE)&WS_CHILD) bFirstTime = true;
+	if (Config->gcGUIMode == 1 && bWin) bFirstTime = true; // GetWindowLong GWL_STYLE & WS_CHILD
 
-	MoveWindow(hBar, x, ypos, width, height, bFirstTime);
+	hBar->move(pMgr->GetMainWindow()->mapToGlobal(QPoint(x, ypos))); // MoveWindow (client coordinates of the render window)
+	hBar->resize(width, height);
+	if (bFirstTime) hBar->update();
 }
 
 
@@ -1318,7 +1336,7 @@ void SideBar::AddWindow(Node *pAp, bool bSetupOnly)
 {
 	bFirstTime = true;	// Enable Full redraw
 	pAp->pSB = this;
-	if (pAp->hDlg) SetParent(pAp->hDlg, hBar);
+	if (pAp->hDlg) pAp->hDlg->setParent(hBar); // SetParent
 	if (!bSetupOnly) wList.push_back(pAp);
 }
 
@@ -1352,13 +1370,14 @@ void SideBar::RescaleWindow()
 	if (state == gcGUI::DS_FLOAT) {
 		height = ComputeLength() + title_height + 1;
 	}
-	SetWindowPos(hBar, NULL, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
+	hBar->resize(width, height - title_height); // SetWindowPos SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW (client size)
+	hBar->show();
 }
 
 
 // ===============================================================================================
 //
-Node* SideBar::FindNode(HWND hDlg)
+Node* SideBar::FindNode(QWidget *hDlg)
 {
 	for (Node* nd : wList) if (nd->hDlg == hDlg) return nd;
 	return NULL;
@@ -1535,29 +1554,29 @@ bool SideBar::Apply()
 
 // ===============================================================================================
 //
-LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool SideBar::SideBarWndProc(QWidget *hWnd, QEvent *event)
 {
 	static int xpos, ypos;
 	static int xof, yof;
 	static bool bUpdate = false;
 
-	HWND hMain = pMgr->GetMainWindow();
+	QWindow *hMain = pMgr->GetMainWindow();
 
-	switch(uMsg) {
+	switch(event->type()) {
 
-	case WM_KEYDOWN:
+	case QEvent::KeyPress: // WM_KEYDOWN
 	{
-		pMgr->MainWindowProc(hWnd, uMsg, wParam, lParam);
+		pMgr->MainWindowProc(hWnd, event);
 		break;
 	}
 
 
-	case WM_MOUSEWHEEL:
+	case QEvent::Wheel: // WM_MOUSEWHEEL
 	{
 		if (GetStyle() == gcGUI::DS_FLOAT) break;
 
 		int old = rollpos;
-		short d = GET_WHEEL_DELTA_WPARAM(wParam);
+		short d = short(static_cast<QWheelEvent *>(event)->angleDelta().y()); // GET_WHEEL_DELTA_WPARAM
 		if (d>0) rollpos += pMgr->cfg.scroll;
 		else rollpos -= pMgr->cfg.scroll;
 		int q = height - wndlen;
@@ -1568,10 +1587,11 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		break;
 	}
 	
-	case WM_LBUTTONDOWN:
+	case QEvent::MouseButtonPress: // WM_LBUTTONDOWN
 	{
-		xpos = GET_X_LPARAM(lParam);
-		ypos = GET_Y_LPARAM(lParam);
+		if (static_cast<QMouseEvent *>(event)->button() != Qt::LeftButton) break;
+		xpos = int(static_cast<QMouseEvent *>(event)->position().x()); // GET_X_LPARAM
+		ypos = int(static_cast<QMouseEvent *>(event)->position().y()); // GET_Y_LPARAM
 
 		for (Node* nd : wList)
 		{
@@ -1593,18 +1613,18 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 					yof = ypos - nd->trect.top;				
 					dnNode = nd;
 				}
-				TRACKMOUSEEVENT te; te.cbSize = sizeof(TRACKMOUSEEVENT); te.dwFlags = TME_LEAVE; te.hwndTrack = hBar;
-				TrackMouseEvent(&te);
+				// TrackMouseEvent TME_LEAVE left out: Qt always sends QEvent::Leave
 				break; // break for
 			}
 		}
 		break;
 	}
 
-	case WM_LBUTTONUP:
+	case QEvent::MouseButtonRelease: // WM_LBUTTONUP
 	{
-		int xp = GET_X_LPARAM(lParam);
-		int yp = GET_Y_LPARAM(lParam);
+		if (static_cast<QMouseEvent *>(event)->button() != Qt::LeftButton) break;
+		int xp = int(static_cast<QMouseEvent *>(event)->position().x()); // GET_X_LPARAM
+		int yp = int(static_cast<QMouseEvent *>(event)->position().y()); // GET_Y_LPARAM
 
 		SideBar *pDG = pMgr->GetDraged();
 
@@ -1612,7 +1632,7 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 			SideBar *pTgt = pMgr->FindDestination();
 			if (pTgt) pTgt->Apply();
 			pMgr->EndDrag();
-			ReleaseCapture();
+			hBar->releaseMouse(); // ReleaseCapture
 			dnNode = NULL;
 			dnClose = NULL;
 			break;
@@ -1647,7 +1667,7 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 	}
 
 
-	case WM_MOUSELEAVE:
+	case QEvent::Leave: // WM_MOUSELEAVE
 	{
 		dnNode = NULL;
 		dnClose = NULL;
@@ -1655,23 +1675,23 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 	}
 
 
-	case WM_MOUSEMOVE:
+	case QEvent::MouseMove: // WM_MOUSEMOVE
 	{
-		int dx = abs(GET_X_LPARAM(lParam) - xpos);
-		int dy = abs(GET_Y_LPARAM(lParam) - ypos);
-		int x = GET_X_LPARAM(lParam);
-		int y = GET_Y_LPARAM(lParam);
+		int dx = abs(int(static_cast<QMouseEvent *>(event)->position().x()) - xpos);
+		int dy = abs(int(static_cast<QMouseEvent *>(event)->position().y()) - ypos);
+		int x = int(static_cast<QMouseEvent *>(event)->position().x());
+		int y = int(static_cast<QMouseEvent *>(event)->position().y());
 
 		if (Config->gcGUIMode < 3) {
 
-			POINT scp = { x, y };
-			ClientToScreen(hWnd, &scp);
+			QPoint g = static_cast<QMouseEvent *>(event)->globalPosition().toPoint(); // ClientToScreen
+			POINT scp = { g.x(), g.y() };
 				
 			// Begin Moving a Window
 			//
 			if (dnNode && IsFloater() && (GetTopNode() == dnNode) && (dx > 1 || dy > 1))
 			{
-				SetCapture(hBar);
+				hBar->grabMouse(); // SetCapture
 				pMgr->SetOffset(xof, yof);
 				pMgr->BeginMove(dnNode, scp.x, scp.y);
 				dnNode = NULL;
@@ -1683,7 +1703,7 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 			//
 			if (Config->gcGUIMode == 1) {
 				if (dnNode && dx > 25) {
-					SetCapture(hBar);
+					hBar->grabMouse(); // SetCapture
 					pMgr->SetOffset(xof, yof);
 					SideBar* pTgt = pMgr->StartDrag(dnNode, scp.x, scp.y);
 					dnNode = NULL;
@@ -1712,19 +1732,19 @@ LRESULT SideBar::SideBarWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		break; 
 	}
 
-	case WM_PAINT:
+	case QEvent::Paint: // WM_PAINT
 		PaintWindow();
 		break;
 		
-	case WM_ERASEBKGND:
-		return 1;
+	// WM_ERASEBKGND: the widget has WA_OpaquePaintEvent, nothing erases the background
+	// WM_CLOSE (mode 3 caption): QWidget hides the bar where DefWindowProc destroyed the window
 
 	default:
 		break;
 	}
 
 
-	return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	return false; // DefWindowProc: QWidget's own handling
 }
 
 
@@ -1762,11 +1782,11 @@ void SideBar::PaintWindow()
 
 	GetVisualList(drawList);
 
-	PAINTSTRUCT ps;
-	HDC hDC = BeginPaint(hBar, &ps);
+	QPainter ps(hBar); // BeginPaint
+	QPainter *hDC = &ps;
 
 	int y = rollpos;
-	SetBkMode(hDC, TRANSPARENT);
+	// SetBkMode TRANSPARENT: QPainter draws text without a background by default
 
 	tInsert *pIns = pMgr->InsertList();
 	map<Node*, Node*> &wIns = pIns->List;
@@ -1782,7 +1802,7 @@ void SideBar::PaintWindow()
 	{
 		if (ap != drawList.front()) if (ap->pParent == NULL) {
 			RECT fr = { 0, y, width, y + 3 };
-			FillRect(hDC, &fr, (HBRUSH)GetStockObject(BLACK_BRUSH));
+			hDC->fillRect(fr.left, fr.top, fr.right - fr.left, fr.bottom - fr.top, Qt::black); // FillRect BLACK_BRUSH
 			y += 3;
 		}
 
@@ -1798,18 +1818,18 @@ void SideBar::PaintWindow()
 	wndlen = y - rollpos;
 
 	if (state == gcGUI::DS_FLOAT) {
-		SelectObject(hDC, (HBRUSH)GetStockObject(NULL_BRUSH));
-		SelectObject(hDC, (HPEN)GetStockObject(BLACK_PEN));
-		Rectangle(hDC, 0, 0, width, height);
+		hDC->setBrush(Qt::NoBrush); // NULL_BRUSH
+		hDC->setPen(QPen(Qt::black, 0)); // BLACK_PEN
+		hDC->drawRect(0, 0, width - 1, height - 1); // Rectangle(0, 0, width, height): the outline ends at width - 1, height - 1
 	} else {
 		if (y < height) {
-			SelectObject(hDC, (HBRUSH)GetStockObject(DKGRAY_BRUSH));
-			SelectObject(hDC, (HPEN)GetStockObject(NULL_PEN));
-			Rectangle(hDC, 0, y, width + 1, height + 1);
+			hDC->setBrush(QColor(64, 64, 64)); // DKGRAY_BRUSH
+			hDC->setPen(Qt::NoPen); // NULL_PEN
+			hDC->drawRect(0, y, width, height - y); // Rectangle(0, y, width + 1, height + 1): a NULL_PEN fill is one pixel smaller
 		}
 	}
 
-	EndPaint(hBar, &ps);
+	ps.end(); // EndPaint
 
 	// Move dialogs in place
 	for (Node* ap : wList) {
@@ -1818,9 +1838,8 @@ void SideBar::PaintWindow()
 		
 		if (bFound && ap->hDlg) {
 			if (ap->bOpen) ap->Move();
-			else ShowWindow(ap->hDlg, SW_HIDE);	
+			else ap->hDlg->hide(); // ShowWindow SW_HIDE
 		}
-		else if (ap->hDlg) ShowWindow(ap->hDlg, SW_HIDE);
+		else if (ap->hDlg) ap->hDlg->hide(); // ShowWindow SW_HIDE
 	}
 }
-

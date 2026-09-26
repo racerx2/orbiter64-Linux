@@ -16,9 +16,13 @@
 #include "Scene.h"
 #include "OapiExtension.h"
 
+#include "VkTexFile.h"
+
 #include <stack>
-#include <io.h>
+// io.h left out: _findfirst is std::filesystem::exists
 #include <filesystem>
+#include <chrono>
+#include <QFont>
 
 // =======================================================================
 // Externals
@@ -30,11 +34,17 @@ int SURF_MAX_PATCHLEVEL2 = 18; // move this somewhere else
 bool FileExists(const char* path)
 {
 	bool exists;
-	struct _finddata_t fd;
-	intptr_t fh = _findfirst(path, &fd);
-	if (exists = (fh != -1))
-		_findclose(fh);
+	std::error_code ec;
+	exists = std::filesystem::exists(oapiResolvePath(path), ec); // _findfirst, _findclose
 	return exists;
+}
+
+// not upstream: WaitForSingleObject(event, ms) on an auto-reset stop flag; true if it was set within ms
+static bool WaitForStop (std::atomic<bool> &stop, DWORD ms)
+{
+	auto t1 = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+	while (!stop && std::chrono::steady_clock::now() < t1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	return stop.exchange(false);
 }
 
 
@@ -76,28 +86,34 @@ Tile::~Tile ()
 // Pre Load routine for surface tiles
 // ------------------------------------------------------------------------
 
-bool Tile::LoadTextureFile(const char *fullpath, LPDIRECT3DTEXTURE9 *pPre)
+bool Tile::LoadTextureFile(const char *fullpath, VkPixels **pPre)
 {
-	auto y = filesystem::status(fullpath);
+	auto y = filesystem::status(oapiResolvePath(fullpath));
 	if (filesystem::exists(y)) {
-		DWORD Mips = 1, Filter = D3DX_FILTER_NONE;
-		if (bMipmaps) Filter = D3DX_FILTER_BOX, Mips = 0;
-		if (D3DXCreateTextureFromFileEx(mgr->Dev(), fullpath, 0, 0, Mips, 0, D3DFMT_FROM_FILE, D3DPOOL_SYSTEMMEM, D3DX_DEFAULT, Filter, 0, NULL, NULL, pPre) == S_OK) {
+		DWORD Mips = 1; // Filter = D3DX_FILTER_NONE
+		if (bMipmaps) Mips = 0; // Filter = D3DX_FILTER_BOX (VkConvertPixels box-filters the missing levels)
+		VkPixels px;
+		*pPre = new VkPixels; // D3DXCreateTextureFromFileEx into a D3DPOOL_SYSTEMMEM texture, format from file
+		if (VkLoadPixels(oapiResolvePath(fullpath).c_str(), px) && VkConvertPixels(px, **pPre, VK_FORMAT_UNDEFINED, SWZ_NONE, 0, 0, Mips)) {
 			return true;
 		}
+		SAFE_DELETE(*pPre);
 	}
 
 	*pPre = NULL;
 	return false;
 }
 
-bool Tile::LoadTextureFromMemory(void *data, DWORD ndata, LPDIRECT3DTEXTURE9 *pPre)
+bool Tile::LoadTextureFromMemory(void *data, DWORD ndata, VkPixels **pPre)
 {
-	DWORD Mips = 1, Filter = D3DX_FILTER_NONE;
-	if (bMipmaps) Filter = D3DX_FILTER_BOX, Mips = 0;
-	if (D3DXCreateTextureFromFileInMemoryEx(mgr->Dev(), data, ndata, 0, 0, Mips, 0, D3DFMT_FROM_FILE, D3DPOOL_SYSTEMMEM, D3DX_DEFAULT, Filter, 0, NULL, NULL, pPre) == S_OK) {
+	DWORD Mips = 1; // Filter = D3DX_FILTER_NONE
+	if (bMipmaps) Mips = 0; // Filter = D3DX_FILTER_BOX (VkConvertPixels box-filters the missing levels)
+	VkPixels px;
+	*pPre = new VkPixels; // D3DXCreateTextureFromFileInMemoryEx into a D3DPOOL_SYSTEMMEM texture, format from file
+	if (VkLoadPixelsFromMemory((const BYTE *)data, ndata, px) && VkConvertPixels(px, **pPre, VK_FORMAT_UNDEFINED, SWZ_NONE, 0, 0, Mips)) {
 		return true;
 	}
+	SAFE_DELETE(*pPre);
 
 	*pPre = NULL;
 	return false;
@@ -108,13 +124,15 @@ bool Tile::LoadTextureFromMemory(void *data, DWORD ndata, LPDIRECT3DTEXTURE9 *pP
 // Create a texture from a pre-loaded data
 // ------------------------------------------------------------------------
 
-bool Tile::CreateTexture(LPDIRECT3DDEVICE9 pDev, LPDIRECT3DTEXTURE9 pPre, LPDIRECT3DTEXTURE9 *pTex)
+bool Tile::CreateTexture(VkDev *pDev, VkPixels *pPre, VkTex **pTex)
 {
-	D3DSURFACE_DESC desc;
 	if (pPre) {
-		pPre->GetLevelDesc(0, &desc);
-		*pTex = g_pTexmgr_tt->New(desc.Width, desc.Format);
-		HR(pDev->UpdateTexture(pPre, (*pTex)));
+		*pTex = g_pTexmgr_tt->New(pPre->w, pPre->fmt); // GetLevelDesc(0)
+		VkPixels cv; // UpdateTexture: the pool texture's format and levels (missing levels box-filtered)
+		if (VkConvertPixels(*pPre, cv, (*pTex)->fmt, SWZ_NONE, 0, 0, (*pTex)->levels)) {
+			for (UINT l = 0; l < cv.levels; l++) (*pTex)->Upload(l, 0, cv.Level(l).data(), cv.Level(l).size());
+		}
+		else LogErr("Tile::CreateTexture: UpdateTexture failed");
 		return true;
 	}
 	return false;
@@ -813,37 +831,34 @@ VBMESH *Tile::CreateMesh_hemisphere (int grd, float *elev, double globelev)
 int TileLoader::nqueue = 0;
 int TileLoader::queue_in = 0;
 int TileLoader::queue_out = 0;
-HANDLE TileLoader::hLoadMutex = 0;
+std::mutex TileLoader::hLoadMutex;
 struct TileLoader::QUEUEDESC TileLoader::queue[MAXQUEUE2] = {0};
 
 TileLoader::TileLoader (const oapi::D3D9Client *gclient)
 	: gc(gclient)
-	, hStopThread(CreateEvent(NULL, FALSE, FALSE, NULL))
+	, hStopThread(false) // CreateEvent: auto-reset, not signalled
 	, load_frequency(Config->PlanetLoadFrequency)
 {
-	DWORD id;
-
 	// Initialize statics
 	nqueue = queue_in = queue_out = 0;
-	hLoadMutex = CreateMutex (0, FALSE, NULL);
-	hLoadThread = CreateThread (NULL, 32768, Load_ThreadProc, this, 0, &id);
+	// CreateMutex left out: hLoadMutex is a static std::mutex
+	hLoadThread = std::thread (Load_ThreadProc, this); // CreateThread (32768 byte stack size left out)
 }
 
 // -----------------------------------------------------------------------
 
 TileLoader::~TileLoader ()
 {
-	if (hLoadThread) LogErr("TileLoader() Not Yet ShutDown()");
+	if (hLoadThread.joinable()) LogErr("TileLoader() Not Yet ShutDown()");
 	TerminateLoadThread();
-	CloseHandle (hLoadMutex);
-	hLoadMutex = NULL;
+	// CloseHandle(hLoadMutex) left out: std::mutex
 }
 
 // -----------------------------------------------------------------------
 
 bool TileLoader::ShutDown()
 {
-	if (hLoadThread) {
+	if (hLoadThread.joinable()) {
 		TerminateLoadThread();
 		return true;
 	}
@@ -854,14 +869,12 @@ bool TileLoader::ShutDown()
 
 void TileLoader::TerminateLoadThread()
 {
-	if (hLoadThread) {
+	if (hLoadThread.joinable()) {
 		// Signal thread to stop and wait for it to happen
-		SetEvent(hStopThread);
-		WaitForSingleObject(hLoadThread, INFINITE); //4000);
+		hStopThread = true; // SetEvent
+		hLoadThread.join(); // WaitForSingleObject(INFINITE), CloseHandle
 		// Clean up for next run
-		ResetEvent(hStopThread);
-		CloseHandle(hLoadThread);
-		hLoadThread = NULL;
+		hStopThread = false; // ResetEvent
 	}
 }
 
@@ -1006,7 +1019,7 @@ DWORD WINAPI TileLoader::Load_ThreadProc (void *data)
 
 // -----------------------------------------------------------------------
 
-DWORD WINAPI TileLoader::Load_ThreadProc (void *data)
+DWORD TileLoader::Load_ThreadProc (void *data)
 {
 	const int tile_packet_size = 8; // max number of tiles to process from queue
 	TileLoader *loader = (TileLoader*)data;
@@ -1017,7 +1030,7 @@ DWORD WINAPI TileLoader::Load_ThreadProc (void *data)
 	LogAlw("TileLoader::Load thread started");
 
 	bool bFirstRun = true;
-	while (bFirstRun || WAIT_OBJECT_0 != WaitForSingleObject(loader->hStopThread, idle))
+	while (bFirstRun || !WaitForStop(loader->hStopThread, idle))
 	{
 		bFirstRun = false;
 
@@ -1043,7 +1056,7 @@ DWORD WINAPI TileLoader::Load_ThreadProc (void *data)
 			}
 			ReleaseMutex ();
 		} else {
-			Sleep (idle);
+			std::this_thread::sleep_for(std::chrono::milliseconds(idle)); // Sleep
 		}
 	}
 
@@ -1062,15 +1075,15 @@ TileManager2Base::ConfigPrm TileManager2Base::cprm = {
 	0.5                 // lightfac
 };
 oapi::D3D9Client* TileManager2Base::gc = NULL;
-LPDIRECT3DDEVICE9 TileManager2Base::pDev = NULL;
+VkDev *TileManager2Base::pDev = NULL;
 TileLoader *TileManager2Base::loader = NULL;
 double TileManager2Base::resolutionBias = 4.0;
 double TileManager2Base::resolutionScale = 1.0;
 bool TileManager2Base::bTileLoadThread = true;
-HFONT TileManager2Base::hFont = NULL;
-LPDIRECT3DTEXTURE9 TileManager2Base::hOcean = NULL;
-LPDIRECT3DTEXTURE9 TileManager2Base::hCloudMicro = NULL;
-LPDIRECT3DTEXTURE9 TileManager2Base::hCloudMicroNorm = NULL;
+QFont *TileManager2Base::hFont = NULL;
+VkTex *TileManager2Base::hOcean = NULL;
+VkTex *TileManager2Base::hCloudMicro = NULL;
+VkTex *TileManager2Base::hCloudMicroNorm = NULL;
 
 // -----------------------------------------------------------------------
 
@@ -1121,13 +1134,16 @@ void TileManager2Base::GlobalInit (class oapi::D3D9Client *gclient)
 
 	loader = new TileLoader (gc);
 
-	hFont  = CreateFont(42, 0, 0, 0, 600, false, false, 0, 0, 0, 2, CLEARTYPE_QUALITY, 49, "Arial");
+	hFont  = new QFont("Arial"); // CreateFont(42, ..., FW_SEMIBOLD, ..., CLEARTYPE_QUALITY, ..., "Arial")
+	hFont->setPixelSize(42);
+	hFont->setWeight(QFont::Weight(600));
 
 	char name[MAX_PATH];
 
-	if (gc->TexturePath("D3D9Ocean.dds", name)) D3DXCreateTextureFromFileA(pDev, name, &hOcean);
-	if (gc->TexturePath("cloud1.dds", name)) D3DXCreateTextureFromFileA(pDev, name, &hCloudMicro);
-	if (gc->TexturePath("cloud1_norm.dds", name)) D3DXCreateTextureFromFileA(pDev, name, &hCloudMicroNorm);
+	// D3DXCreateTextureFromFileA: size and format from file, full mip chain
+	if (gc->TexturePath("D3D9Ocean.dds", name)) hOcean = VkCreateTextureFromFile(pDev, oapiResolvePath(name).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT);
+	if (gc->TexturePath("cloud1.dds", name)) hCloudMicro = VkCreateTextureFromFile(pDev, oapiResolvePath(name).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT);
+	if (gc->TexturePath("cloud1_norm.dds", name)) hCloudMicroNorm = VkCreateTextureFromFile(pDev, oapiResolvePath(name).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT);
 }
 
 // -----------------------------------------------------------------------
@@ -1141,10 +1157,10 @@ bool TileManager2Base::ShutDown()
 
 void TileManager2Base::GlobalExit ()
 {
-	DeleteObject(hFont); hFont = NULL;
-	SAFE_RELEASE(hOcean);
-	SAFE_RELEASE(hCloudMicro);
-	SAFE_RELEASE(hCloudMicroNorm);
+	delete hFont; hFont = NULL; // DeleteObject
+	SAFE_DELETE(hOcean);
+	SAFE_DELETE(hCloudMicro);
+	SAFE_DELETE(hCloudMicroNorm);
 	delete loader;
 }
 

@@ -15,30 +15,114 @@
 #include "VideoTab.h"
 #include "AABBUtil.h"
 #include "D3D9Config.h"
-#include "Commctrl.h"
+// Commctrl.h and richedit.h left out: the controls are Qt widgets
 #include "OapiExtension.h"
+#include "OrbiterResource.h"
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QDialog>
+#include <QFile>
+#include <QGuiApplication>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QScreen>
+#include <QSlider>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextEdit>
+#include <QTreeWidget>
+#include <QVulkanInstance>
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <functional>
+#include <string>
+#include <strings.h>
 #include <vector>
 #include <sstream>
-#include <richedit.h>
 
 using namespace oapi;
 
 const UINT IDC_SCENARIO_TREE = (oapiGetOrbiterVersion() >= 111105) ? 1090 : 1088;
 
-BOOL CALLBACK EnumChildProc(HWND hwnd, LPARAM lParam)
+// EnumChildWindows callback: the descendant that holds the scenario tree
+bool EnumChildProc(QWidget *hwnd, QWidget **lParam)
 {
-	if (GetDlgItem(hwnd, IDC_SCENARIO_TREE)) {
-		*(HWND*)lParam = hwnd; 
+	if (DlgItem<QTreeWidget>(hwnd, IDC_SCENARIO_TREE)) {
+		*lParam = hwnd; 
 		return false;
 	}
 	return true;
 }
 
+// not upstream: the adapters (IDirect3D9::GetAdapterCount/GetAdapterIdentifier) in vkEnumeratePhysicalDevices order, as D3D9Frame picks them
+static std::vector<VkPhysicalDevice> Adapters()
+{
+	std::vector<VkPhysicalDevice> pd;
+	UINT n = 0;
+	if (!g_pD3DObject) return pd;
+	vkEnumeratePhysicalDevices(g_pD3DObject->vkInstance(), &n, NULL);
+	pd.resize(n);
+	if (n) vkEnumeratePhysicalDevices(g_pD3DObject->vkInstance(), &n, pd.data());
+	return pd;
+}
+
+// not upstream: D3DDISPLAYMODE of a screen (device pixels); Qt neither lists nor switches display modes
+struct VideoMode { UINT Width, Height, RefreshRate; };
+static VideoMode ScreenMode(QScreen *scr)
+{
+	if (!scr) return { 0, 0, 0 };
+	qreal dpr = scr->devicePixelRatio();
+	return { UINT(scr->geometry().width() * dpr), UINT(scr->geometry().height() * dpr), UINT(scr->refreshRate() + 0.5) };
+}
+
+// not upstream: GetAdapterModeCount/EnumAdapterModes: the current mode of each screen (D3D9Frame covers the window's screen)
+static std::vector<VideoMode> AdapterModes()
+{
+	std::vector<VideoMode> modes;
+	for (QScreen *scr : QGuiApplication::screens()) modes.push_back(ScreenMode(scr));
+	return modes;
+}
+
+// not upstream: DialogBoxParam counterpart, a modal QDialog built from the module's resource; proc runs as WM_INITDIALOG
+static void RunDialog(void *hInstance, int resId, QWidget *hParent, DLGINIT proc, void *lParam)
+{
+	QDialog *dlg = qobject_cast<QDialog*>(oapiCreateResDialog(hInstance, resId, hParent));
+	if (!dlg) {
+		LogErr("Dialog resource %d not found", resId);
+		return;
+	}
+	proc(dlg, lParam);
+	if (dlg->isVisible()) dlg->hide(); // WS_VISIBLE templates: exec shows it again, modal
+	dlg->exec();
+	delete dlg;
+}
+
+// not upstream: DefDlgProc's WM_CLOSE (and Esc) → IDCANCEL to the dialog procedure, as an event filter
+class DlgEvents : public QObject
+{
+public:
+	DlgEvents(QWidget *hWnd, std::function<void()> cancel) : QObject(hWnd), onCancel(cancel) { hWnd->installEventFilter(this); }
+	bool eventFilter(QObject *o, QEvent *e) override
+	{
+		if (e->type() == QEvent::Close || (e->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape)) {
+			e->ignore();
+			onCancel();
+			return true;
+		}
+		return false;
+	}
+private:
+	std::function<void()> onCancel;
+};
+
 
 // ==============================================================
 // Constructor
 
-VideoTab::VideoTab(D3D9Client *gc, HINSTANCE _hInst, HINSTANCE _hOrbiterInst, HWND hVideoTab)
+VideoTab::VideoTab(D3D9Client *gc, void *_hInst, void *_hOrbiterInst, QWidget *hVideoTab)
 {
 	gclient      = gc;
 	hInst        = _hInst;
@@ -56,46 +140,41 @@ VideoTab::~VideoTab()
 // ==============================================================
 // Dialog message handler
 
-BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void VideoTab::WndProc(QWidget *hWnd)
 {
-	GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
+	// WM_INITDIALOG: nothing to do
 
-	switch (uMsg) {
+	// WM_COMMAND
+	auto command = [this, hWnd](int id, int code) -> BOOL {
+		GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
 
-	case WM_INITDIALOG:
-	{
-		return TRUE;
-	}
-
-	case WM_COMMAND:
-
-		switch (LOWORD(wParam)) {
+		switch (id) {
 
 		case IDC_VID_DEVICE:
-			if (HIWORD(wParam)==CBN_SELCHANGE) {
-				DWORD idx = DWORD(SendDlgItemMessage(hWnd, IDC_VID_DEVICE, CB_GETCURSEL, 0, 0));
+			if (code==RESN_SELCHANGE) {
+				DWORD idx = DWORD(DlgItem<QComboBox>(hWnd, IDC_VID_DEVICE)->currentIndex());
 				SelectAdapter(idx);
 				return TRUE;
 			}
 			break;
 
 		case IDC_VID_MODE:
-			if (HIWORD(wParam) == CBN_SELCHANGE) {
-				DWORD idx = DWORD(SendDlgItemMessage (hWnd, IDC_VID_MODE, CB_GETCURSEL, 0, 0));
+			if (code == RESN_SELCHANGE) {
+				DWORD idx = DWORD(DlgItem<QComboBox>(hWnd, IDC_VID_MODE)->currentIndex());
 				SelectMode(idx);
 				return TRUE;
 			}
 			break;
 
 		case IDC_VID_BPP:
-			if (HIWORD(wParam) == CBN_SELCHANGE) {
+			if (code == RESN_SELCHANGE) {
 				SelectFullscreen(data->fullscreen);
 				return TRUE;
 			}
 
 
 		case IDC_VID_FULL:
-			if (HIWORD(wParam) == BN_CLICKED) {
+			if (code == RESN_CLICKED) {
 				SelectFullscreen(true);
 				data->fullscreen = true;
 				return TRUE;
@@ -103,7 +182,7 @@ BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case IDC_VID_WINDOW:
-			if (HIWORD(wParam) == BN_CLICKED) {
+			if (code == RESN_CLICKED) {
 				SelectFullscreen(false);
 				data->fullscreen = false;
 				return TRUE;
@@ -111,14 +190,14 @@ BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case IDC_VID_WIDTH:
-			if (HIWORD(wParam) == EN_CHANGE) {
+			if (code == RESN_CHANGE) {
 				SelectWidth ();
 				return TRUE;
 			}
 			break;
 
 		case IDC_VID_HEIGHT:
-			if (HIWORD(wParam) == EN_CHANGE) {
+			if (code == RESN_CHANGE) {
 				SelectHeight ();
 				return TRUE;
 			}
@@ -129,7 +208,7 @@ BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			break;
 			
 		case IDC_VID_ASPECT:
-			if (HIWORD(wParam) == BN_CLICKED) {
+			if (code == RESN_CLICKED) {
 				SelectWidth();
 				return TRUE;
 			}
@@ -138,20 +217,26 @@ BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case IDC_VID_4X3:
 		case IDC_VID_16X10:
 		case IDC_VID_16X9:
-			if (HIWORD(wParam) == BN_CLICKED) {
-				aspect_idx = LOWORD(wParam) - IDC_VID_4X3;
+			if (code == RESN_CLICKED) {
+				aspect_idx = id - IDC_VID_4X3;
 				SelectWidth();
 				return TRUE;
 			}
 			break;
 
 		case IDC_VID_INFO:
-			DialogBoxParamA(hInst, MAKEINTRESOURCE(IDD_D3D9SETUP), hTab, SetupDlgProcWrp, (LPARAM)this);
+			RunDialog(hInst, IDD_D3D9SETUP, hTab, SetupDlgProcWrp, this); // DialogBoxParam
 			return TRUE;
 		}
-		break;
-	}
-	return FALSE;
+		return FALSE;
+	};
+	// not upstream: only the video controls are connected, the core drops their connections when the client is unloaded
+	for (int id : {IDC_VID_DEVICE, IDC_VID_MODE, IDC_VID_BPP})
+		QObject::connect(DlgItem<QComboBox>(hWnd, id), &QComboBox::activated, hWnd, [command, id]() { command(id, RESN_SELCHANGE); });
+	for (int id : {IDC_VID_FULL, IDC_VID_WINDOW, IDC_VID_STENCIL, IDC_VID_ASPECT, IDC_VID_4X3, IDC_VID_16X10, IDC_VID_16X9, IDC_VID_INFO})
+		QObject::connect(DlgItem<QAbstractButton>(hWnd, id), &QAbstractButton::clicked, hWnd, [command, id]() { command(id, RESN_CLICKED); });
+	for (int id : {IDC_VID_WIDTH, IDC_VID_HEIGHT})
+		QObject::connect(DlgItem<QLineEdit>(hWnd, id), &QLineEdit::textChanged, hWnd, [command, id]() { command(id, RESN_CHANGE); });
 }
 
 // ==============================================================
@@ -159,25 +244,26 @@ BOOL VideoTab::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 bool VideoTab::Initialise()
 {
-	D3DDISPLAYMODE mode, curMode;
-	D3DADAPTER_IDENTIFIER9 info;
+	VideoMode mode, curMode;
+	VkPhysicalDeviceProperties info;
 
 	GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
 
 	data->forceenum = false;
 	data->trystencil = false;
 
-	SendDlgItemMessage(hTab, IDC_VID_DEVICE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hTab, IDC_VID_MODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hTab, IDC_VID_BPP, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox>(hTab, IDC_VID_DEVICE)->clear();
+	DlgItem<QComboBox>(hTab, IDC_VID_MODE)->clear();
+	DlgItem<QComboBox>(hTab, IDC_VID_BPP)->clear();
 
 	ScanAtmoCfgs();
 
 	char cbuf[32];
-	int nAdapter = g_pD3DObject->GetAdapterCount();
+	std::vector<VkPhysicalDevice> adapter = Adapters();
+	int nAdapter = int(adapter.size());
 
 	if (nAdapter == 0) {
-		LogErr("VideoTab::Initialize() No DirectX9 Adapters Found");
+		LogErr("VideoTab::Initialize() No Vulkan Adapters Found");
 		FailedDeviceError();
 		return false;
 	}
@@ -185,19 +271,20 @@ bool VideoTab::Initialise()
 	if (data->deviceidx < 0 || (data->deviceidx)>=nAdapter) data->deviceidx = 0;
 
 	for (int i=0;i<nAdapter;i++) {
-		HR(g_pD3DObject->GetAdapterIdentifier(i, 0, &info));
-		LogAlw("Adapter %d: %s", i, info.Description);
-		SendDlgItemMessageA(hTab, IDC_VID_DEVICE, CB_ADDSTRING, 0, (LPARAM)info.Description);
+		vkGetPhysicalDeviceProperties(adapter[i], &info); // GetAdapterIdentifier
+		LogAlw("Adapter %d: %s", i, info.deviceName);
+		oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_DEVICE), info.deviceName);
 	}
 
-	SendDlgItemMessage(hTab, IDC_VID_DEVICE, CB_SETCURSEL, data->deviceidx, 0);
+	DlgItem<QComboBox>(hTab, IDC_VID_DEVICE)->setCurrentIndex(data->deviceidx);
 
 
-	HR(g_pD3DObject->GetAdapterDisplayMode(data->deviceidx, &curMode));
+	curMode = ScreenMode(QGuiApplication::primaryScreen()); // GetAdapterDisplayMode
 
 	LogAlw("Current Mode W=%u, H=%u", curMode.Width, curMode.Height);
 
-	UINT nModes = g_pD3DObject->GetAdapterModeCount(data->deviceidx, D3DFMT_X8R8G8B8);
+	std::vector<VideoMode> modes = AdapterModes();
+	UINT nModes = UINT(modes.size());
 
 	if (nModes == 0) {
 		LogErr("VideoTab::Initialize() No Display Modes Available");
@@ -205,27 +292,27 @@ bool VideoTab::Initialise()
 	}
 
 	for (UINT k=0;k<nModes;k++) {
-		HR(g_pD3DObject->EnumAdapterModes(data->deviceidx, D3DFMT_X8R8G8B8, k, &mode));
-		sprintf_s(cbuf,32,"%u x %u  %uHz", mode.Width, mode.Height, mode.RefreshRate);
-		LogAlw("Index:%u %u x %u  %uHz (%u)", k, mode.Width, mode.Height, mode.RefreshRate, mode.Format);
-		SendDlgItemMessageA(hTab, IDC_VID_MODE, CB_ADDSTRING, 0, (LPARAM)cbuf);
-		SendDlgItemMessageA(hTab, IDC_VID_MODE, CB_SETITEMDATA, k, (LPARAM)(mode.Height<<16 | mode.Width));
+		mode = modes[k]; // EnumAdapterModes (X8R8G8B8: the swapchain is B8G8R8A8)
+		snprintf(cbuf,32,"%u x %u  %uHz", mode.Width, mode.Height, mode.RefreshRate);
+		LogAlw("Index:%u %u x %u  %uHz (%u)", k, mode.Width, mode.Height, mode.RefreshRate, UINT(VK_FORMAT_B8G8R8A8_UNORM));
+		oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_MODE), cbuf);
+		DlgItem<QComboBox>(hTab, IDC_VID_MODE)->setItemData(k, (mode.Height<<16 | mode.Width));
 	}
 
-	SendDlgItemMessageA(hTab, IDC_VID_BPP, CB_ADDSTRING, 0, (LPARAM)"True Full Screen (no alt-tab)");
-	SendDlgItemMessageA(hTab, IDC_VID_BPP, CB_ADDSTRING, 0, (LPARAM)"Full Screen Window");
-	SendDlgItemMessageA(hTab, IDC_VID_BPP, CB_ADDSTRING, 0, (LPARAM)"Window with Taskbar");
-	SendDlgItemMessageA(hTab, IDC_VID_BPP, CB_SETCURSEL, data->style, 0);
+	oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_BPP), "True Full Screen (no alt-tab)");
+	oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_BPP), "Full Screen Window");
+	oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_BPP), "Window with Taskbar");
+	DlgItem<QComboBox>(hTab, IDC_VID_BPP)->setCurrentIndex(data->style);
 
-	//SetWindowText(GetDlgItem(hTab, IDC_VID_STATIC5), "Resolution");
-	SetWindowText(GetDlgItem(hTab, IDC_VID_STATIC6), "Full Screen Mode");
+	//oapiSetDlgItemText(hTab, IDC_VID_STATIC5, "Resolution");
+	oapiSetDlgItemText(hTab, IDC_VID_STATIC6, "Full Screen Mode");
 
 
-	SendDlgItemMessage(hTab, IDC_VID_MODE, CB_SETCURSEL, data->modeidx, 0);
-	SendDlgItemMessage(hTab, IDC_VID_VSYNC, BM_SETCHECK, data->novsync ? BST_CHECKED : BST_UNCHECKED, 0);
+	DlgItem<QComboBox>(hTab, IDC_VID_MODE)->setCurrentIndex(data->modeidx);
+	DlgItem<QAbstractButton>(hTab, IDC_VID_VSYNC)->setChecked(data->novsync);
 		
-	SetWindowText(GetDlgItem(hTab, IDC_VID_WIDTH), std::to_string(data->winw).c_str());
-	SetWindowText(GetDlgItem(hTab, IDC_VID_HEIGHT), std::to_string(data->winh).c_str());
+	oapiSetDlgItemText(hTab, IDC_VID_WIDTH, std::to_string(data->winw).c_str());
+	oapiSetDlgItemText(hTab, IDC_VID_HEIGHT, std::to_string(data->winh).c_str());
 
 	aspect_idx = 0;
 		
@@ -233,21 +320,21 @@ bool VideoTab::Initialise()
 	else if (data->winw == (16*data->winh)/10 || data->winh == (10*data->winw)/16) aspect_idx = 2;
 	else if (data->winw == (16*data->winh)/9 || data->winh == (9*data->winw)/16) aspect_idx = 3;
 		
-	SendDlgItemMessage(hTab, IDC_VID_ASPECT, BM_SETCHECK, aspect_idx ? BST_CHECKED : BST_UNCHECKED, 0);
+	DlgItem<QAbstractButton>(hTab, IDC_VID_ASPECT)->setChecked(aspect_idx);
 	if (aspect_idx) aspect_idx--;
-	SendDlgItemMessage(hTab, IDC_VID_4X3+aspect_idx, BM_SETCHECK, BST_CHECKED, 0);
+	DlgItem<QAbstractButton>(hTab, IDC_VID_4X3+aspect_idx)->setChecked(true);
 
-	SendDlgItemMessage(hTab, IDC_VID_STENCIL,  BM_SETCHECK, data->trystencil, 0); // GDI Compatibility mode
-	SendDlgItemMessage(hTab, IDC_VID_ENUM,     BM_SETCHECK, data->forceenum, 0);  
-	SendDlgItemMessage(hTab, IDC_VID_PAGEFLIP, BM_SETCHECK, data->pageflip, 0);	  // Full scrren Window	
+	DlgItem<QAbstractButton>(hTab, IDC_VID_STENCIL)->setChecked(data->trystencil); // GDI Compatibility mode
+	DlgItem<QAbstractButton>(hTab, IDC_VID_ENUM)->setChecked(data->forceenum);  
+	DlgItem<QAbstractButton>(hTab, IDC_VID_PAGEFLIP)->setChecked(data->pageflip);	  // Full scrren Window	
 
 	bool bRet = SelectAdapter(data->deviceidx);
 
 	SelectFullscreen(data->fullscreen);
 
-	ShowWindow (GetDlgItem (hTab, IDC_VID_INFO), SW_SHOW);
+	oapiResDlgItem(hTab, IDC_VID_INFO)->show();
 
-	SetWindowText(GetDlgItem(hTab, IDC_VID_INFO), "Advanced");
+	oapiSetDlgItemText(hTab, IDC_VID_INFO, "Advanced");
 
 	return bRet;
 }
@@ -258,7 +345,7 @@ bool VideoTab::Initialise()
 void VideoTab::SelectMode(DWORD index)
 {
 	GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
-	SendDlgItemMessage(hTab, IDC_VID_MODE, CB_GETITEMDATA, index, 0);
+	DlgItem<QComboBox>(hTab, IDC_VID_MODE)->itemData(index);
 	data->modeidx = index;
 }
 
@@ -274,37 +361,38 @@ bool VideoTab::SelectAdapter(DWORD index)
 	GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
 
 	if (g_pD3DObject == NULL) {
-		LogErr("VideoTab::SelectAdapter(%u) Direct3DCreate9 Failed", index);
+		LogErr("VideoTab::SelectAdapter(%u) Vulkan instance creation failed", index);
 		return false;
 	}
 	else {
 
 		char cbuf[32];
-		D3DDISPLAYMODE mode, curMode;
+		VideoMode mode, curMode;
 	
-		if (g_pD3DObject->GetAdapterCount()<=index) {
+		if (Adapters().size()<=index) {
 			LogErr("Adapter Index out of range");
 			return false;
 		}
 
-		HR(g_pD3DObject->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &curMode));
+		curMode = ScreenMode(QGuiApplication::primaryScreen()); // GetAdapterDisplayMode(D3DADAPTER_DEFAULT)
 
-		SendDlgItemMessage(hTab, IDC_VID_MODE, CB_RESETCONTENT, 0, 0);
+		DlgItem<QComboBox>(hTab, IDC_VID_MODE)->clear();
 
-		DWORD nModes = g_pD3DObject->GetAdapterModeCount(index, D3DFMT_X8R8G8B8);
+		std::vector<VideoMode> modes = AdapterModes();
+		DWORD nModes = DWORD(modes.size());
 
 		if (nModes == 0) {
 			LogErr("VideoTab::SelectAdapter() No Display Modes Available");	
 		}
 
 		for (DWORD k=0;k<nModes;k++) {
-			HR(g_pD3DObject->EnumAdapterModes(index, D3DFMT_X8R8G8B8, k, &mode));
-			sprintf_s(cbuf,32,"%u x %u %uHz", mode.Width, mode.Height, mode.RefreshRate);
-			SendDlgItemMessageA(hTab, IDC_VID_MODE, CB_ADDSTRING, 0, (LPARAM)cbuf);
-			SendDlgItemMessageA(hTab, IDC_VID_MODE, CB_SETITEMDATA, k, (LPARAM)(mode.Height<<16 | mode.Width));
+			mode = modes[k]; // EnumAdapterModes
+			snprintf(cbuf,32,"%u x %u %uHz", mode.Width, mode.Height, mode.RefreshRate);
+			oapiComboAddString(DlgItem<QComboBox>(hTab, IDC_VID_MODE), cbuf);
+			DlgItem<QComboBox>(hTab, IDC_VID_MODE)->setItemData(k, (mode.Height<<16 | mode.Width));
 		}
 
-		SendDlgItemMessage(hTab, IDC_VID_MODE, CB_SETCURSEL, data->modeidx, 0);
+		DlgItem<QComboBox>(hTab, IDC_VID_MODE)->setCurrentIndex(data->modeidx);
 	}
 
 	return true;
@@ -315,39 +403,39 @@ bool VideoTab::SelectAdapter(DWORD index)
 void VideoTab::SelectFullscreen(bool bFull)
 {
 
-	SetWindowText(GetDlgItem(hTab, IDC_VID_ENUM), "(unused)");
-	SetWindowText(GetDlgItem(hTab, IDC_VID_STENCIL), "Force window size");
-	SetWindowText(GetDlgItem(hTab, IDC_VID_PAGEFLIP), "Multiple displays");
+	oapiSetDlgItemText(hTab, IDC_VID_ENUM, "(unused)");
+	oapiSetDlgItemText(hTab, IDC_VID_STENCIL, "Force window size");
+	oapiSetDlgItemText(hTab, IDC_VID_PAGEFLIP, "Multiple displays");
 
-	SendDlgItemMessage(hTab, IDC_VID_FULL, BM_SETCHECK, bFull ? BST_CHECKED : BST_UNCHECKED, 0);
-	SendDlgItemMessage(hTab, IDC_VID_WINDOW, BM_SETCHECK, bFull ? BST_UNCHECKED : BST_CHECKED, 0);
+	DlgItem<QAbstractButton>(hTab, IDC_VID_FULL)->setChecked(bFull);
+	DlgItem<QAbstractButton>(hTab, IDC_VID_WINDOW)->setChecked(!bFull);
 
-	EnableWindow(GetDlgItem(hTab, IDC_VID_ENUM), false);
-	EnableWindow(GetDlgItem(hTab, IDC_VID_STENCIL), true);
+	oapiResDlgItem(hTab, IDC_VID_ENUM)->setEnabled(false);
+	oapiResDlgItem(hTab, IDC_VID_STENCIL)->setEnabled(true);
 
 	if (bFull) {
-		EnableWindow(GetDlgItem(hTab, IDC_VID_ASPECT), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_WIDTH), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_HEIGHT), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_4X3), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_16X10), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_16X9), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_MODE), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_VSYNC), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_PAGEFLIP), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_BPP), true);
+		oapiResDlgItem(hTab, IDC_VID_ASPECT)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_WIDTH)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_HEIGHT)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_4X3)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_16X10)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_16X9)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_MODE)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_VSYNC)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_PAGEFLIP)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_BPP)->setEnabled(true);
 	}
 	else {
-		EnableWindow(GetDlgItem(hTab, IDC_VID_ASPECT), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_WIDTH), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_HEIGHT), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_4X3), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_16X10), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_16X9), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_MODE), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_VSYNC), true);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_PAGEFLIP), false);
-		EnableWindow(GetDlgItem(hTab, IDC_VID_BPP), false);
+		oapiResDlgItem(hTab, IDC_VID_ASPECT)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_WIDTH)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_HEIGHT)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_4X3)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_16X10)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_16X9)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_MODE)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_VSYNC)->setEnabled(true);
+		oapiResDlgItem(hTab, IDC_VID_PAGEFLIP)->setEnabled(false);
+		oapiResDlgItem(hTab, IDC_VID_BPP)->setEnabled(false);
 	}
 }
 
@@ -358,14 +446,14 @@ static int aspect_hfac[3] = {3,10,9};
 
 void VideoTab::SelectWidth ()
 {
-	if (SendDlgItemMessage (hTab, IDC_VID_ASPECT, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+	if (DlgItem<QAbstractButton>(hTab, IDC_VID_ASPECT)->isChecked()) {
 		char cbuf[32];
 		int w, h, wfac = aspect_wfac[aspect_idx], hfac = aspect_hfac[aspect_idx];
-		GetWindowText(GetDlgItem(hTab, IDC_VID_WIDTH),  cbuf, 32); w = atoi(cbuf);
-		GetWindowText(GetDlgItem(hTab, IDC_VID_HEIGHT), cbuf, 32); h = atoi(cbuf);
+		oapiGetDlgItemText(hTab, IDC_VID_WIDTH, cbuf, 32); w = atoi(cbuf);
+		oapiGetDlgItemText(hTab, IDC_VID_HEIGHT, cbuf, 32); h = atoi(cbuf);
 		if (w != (wfac*h)/hfac) {
 			h = (hfac*w)/wfac;
-			SetWindowText (GetDlgItem (hTab, IDC_VID_HEIGHT), std::to_string(h).c_str());
+			oapiSetDlgItemText(hTab, IDC_VID_HEIGHT, std::to_string(h).c_str());
 		}
 	}
 }
@@ -375,14 +463,14 @@ void VideoTab::SelectWidth ()
 
 void VideoTab::SelectHeight ()
 {
-	if (SendDlgItemMessage (hTab, IDC_VID_ASPECT, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+	if (DlgItem<QAbstractButton>(hTab, IDC_VID_ASPECT)->isChecked()) {
 		char cbuf[32];
 		int w, h, wfac = aspect_wfac[aspect_idx], hfac = aspect_hfac[aspect_idx];
-		GetWindowText(GetDlgItem(hTab, IDC_VID_WIDTH),  cbuf, 32); w = atoi(cbuf);
-		GetWindowText(GetDlgItem(hTab, IDC_VID_HEIGHT), cbuf, 32); h = atoi(cbuf);
+		oapiGetDlgItemText(hTab, IDC_VID_WIDTH, cbuf, 32); w = atoi(cbuf);
+		oapiGetDlgItemText(hTab, IDC_VID_HEIGHT, cbuf, 32); h = atoi(cbuf);
 		if (h != (hfac*w)/wfac) {
 			w = (wfac*h)/hfac;
-			SetWindowText (GetDlgItem (hTab, IDC_VID_WIDTH), std::to_string(w).c_str());
+			oapiSetDlgItemText(hTab, IDC_VID_WIDTH, std::to_string(w).c_str());
 		}
 	}
 }
@@ -396,34 +484,34 @@ void VideoTab::UpdateConfigData()
 	GraphicsClient::VIDEODATA *data = gclient->GetVideoData();
 
 	// device parameters
-	data->deviceidx  = (int)SendDlgItemMessage (hTab, IDC_VID_DEVICE, CB_GETCURSEL, 0, 0);
-	data->modeidx	 = (int)SendDlgItemMessage (hTab, IDC_VID_MODE, CB_GETCURSEL, 0, 0);
-	data->style		 = SendDlgItemMessage (hTab, IDC_VID_BPP, CB_GETCURSEL, 0, 0);
-	data->fullscreen = (SendDlgItemMessage (hTab, IDC_VID_FULL, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	data->novsync    = (SendDlgItemMessage (hTab, IDC_VID_VSYNC, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	data->pageflip   = (SendDlgItemMessage (hTab, IDC_VID_PAGEFLIP, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	data->trystencil = (SendDlgItemMessage (hTab, IDC_VID_STENCIL, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	data->forceenum  = (SendDlgItemMessage (hTab, IDC_VID_ENUM, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	data->deviceidx  = (int)DlgItem<QComboBox>(hTab, IDC_VID_DEVICE)->currentIndex();
+	data->modeidx	 = (int)DlgItem<QComboBox>(hTab, IDC_VID_MODE)->currentIndex();
+	data->style		 = DlgItem<QComboBox>(hTab, IDC_VID_BPP)->currentIndex();
+	data->fullscreen = (DlgItem<QAbstractButton>(hTab, IDC_VID_FULL)->isChecked());
+	data->novsync    = (DlgItem<QAbstractButton>(hTab, IDC_VID_VSYNC)->isChecked());
+	data->pageflip   = (DlgItem<QAbstractButton>(hTab, IDC_VID_PAGEFLIP)->isChecked());
+	data->trystencil = (DlgItem<QAbstractButton>(hTab, IDC_VID_STENCIL)->isChecked());
+	data->forceenum  = (DlgItem<QAbstractButton>(hTab, IDC_VID_ENUM)->isChecked());
 
-	GetWindowText(GetDlgItem(hTab, IDC_VID_WIDTH),  cbuf, 32); data->winw = atoi(cbuf);
-	GetWindowText(GetDlgItem(hTab, IDC_VID_HEIGHT), cbuf, 32); data->winh = atoi(cbuf);	
+	oapiGetDlgItemText(hTab, IDC_VID_WIDTH, cbuf, 32); data->winw = atoi(cbuf);
+	oapiGetDlgItemText(hTab, IDC_VID_HEIGHT, cbuf, 32); data->winh = atoi(cbuf);	
 
 
-	HWND hChild = NULL;
-	HWND hRoot = GetAncestor(hTab, GA_ROOT);
+	QWidget *hChild = NULL;
+	QWidget *hRoot = hTab->window(); // GetAncestor(GA_ROOT)
 
-	EnumChildWindows(hRoot, EnumChildProc, (LPARAM)&hChild);
+	for (QWidget *w : hRoot->findChildren<QWidget*>()) if (!EnumChildProc(w, &hChild)) break; // EnumChildWindows
 
 	if (hChild) {
 
-		HWND hTree = GetDlgItem(hChild, IDC_SCENARIO_TREE);
+		QTreeWidget *hTree = DlgItem<QTreeWidget>(hChild, IDC_SCENARIO_TREE);
 
 		if (hTree==NULL) {
 			LogErr("FAILED to get a scenario tree control handle");
 			return;
 		}
 
-		HTREEITEM item = TreeView_GetSelection(hTree);
+		QTreeWidgetItem *item = hTree->currentItem(); // TreeView_GetSelection
 
 		if (item == NULL) {
 			LogErr("FAILED. Scenario not selected");
@@ -431,31 +519,21 @@ void VideoTab::UpdateConfigData()
 		}
 
 		using std::vector;
-		vector<HTREEITEM> hNodes;
+		vector<QTreeWidgetItem*> hNodes;
 
 		while (item) { // [ego, parent, grandparent, ...]
 			hNodes.push_back( item );
-			item = TreeView_GetParent(hTree, item);
+			item = item->parent(); // TreeView_GetParent
 		}
 
 		using std::string;
 		string path = OapiExtension::GetScenarioDir();
-		path.erase( path.find_last_not_of( '\\' )+1 ); // trim trailing path-delimiter
+		path.erase( path.find_last_not_of( "\\/" )+1 ); // trim trailing path-delimiter
 
-		char buf[MAX_PATH];
-		TVITEMA tvItem = {0};
-		tvItem.mask = TVIF_TEXT | TVIF_HANDLE;
-		tvItem.pszText = buf;
-		tvItem.cchTextMax = ARRAYSIZE(buf);
+		// TVITEMA buffer left out: the item text is a QString
 
 		for (auto it = hNodes.crbegin(); it != hNodes.crend(); ++it) {
-			tvItem.hItem = *it;
-			TreeView_GetItem(hTree, &tvItem);
-			// Note: The returned text will not necessarily be stored in the
-			//       original buffer passed by the application.
-			//       It is possible that pszText will point to text in a
-			//       new buffer rather than place it in the old buffer. 
-			path += "\\"; path += tvItem.pszText;
+			path += "/"; path += (*it)->text(0).toStdString(); // TreeView_GetItem; '/' separator
 		}
 		path += ".scn";
 
@@ -477,270 +555,278 @@ void VideoTab::UpdateConfigData()
 // ***************************************************************************************************
 
 
-INT_PTR CALLBACK VideoTab::SetupDlgProcWrp(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void VideoTab::SetupDlgProcWrp(QWidget *hWnd, void *context)
 {
 	static class VideoTab *VTab = NULL;
-	switch (uMsg) {
-		case WM_INITDIALOG: 
-			VTab = (class VideoTab *)lParam;
-			VTab->InitSetupDialog(hWnd);
-			return true;
+	// WM_INITDIALOG
+	VTab = (class VideoTab *)context;
+	VTab->InitSetupDialog(hWnd);
 
-		case WM_COMMAND:
-		case WM_HSCROLL:
-			if (VTab) VTab->SetupDlgProc(hWnd, uMsg, wParam, lParam);
-			break;
-	}
-	return false;
+	// WM_COMMAND, WM_HSCROLL
+	if (VTab) VTab->SetupDlgProc(hWnd);
 }
 
 
 
-INT_PTR CALLBACK VideoTab::SetupDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void VideoTab::SetupDlgProc(QWidget *hWnd)
 {
 
-	if (uMsg==WM_HSCROLL) {
-		if (LOWORD(wParam)==TB_THUMBTRACK) {
+	// WM_HSCROLL
+	for (int id : {IDC_CONVERGENCE, IDC_SEPARATION}) {
+		QSlider *tb = DlgItem<QSlider>(hWnd, id);
+		QObject::connect(tb, &QSlider::sliderMoved, hWnd, [hWnd, tb](int value) { // TB_THUMBTRACK
 			char lbl[32];
-			WORD pos = HIWORD(wParam);
-			if (HWND(lParam)==GetDlgItem(hWnd, IDC_CONVERGENCE)) {
-				sprintf_s(lbl,32,"%1.2fm",float(pos)*0.01);
-				SetWindowTextA(GetDlgItem(hWnd, IDC_CONV_DSP), lbl);
+			WORD pos = WORD(value);
+			if (tb==DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)) {
+				snprintf(lbl,32,"%1.2fm",float(pos)*0.01);
+				oapiSetDlgItemText(hWnd, IDC_CONV_DSP, lbl);
 			}
-			if (HWND(lParam)==GetDlgItem(hWnd, IDC_SEPARATION)) {
-				sprintf_s(lbl,32,"%1.0f%%",float(pos));
-				SetWindowTextA(GetDlgItem(hWnd, IDC_SEPA_DSP), lbl);
+			if (tb==DlgItem<QSlider>(hWnd, IDC_SEPARATION)) {
+				snprintf(lbl,32,"%1.0f%%",float(pos));
+				oapiSetDlgItemText(hWnd, IDC_SEPA_DSP, lbl);
 			}
-		}
-		return false;
+		});
 	}
 
-	switch (LOWORD(wParam)) {
+	// WM_COMMAND
+	auto command = [this, hWnd](int id, int code, QWidget *hCtrl) {
+	switch (id) {
 
 		case IDC_MESH_DEBUGGER:
-			MessageBoxA(hWnd,"You must restart launchpad for changes to take effect","Notification",MB_OK);
+			QMessageBox(QMessageBox::NoIcon, "Notification", "You must restart launchpad for changes to take effect", QMessageBox::Ok, hWnd).exec();
 			break;
 
 		case IDC_CREDITS:
-			LoadLibrary("riched20.dll");
-			DialogBoxParamA(hInst, MAKEINTRESOURCEA(IDD_D3D9CREDITS), hWnd, CreditsDlgProcWrp, (LPARAM)this);
+			// LoadLibrary("riched20.dll") left out: the rich edit control is a QTextBrowser
+			RunDialog(hInst, IDD_D3D9CREDITS, hWnd, CreditsDlgProcWrp, this); // DialogBoxParam
 			break;
 
 		case IDC_SRFPRELOAD:
-			SendDlgItemMessageA(hWnd, IDC_DEMAND, BM_SETCHECK, BST_UNCHECKED, 0);
+			DlgItem<QAbstractButton>(hWnd, IDC_DEMAND)->setChecked(false);
 			break;
 
 		case IDC_DEMAND:
-			SendDlgItemMessageA(hWnd, IDC_SRFPRELOAD, BM_SETCHECK, BST_UNCHECKED, 0);
+			DlgItem<QAbstractButton>(hWnd, IDC_SRFPRELOAD)->setChecked(false);
 			break;
 
 		case IDOK:
 		case IDCANCEL:
 			SaveSetupState(hWnd);
-			EndDialog (hWnd, 0);
+			qobject_cast<QDialog*>(hWnd)->done(0); // EndDialog
 			break;
 	}
-	
-	return false;
+	};
+	oapiConnectDlgCommands(hWnd, command);
+	new DlgEvents(hWnd, [command]() { command(IDCANCEL, RESN_CLICKED, NULL); });
 }
 
 
 
 
 
-void VideoTab::InitSetupDialog(HWND hWnd)
+void VideoTab::InitSetupDialog(QWidget *hWnd)
 {
 
 	char cbuf[32];
 	DWORD aamax = 0;
-	D3DCAPS9 caps;
+	VkDevCaps caps;
 
 	if (g_pD3DObject == NULL) {
-		LogErr("VideoTab::SelectAdapter(%u) Direct3DCreate9 Failed", SelectedAdapterIdx);
+		LogErr("VideoTab::SelectAdapter(%u) Vulkan instance creation failed", SelectedAdapterIdx);
 		return;
 	}
 
-	g_pD3DObject->GetDeviceCaps(SelectedAdapterIdx, D3DDEVTYPE_HAL, &caps);
+	std::vector<VkPhysicalDevice> adapter = Adapters();
+	if (SelectedAdapterIdx >= adapter.size()) { // not upstream: GetDeviceCaps failed on a bad index and left caps undefined
+		LogErr("Adapter Index out of range");
+		return;
+	}
 
-	if (g_pD3DObject->CheckDeviceMultiSampleType(SelectedAdapterIdx, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, true, D3DMULTISAMPLE_2_SAMPLES, NULL)==S_OK) aamax=2;
-	if (g_pD3DObject->CheckDeviceMultiSampleType(SelectedAdapterIdx, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, true, D3DMULTISAMPLE_4_SAMPLES, NULL)==S_OK) aamax=4;
-	if (g_pD3DObject->CheckDeviceMultiSampleType(SelectedAdapterIdx, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, true, D3DMULTISAMPLE_8_SAMPLES, NULL)==S_OK) aamax=8;
+	VkPhysicalDeviceProperties prop;
+	vkGetPhysicalDeviceProperties(adapter[SelectedAdapterIdx], &prop); // GetDeviceCaps
+	caps.MaxAnisotropy = DWORD(prop.limits.maxSamplerAnisotropy);
+
+	// CheckDeviceMultiSampleType: the sample counts colour and depth targets both support (as D3D9Frame)
+	VkSampleCountFlags sc = prop.limits.framebufferColorSampleCounts & prop.limits.framebufferDepthSampleCounts;
+	if (sc & VK_SAMPLE_COUNT_2_BIT) aamax=2;
+	if (sc & VK_SAMPLE_COUNT_4_BIT) aamax=4;
+	if (sc & VK_SAMPLE_COUNT_8_BIT) aamax=8;
 	
 	LogAlw("InitSetupDialog() Enum Device AA capability = %u",aamax);
 
 
 	// AA -----------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_AA, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_AA, CB_ADDSTRING, 0, (LPARAM)"None");
-	if (aamax>=2)  SendDlgItemMessageA(hWnd, IDC_AA, CB_ADDSTRING, 0, (LPARAM)"2x");
-	if (aamax>=4)  SendDlgItemMessageA(hWnd, IDC_AA, CB_ADDSTRING, 0, (LPARAM)"4x");
-	if (aamax>=8)  SendDlgItemMessageA(hWnd, IDC_AA, CB_ADDSTRING, 0, (LPARAM)"8x");
+	DlgItem<QComboBox>(hWnd, IDC_AA)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AA), "None");
+	if (aamax>=2)  oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AA), "2x");
+	if (aamax>=4)  oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AA), "4x");
+	if (aamax>=8)  oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AA), "8x");
 	
 
 	// AF -----------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_AF, CB_RESETCONTENT, 0, 0);
-	if (caps.MaxAnisotropy>=2) SendDlgItemMessageA(hWnd, IDC_AF, CB_ADDSTRING, 0, (LPARAM)"2x");
-	if (caps.MaxAnisotropy>=4) SendDlgItemMessageA(hWnd, IDC_AF, CB_ADDSTRING, 0, (LPARAM)"4x");
-	if (caps.MaxAnisotropy>=8) SendDlgItemMessageA(hWnd, IDC_AF, CB_ADDSTRING, 0, (LPARAM)"8x");
-	if (caps.MaxAnisotropy>=12) SendDlgItemMessageA(hWnd, IDC_AF, CB_ADDSTRING, 0, (LPARAM)"12x");
-	if (caps.MaxAnisotropy>=16) SendDlgItemMessageA(hWnd, IDC_AF, CB_ADDSTRING, 0, (LPARAM)"16x");
+	DlgItem<QComboBox>(hWnd, IDC_AF)->clear();
+	if (caps.MaxAnisotropy>=2) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AF), "2x");
+	if (caps.MaxAnisotropy>=4) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AF), "4x");
+	if (caps.MaxAnisotropy>=8) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AF), "8x");
+	if (caps.MaxAnisotropy>=12) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AF), "12x");
+	if (caps.MaxAnisotropy>=16) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_AF), "16x");
 	
 
 	// DEBUG --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_DEBUG, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_DEBUG, CB_ADDSTRING, 0, (LPARAM)"0");
-	SendDlgItemMessageA(hWnd, IDC_DEBUG, CB_ADDSTRING, 0, (LPARAM)"1");
-	SendDlgItemMessageA(hWnd, IDC_DEBUG, CB_ADDSTRING, 0, (LPARAM)"2");
-	SendDlgItemMessageA(hWnd, IDC_DEBUG, CB_ADDSTRING, 0, (LPARAM)"3");
-	SendDlgItemMessageA(hWnd, IDC_DEBUG, CB_ADDSTRING, 0, (LPARAM)"4");
+	DlgItem<QComboBox>(hWnd, IDC_DEBUG)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_DEBUG), "0");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_DEBUG), "1");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_DEBUG), "2");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_DEBUG), "3");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_DEBUG), "4");
 	
 	// SKETCHPAD --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_FONT, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_FONT, CB_ADDSTRING, 0, (LPARAM)"Crisp");
-	SendDlgItemMessageA(hWnd, IDC_FONT, CB_ADDSTRING, 0, (LPARAM)"Antialiased");
-	SendDlgItemMessageA(hWnd, IDC_FONT, CB_ADDSTRING, 0, (LPARAM)"Cleartype");
+	DlgItem<QComboBox>(hWnd, IDC_FONT)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_FONT), "Crisp");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_FONT), "Antialiased");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_FONT), "Cleartype");
 	
 	// ENVMAP MODE --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_ENVMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_ENVMODE, CB_ADDSTRING, 0, (LPARAM)"Disable (Debug)");
-	SendDlgItemMessageA(hWnd, IDC_ENVMODE, CB_ADDSTRING, 0, (LPARAM)"Planet Only");
-	SendDlgItemMessageA(hWnd, IDC_ENVMODE, CB_ADDSTRING, 0, (LPARAM)"Full Scene");
-	SendDlgItemMessage(hWnd, IDC_ENVMODE, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_ENVMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVMODE), "Disable (Debug)");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVMODE), "Planet Only");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVMODE), "Full Scene");
+	DlgItem<QComboBox>(hWnd, IDC_ENVMODE)->setCurrentIndex(0);
 
 	// CUSTOM CAMERA MODE --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_CAMMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_CAMMODE, CB_ADDSTRING, 0, (LPARAM)"Disable");
-	SendDlgItemMessageA(hWnd, IDC_CAMMODE, CB_ADDSTRING, 0, (LPARAM)"Enabled");
-	SendDlgItemMessage(hWnd, IDC_ENVMODE, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_CAMMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_CAMMODE), "Disable");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_CAMMODE), "Enabled");
+	DlgItem<QComboBox>(hWnd, IDC_ENVMODE)->setCurrentIndex(0);
 
 	// ENVMAP FACES --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_ENVFACES, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_ENVFACES, CB_ADDSTRING, 0, (LPARAM)"Light");
-	SendDlgItemMessageA(hWnd, IDC_ENVFACES, CB_ADDSTRING, 0, (LPARAM)"Medimum");
-	SendDlgItemMessageA(hWnd, IDC_ENVFACES, CB_ADDSTRING, 0, (LPARAM)"Heavy");
-	SendDlgItemMessage(hWnd, IDC_ENVFACES, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_ENVFACES)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVFACES), "Light");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVFACES), "Medimum");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ENVFACES), "Heavy");
+	DlgItem<QComboBox>(hWnd, IDC_ENVFACES)->setCurrentIndex(0);
 
 	// TEXTURE MIPMAP POLICY --------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_TEXMIPS, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_TEXMIPS, CB_ADDSTRING, 0, (LPARAM)"Load as defined");
-	SendDlgItemMessageA(hWnd, IDC_TEXMIPS, CB_ADDSTRING, 0, (LPARAM)"Autogen missing");
-	SendDlgItemMessageA(hWnd, IDC_TEXMIPS, CB_ADDSTRING, 0, (LPARAM)"Autogen all");
-	SendDlgItemMessage(hWnd, IDC_TEXMIPS, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_TEXMIPS)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TEXMIPS), "Load as defined");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TEXMIPS), "Autogen missing");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TEXMIPS), "Autogen all");
+	DlgItem<QComboBox>(hWnd, IDC_TEXMIPS)->setCurrentIndex(0);
 
 	// MICROTEX FILTER --------------------------------------------
 
-	SendDlgItemMessage(hWnd,  IDC_MICROFILTER, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Point (Fast/Good)");
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Linear (Fast/Bad)");
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Anisotropic 2x");
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Anisotropic 4x (Better)");
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Anisotropic 8x");
-	SendDlgItemMessageA(hWnd, IDC_MICROFILTER, CB_ADDSTRING, 0, (LPARAM)"Anisotropic 16x (Slow/Best)");
-	SendDlgItemMessage(hWnd,  IDC_MICROFILTER, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_MICROFILTER)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Point (Fast/Good)");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Linear (Fast/Bad)");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Anisotropic 2x");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Anisotropic 4x (Better)");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Anisotropic 8x");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROFILTER), "Anisotropic 16x (Slow/Best)");
+	DlgItem<QComboBox>(hWnd, IDC_MICROFILTER)->setCurrentIndex(0);
 	
 	// MICROTEX FILTER --------------------------------------------
 
-	SendDlgItemMessage(hWnd,  IDC_MICROMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_MICROMODE, CB_ADDSTRING, 0, (LPARAM)"Disabled");
-	SendDlgItemMessageA(hWnd, IDC_MICROMODE, CB_ADDSTRING, 0, (LPARAM)"Enabled");
-	SendDlgItemMessage(hWnd,  IDC_MICROMODE, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_MICROMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROMODE), "Disabled");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MICROMODE), "Enabled");
+	DlgItem<QComboBox>(hWnd, IDC_MICROMODE)->setCurrentIndex(0);
 
 
 	// MICROTEX BLEND MODE -----------------------------------------
 	
-	SendDlgItemMessage(hWnd,  IDC_BLENDMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_BLENDMODE, CB_ADDSTRING, 0, (LPARAM)"Soft light");
-	SendDlgItemMessageA(hWnd, IDC_BLENDMODE, CB_ADDSTRING, 0, (LPARAM)"Normal light");
-	SendDlgItemMessageA(hWnd, IDC_BLENDMODE, CB_ADDSTRING, 0, (LPARAM)"Hard light");
-	SendDlgItemMessage(hWnd,  IDC_BLENDMODE, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_BLENDMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_BLENDMODE), "Soft light");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_BLENDMODE), "Normal light");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_BLENDMODE), "Hard light");
+	DlgItem<QComboBox>(hWnd, IDC_BLENDMODE)->setCurrentIndex(0);
 
 	// TILE MIPMAP POLICY -----------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_MIPMAPS, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_MIPMAPS, CB_ADDSTRING, 0, (LPARAM)"Disabled");
-	SendDlgItemMessageA(hWnd, IDC_MIPMAPS, CB_ADDSTRING, 0, (LPARAM)"Enabled (slow2load)");
-	SendDlgItemMessage(hWnd, IDC_MIPMAPS, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_MIPMAPS)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MIPMAPS), "Disabled");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MIPMAPS), "Enabled (slow2load)");
+	DlgItem<QComboBox>(hWnd, IDC_MIPMAPS)->setCurrentIndex(0);
 
 	// ARCHIVE METHOD ------------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_ARCHIVE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_ARCHIVE, CB_ADDSTRING, 0, (LPARAM)"Cache only");
-	SendDlgItemMessageA(hWnd, IDC_ARCHIVE, CB_ADDSTRING, 0, (LPARAM)"Archive only");
-	SendDlgItemMessageA(hWnd, IDC_ARCHIVE, CB_ADDSTRING, 0, (LPARAM)"Cache & Archive");
-	SendDlgItemMessage(hWnd, IDC_ARCHIVE, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_ARCHIVE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ARCHIVE), "Cache only");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ARCHIVE), "Archive only");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_ARCHIVE), "Cache & Archive");
+	DlgItem<QComboBox>(hWnd, IDC_ARCHIVE)->setCurrentIndex(0);
 
 	// POSTPROCESSING METHOD ------------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_POSTPROCESS, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_POSTPROCESS, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hWnd, IDC_POSTPROCESS, CB_ADDSTRING, 0, (LPARAM)"Light glow");
-	SendDlgItemMessage(hWnd, IDC_POSTPROCESS, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS), "Light glow");
+	DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS)->setCurrentIndex(0);
 
 	// Local Lights -----------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_LIGHTCONFIG, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"4x Partial");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"4x Full");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"8x Partial");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"8x Full");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"12x Partial");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"12x Full");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"16x Partial");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"16x Full");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"20x Partial");
-	SendDlgItemMessageA(hWnd, IDC_LIGHTCONFIG, CB_ADDSTRING, 0, (LPARAM)"20x Full");
+	DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "4x Partial");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "4x Full");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "8x Partial");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "8x Full");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "12x Partial");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "12x Full");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "16x Partial");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "16x Full");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "20x Partial");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG), "20x Full");
 
 	// Shadows -----------------------------------------
 
-	SendDlgItemMessage(hWnd, IDC_SELFSHADOWS, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_SELFSHADOWS, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hWnd, IDC_SELFSHADOWS, CB_ADDSTRING, 0, (LPARAM)"Focus + payload");
-	SendDlgItemMessageA(hWnd, IDC_SELFSHADOWS, CB_ADDSTRING, 0, (LPARAM)"Near by objects");
-	SendDlgItemMessageA(hWnd, IDC_SELFSHADOWS, CB_ADDSTRING, 0, (LPARAM)"All visible objects");
+	DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS), "Focus + payload");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS), "Near by objects");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS), "All visible objects");
 
-	SendDlgItemMessage(hWnd, IDC_SHADOWFILTER, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_SHADOWFILTER, CB_ADDSTRING, 0, (LPARAM)"9 samples");
-	SendDlgItemMessageA(hWnd, IDC_SHADOWFILTER, CB_ADDSTRING, 0, (LPARAM)"27 samples");
-	SendDlgItemMessageA(hWnd, IDC_SHADOWFILTER, CB_ADDSTRING, 0, (LPARAM)"27s dither");
-	//SendDlgItemMessageA(hWnd, IDC_SHADOWFILTER, CB_ADDSTRING, 0, (LPARAM)"40 samples");
-	//SendDlgItemMessageA(hWnd, IDC_SHADOWFILTER, CB_ADDSTRING, 0, (LPARAM)"40s dither");
+	DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER), "9 samples");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER), "27 samples");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER), "27s dither");
+	//oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER), "40 samples");
+	//oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER), "40s dither");
 
-	SendDlgItemMessage(hWnd, IDC_TERRAIN, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_TERRAIN, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hWnd, IDC_TERRAIN, CB_ADDSTRING, 0, (LPARAM)"Stencil");
-	SendDlgItemMessageA(hWnd, IDC_TERRAIN, CB_ADDSTRING, 0, (LPARAM)"Projected");
+	DlgItem<QComboBox>(hWnd, IDC_TERRAIN)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TERRAIN), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TERRAIN), "Stencil");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TERRAIN), "Projected");
 
-	SendDlgItemMessage(hWnd, IDC_MESHRES, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_MESHRES, CB_ADDSTRING, 0, (LPARAM)"16");
-	SendDlgItemMessageA(hWnd, IDC_MESHRES, CB_ADDSTRING, 0, (LPARAM)"32");
+	DlgItem<QComboBox>(hWnd, IDC_MESHRES)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MESHRES), "16");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_MESHRES), "32");
 
-	SendDlgItemMessage(hWnd, IDC_TILECOUNT, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_TILECOUNT, CB_ADDSTRING, 0, (LPARAM)"600");
-	SendDlgItemMessageA(hWnd, IDC_TILECOUNT, CB_ADDSTRING, 0, (LPARAM)"1200");
-	SendDlgItemMessageA(hWnd, IDC_TILECOUNT, CB_ADDSTRING, 0, (LPARAM)"2400");
+	DlgItem<QComboBox>(hWnd, IDC_TILECOUNT)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TILECOUNT), "600");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TILECOUNT), "1200");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_TILECOUNT), "2400");
 
 	// gcGUI -----------------------------------------
 	if (Config->gcGUIMode == 1) Config->gcGUIMode = 0;
-	SendDlgItemMessage(hWnd, IDC_GUIMODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hWnd, IDC_GUIMODE, CB_ADDSTRING, 0, (LPARAM)"Disabled");
-	SendDlgItemMessageA(hWnd, IDC_GUIMODE, CB_ADDSTRING, 0, (LPARAM)"(unused)");
-	SendDlgItemMessageA(hWnd, IDC_GUIMODE, CB_ADDSTRING, 0, (LPARAM)"Windowed");
+	DlgItem<QComboBox>(hWnd, IDC_GUIMODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_GUIMODE), "Disabled");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_GUIMODE), "(unused)");
+	oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_GUIMODE), "Windowed");
 
 	// Earth AtmoConfig -------------------------------
-	SendDlgItemMessage(hWnd, IDC_EARTHVISCFG, CB_RESETCONTENT, 0, 0);
-	for (auto x : AtmoCfgs["Earth"]) SendDlgItemMessageA(hWnd, IDC_EARTHVISCFG, CB_ADDSTRING, 0, (LPARAM)x.cfg.c_str());
+	DlgItem<QComboBox>(hWnd, IDC_EARTHVISCFG)->clear();
+	for (auto x : AtmoCfgs["Earth"]) oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_EARTHVISCFG), x.cfg.c_str());
 	for (int i = 0; i < AtmoCfgs["Earth"].size(); i++) {
 		if (Config->AtmoCfg["Earth"] == AtmoCfgs["Earth"][i].file) {
-			SendDlgItemMessage(hWnd, IDC_EARTHVISCFG, CB_SETCURSEL, i, 0);
+			DlgItem<QComboBox>(hWnd, IDC_EARTHVISCFG)->setCurrentIndex(i);
 			break;
 		}
 	}
@@ -749,179 +835,179 @@ void VideoTab::InitSetupDialog(HWND hWnd)
 
 	// Write values in controls ----------------
 
-	bool bFS = (SendDlgItemMessage(hTab, IDC_VID_BPP, CB_GETCURSEL, 0, 0)==0 && SendDlgItemMessage(hTab, IDC_VID_FULL, BM_GETCHECK, 0, 0)==BST_CHECKED);
-	bool bGB = (SendDlgItemMessage (hTab, IDC_VID_STENCIL, BM_GETCHECK, 0, 0)==BST_CHECKED);
+	bool bFS = (DlgItem<QComboBox>(hTab, IDC_VID_BPP)->currentIndex()==0 && DlgItem<QAbstractButton>(hTab, IDC_VID_FULL)->isChecked());
+	bool bGB = (DlgItem<QAbstractButton>(hTab, IDC_VID_STENCIL)->isChecked());
 
 	if (bFS || bGB) {
 		Config->SceneAntialias = 0;
-		EnableWindow(GetDlgItem(hWnd, IDC_AA), false);
+		oapiResDlgItem(hWnd, IDC_AA)->setEnabled(false);
 	}
 	else {
-		EnableWindow(GetDlgItem(hWnd, IDC_AA), true);
+		oapiResDlgItem(hWnd, IDC_AA)->setEnabled(true);
 	}
 
 
-	SendDlgItemMessage(hWnd, IDC_CONVERGENCE, TBM_SETRANGEMAX, 1, 100);
-	SendDlgItemMessage(hWnd, IDC_CONVERGENCE, TBM_SETRANGEMIN, 1, 5);
-	SendDlgItemMessage(hWnd, IDC_CONVERGENCE, TBM_SETTICFREQ, 5, 0);
+	DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)->setMaximum(100);
+	DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)->setMinimum(5);
+	DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)->setTickInterval(5);
 	
-	SendDlgItemMessage(hWnd, IDC_SEPARATION, TBM_SETRANGEMAX,  1, 100);
-	SendDlgItemMessage(hWnd, IDC_SEPARATION, TBM_SETRANGEMIN,  1, 10);
-	SendDlgItemMessage(hWnd, IDC_SEPARATION, TBM_SETTICFREQ,  5, 0);
+	DlgItem<QSlider>(hWnd, IDC_SEPARATION)->setMaximum(100);
+	DlgItem<QSlider>(hWnd, IDC_SEPARATION)->setMinimum(10);
+	DlgItem<QSlider>(hWnd, IDC_SEPARATION)->setTickInterval(5);
 	
-	SendDlgItemMessage(hWnd, IDC_LODBIAS, TBM_SETRANGEMAX, 1, 10);
-	SendDlgItemMessage(hWnd, IDC_LODBIAS, TBM_SETRANGEMIN, 1, -10);
-	SendDlgItemMessage(hWnd, IDC_LODBIAS, TBM_SETTICFREQ, 1, 0);
+	DlgItem<QSlider>(hWnd, IDC_LODBIAS)->setMaximum(10);
+	DlgItem<QSlider>(hWnd, IDC_LODBIAS)->setMinimum(-10);
+	DlgItem<QSlider>(hWnd, IDC_LODBIAS)->setTickInterval(1);
 
-	SendDlgItemMessage(hWnd, IDC_MICROBIAS, TBM_SETRANGEMAX, 1, 10);
-	SendDlgItemMessage(hWnd, IDC_MICROBIAS, TBM_SETRANGEMIN, 1, 0);
-	SendDlgItemMessage(hWnd, IDC_MICROBIAS, TBM_SETTICFREQ, 1, 0);
+	DlgItem<QSlider>(hWnd, IDC_MICROBIAS)->setMaximum(10);
+	DlgItem<QSlider>(hWnd, IDC_MICROBIAS)->setMinimum(0);
+	DlgItem<QSlider>(hWnd, IDC_MICROBIAS)->setTickInterval(1);
 	
 
-	sprintf_s(cbuf,32,"%1.1fm",float(Config->Convergence));
-	SetWindowTextA(GetDlgItem(hWnd, IDC_CONV_DSP), cbuf);
+	snprintf(cbuf,32,"%1.1fm",float(Config->Convergence));
+	oapiSetDlgItemText(hWnd, IDC_CONV_DSP, cbuf);
 			
-	sprintf_s(cbuf,32,"%1.0f%%",float(Config->Separation));
-	SetWindowTextA(GetDlgItem(hWnd, IDC_SEPA_DSP), cbuf);
+	snprintf(cbuf,32,"%1.0f%%",float(Config->Separation));
+	oapiSetDlgItemText(hWnd, IDC_SEPA_DSP, cbuf);
 
-	SendDlgItemMessage(hWnd, IDC_CONVERGENCE, TBM_SETPOS, 1, int(Config->Convergence*100.0));
-	SendDlgItemMessage(hWnd, IDC_SEPARATION,  TBM_SETPOS, 1, int(Config->Separation));
-	SendDlgItemMessage(hWnd, IDC_LODBIAS,     TBM_SETPOS, 1, int(Config->LODBias*5.0));
-	SendDlgItemMessage(hWnd, IDC_MICROBIAS,   TBM_SETPOS, 1, int(Config->MicroBias));
+	DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)->setValue(int(Config->Convergence*100.0));
+	DlgItem<QSlider>(hWnd, IDC_SEPARATION)->setValue(int(Config->Separation));
+	DlgItem<QSlider>(hWnd, IDC_LODBIAS)->setValue(int(Config->LODBias*5.0));
+	DlgItem<QSlider>(hWnd, IDC_MICROBIAS)->setValue(int(Config->MicroBias));
 
-	SendDlgItemMessage(hWnd, IDC_TILECOUNT, CB_SETCURSEL, Config->MaxTiles, 0);
-	SendDlgItemMessage(hWnd, IDC_MESHRES, CB_SETCURSEL, Config->MeshRes, 0);
-	SendDlgItemMessage(hWnd, IDC_ARCHIVE, CB_SETCURSEL, Config->PlanetTileLoadFlags-1, 0);
-	SendDlgItemMessage(hWnd, IDC_BLENDMODE, CB_SETCURSEL, Config->BlendMode, 0);
-	SendDlgItemMessage(hWnd, IDC_MICROMODE, CB_SETCURSEL, Config->MicroMode, 0);
-	SendDlgItemMessage(hWnd, IDC_MICROFILTER, CB_SETCURSEL, Config->MicroFilter, 0);
-	SendDlgItemMessage(hWnd, IDC_TEXMIPS, CB_SETCURSEL, Config->TextureMips, 0);
-	SendDlgItemMessage(hWnd, IDC_ENVMODE, CB_SETCURSEL, Config->EnvMapMode, 0);
-	SendDlgItemMessage(hWnd, IDC_CAMMODE, CB_SETCURSEL, Config->CustomCamMode, 0);
-	SendDlgItemMessage(hWnd, IDC_ENVFACES, CB_SETCURSEL, Config->EnvMapFaces-1, 0);
-	SendDlgItemMessage(hWnd, IDC_FONT, CB_SETCURSEL, Config->SketchpadFont, 0);
-	SendDlgItemMessage(hWnd, IDC_DEBUG, CB_SETCURSEL, Config->DebugLvl, 0);
-	SendDlgItemMessage(hWnd, IDC_MIPMAPS, CB_SETCURSEL, Config->TileMipmaps, 0);
-	SendDlgItemMessage(hWnd, IDC_POSTPROCESS, CB_SETCURSEL, Config->PostProcess, 0);
-	SendDlgItemMessage(hWnd, IDC_LIGHTCONFIG, CB_SETCURSEL, Config->LightConfig, 0);
-	SendDlgItemMessage(hWnd, IDC_SELFSHADOWS, CB_SETCURSEL, Config->ShadowMapMode, 0);
-	SendDlgItemMessage(hWnd, IDC_SHADOWFILTER, CB_SETCURSEL, Config->ShadowFilter, 0);
-	SendDlgItemMessage(hWnd, IDC_TERRAIN, CB_SETCURSEL, Config->TerrainShadowing, 0);
-	SendDlgItemMessage(hWnd, IDC_GUIMODE, CB_SETCURSEL, Config->gcGUIMode, 0);
+	DlgItem<QComboBox>(hWnd, IDC_TILECOUNT)->setCurrentIndex(Config->MaxTiles);
+	DlgItem<QComboBox>(hWnd, IDC_MESHRES)->setCurrentIndex(Config->MeshRes);
+	DlgItem<QComboBox>(hWnd, IDC_ARCHIVE)->setCurrentIndex(Config->PlanetTileLoadFlags-1);
+	DlgItem<QComboBox>(hWnd, IDC_BLENDMODE)->setCurrentIndex(Config->BlendMode);
+	DlgItem<QComboBox>(hWnd, IDC_MICROMODE)->setCurrentIndex(Config->MicroMode);
+	DlgItem<QComboBox>(hWnd, IDC_MICROFILTER)->setCurrentIndex(Config->MicroFilter);
+	DlgItem<QComboBox>(hWnd, IDC_TEXMIPS)->setCurrentIndex(Config->TextureMips);
+	DlgItem<QComboBox>(hWnd, IDC_ENVMODE)->setCurrentIndex(Config->EnvMapMode);
+	DlgItem<QComboBox>(hWnd, IDC_CAMMODE)->setCurrentIndex(Config->CustomCamMode);
+	DlgItem<QComboBox>(hWnd, IDC_ENVFACES)->setCurrentIndex(Config->EnvMapFaces-1);
+	DlgItem<QComboBox>(hWnd, IDC_FONT)->setCurrentIndex(Config->SketchpadFont);
+	DlgItem<QComboBox>(hWnd, IDC_DEBUG)->setCurrentIndex(Config->DebugLvl);
+	DlgItem<QComboBox>(hWnd, IDC_MIPMAPS)->setCurrentIndex(Config->TileMipmaps);
+	DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS)->setCurrentIndex(Config->PostProcess);
+	DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG)->setCurrentIndex(Config->LightConfig);
+	DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS)->setCurrentIndex(Config->ShadowMapMode);
+	DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER)->setCurrentIndex(Config->ShadowFilter);
+	DlgItem<QComboBox>(hWnd, IDC_TERRAIN)->setCurrentIndex(Config->TerrainShadowing);
+	DlgItem<QComboBox>(hWnd, IDC_GUIMODE)->setCurrentIndex(Config->gcGUIMode);
 
-	SendDlgItemMessage(hWnd, IDC_DEMAND, BM_SETCHECK, Config->PlanetPreloadMode==0, 0);
-	SendDlgItemMessage(hWnd, IDC_SRFPRELOAD, BM_SETCHECK, Config->PlanetPreloadMode==1, 0);
-	SendDlgItemMessage(hWnd, IDC_GLASSSHADE, BM_SETCHECK, Config->EnableGlass==1, 0);
-	SendDlgItemMessage(hWnd, IDC_MESH_DEBUGGER, BM_SETCHECK, Config->EnableMeshDbg==1, 0);
-	SendDlgItemMessage(hWnd, IDC_CLOUDMICRO, BM_SETCHECK, Config->CloudMicro == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_GDIOVERLAY, BM_SETCHECK, Config->GDIOverlay == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_ABSANIM, BM_SETCHECK, Config->bAbsAnims == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_CLOUDNORM, BM_SETCHECK, Config->bCloudNormals == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_FLATS, BM_SETCHECK, Config->bFlats == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_ESUNGLARE, BM_SETCHECK, Config->bGlares == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_ELIGHTSGLARE, BM_SETCHECK, Config->bLocalGlares == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_EIRRAD, BM_SETCHECK, Config->bIrradiance == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_ESCACHE, BM_SETCHECK, Config->ShaderCacheUse == 1, 0);
-	SendDlgItemMessage(hWnd, IDC_EAQUALITY, BM_SETCHECK, Config->bAtmoQuality == 1, 0);
+	DlgItem<QAbstractButton>(hWnd, IDC_DEMAND)->setChecked(Config->PlanetPreloadMode==0);
+	DlgItem<QAbstractButton>(hWnd, IDC_SRFPRELOAD)->setChecked(Config->PlanetPreloadMode==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_GLASSSHADE)->setChecked(Config->EnableGlass==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_MESH_DEBUGGER)->setChecked(Config->EnableMeshDbg==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_CLOUDMICRO)->setChecked(Config->CloudMicro == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_GDIOVERLAY)->setChecked(Config->GDIOverlay == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_ABSANIM)->setChecked(Config->bAbsAnims == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_CLOUDNORM)->setChecked(Config->bCloudNormals == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_FLATS)->setChecked(Config->bFlats == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_ESUNGLARE)->setChecked(Config->bGlares == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_ELIGHTSGLARE)->setChecked(Config->bLocalGlares == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_EIRRAD)->setChecked(Config->bIrradiance == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_ESCACHE)->setChecked(Config->ShaderCacheUse == 1);
+	DlgItem<QAbstractButton>(hWnd, IDC_EAQUALITY)->setChecked(Config->bAtmoQuality == 1);
 
 
-	SendDlgItemMessage(hWnd, IDC_NORMALMAPS, BM_SETCHECK, Config->UseNormalMap==1, 0);
-	SendDlgItemMessage(hWnd, IDC_BASEVIS,    BM_SETCHECK, Config->PreLBaseVis==1, 0);
-	SendDlgItemMessage(hWnd, IDC_NEARPLANE,  BM_SETCHECK, Config->NearClipPlane==1, 0);
-	SendDlgItemMessage(hWnd, IDC_BREAK,		 BM_SETCHECK, Config->DebugBreak == 1, 0);
+	DlgItem<QAbstractButton>(hWnd, IDC_NORMALMAPS)->setChecked(Config->UseNormalMap==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_BASEVIS)->setChecked(Config->PreLBaseVis==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_NEARPLANE)->setChecked(Config->NearClipPlane==1);
+	DlgItem<QAbstractButton>(hWnd, IDC_BREAK)->setChecked(Config->DebugBreak == 1);
 	
-	sprintf_s(cbuf,32,"%d", Config->PlanetLoadFrequency);
-	SetWindowText(GetDlgItem(hWnd, IDC_HZ), cbuf);
+	snprintf(cbuf,32,"%d", Config->PlanetLoadFrequency);
+	oapiSetDlgItemText(hWnd, IDC_HZ, cbuf);
 
-	sprintf_s(cbuf,32,"%3.3f", Config->PlanetGlow);
-	SetWindowText(GetDlgItem(hWnd, IDC_PLANETGLOW), cbuf);
+	snprintf(cbuf,32,"%3.3f", Config->PlanetGlow);
+	oapiSetDlgItemText(hWnd, IDC_PLANETGLOW, cbuf);
 
 	DWORD af = min(caps.MaxAnisotropy, DWORD(Config->Anisotrophy));
 
 	switch(af) {
-		case 2: SendDlgItemMessage(hWnd, IDC_AF, CB_SETCURSEL, 0, 0); break;
+		case 2: DlgItem<QComboBox>(hWnd, IDC_AF)->setCurrentIndex(0); break;
 		default:
-		case 4: SendDlgItemMessage(hWnd, IDC_AF, CB_SETCURSEL, 1, 0); break;
-		case 8: SendDlgItemMessage(hWnd, IDC_AF, CB_SETCURSEL, 2, 0); break;
-		case 12: SendDlgItemMessage(hWnd, IDC_AF, CB_SETCURSEL, 3, 0); break;
-		case 16: SendDlgItemMessage(hWnd, IDC_AF, CB_SETCURSEL, 4, 0); break;
+		case 4: DlgItem<QComboBox>(hWnd, IDC_AF)->setCurrentIndex(1); break;
+		case 8: DlgItem<QComboBox>(hWnd, IDC_AF)->setCurrentIndex(2); break;
+		case 12: DlgItem<QComboBox>(hWnd, IDC_AF)->setCurrentIndex(3); break;
+		case 16: DlgItem<QComboBox>(hWnd, IDC_AF)->setCurrentIndex(4); break;
 	}
 
 	DWORD aa = min(aamax, DWORD(Config->SceneAntialias));
 
 	switch(aa) {
-		case 0: SendDlgItemMessage(hWnd, IDC_AA, CB_SETCURSEL, 0, 0); break;
-		case 2: SendDlgItemMessage(hWnd, IDC_AA, CB_SETCURSEL, 1, 0); break;
+		case 0: DlgItem<QComboBox>(hWnd, IDC_AA)->setCurrentIndex(0); break;
+		case 2: DlgItem<QComboBox>(hWnd, IDC_AA)->setCurrentIndex(1); break;
 		default:
-		case 4: SendDlgItemMessage(hWnd, IDC_AA, CB_SETCURSEL, 2, 0); break;
-		case 8: SendDlgItemMessage(hWnd, IDC_AA, CB_SETCURSEL, 3, 0); break;
+		case 4: DlgItem<QComboBox>(hWnd, IDC_AA)->setCurrentIndex(2); break;
+		case 8: DlgItem<QComboBox>(hWnd, IDC_AA)->setCurrentIndex(3); break;
 	}
 }
 
 
 
 
-void VideoTab::SaveSetupState(HWND hWnd)
+void VideoTab::SaveSetupState(QWidget *hWnd)
 {
 	char cbuf[32];
 	// Combo boxes
-	Config->SketchpadFont = (int)SendDlgItemMessage (hWnd, IDC_FONT, CB_GETCURSEL, 0, 0);
-	Config->EnvMapMode	  = (int)SendDlgItemMessage (hWnd, IDC_ENVMODE, CB_GETCURSEL, 0, 0);
-	Config->CustomCamMode = (int)SendDlgItemMessage (hWnd, IDC_CAMMODE, CB_GETCURSEL, 0, 0);
-	Config->EnvMapFaces	  = (int)SendDlgItemMessage (hWnd, IDC_ENVFACES, CB_GETCURSEL, 0, 0) + 1;
-	Config->TextureMips	  = (int)SendDlgItemMessage (hWnd, IDC_TEXMIPS, CB_GETCURSEL, 0, 0);
-	Config->MicroMode	  = (int)SendDlgItemMessage (hWnd, IDC_MICROMODE, CB_GETCURSEL, 0, 0);
-	Config->MicroFilter	  = (int)SendDlgItemMessage (hWnd, IDC_MICROFILTER, CB_GETCURSEL, 0, 0);
-	Config->BlendMode	  = (int)SendDlgItemMessage (hWnd, IDC_BLENDMODE, CB_GETCURSEL, 0, 0);
-	Config->TileMipmaps   = (int)SendDlgItemMessage (hWnd, IDC_MIPMAPS, CB_GETCURSEL, 0, 0);
-	Config->PostProcess   = (int)SendDlgItemMessage (hWnd, IDC_POSTPROCESS, CB_GETCURSEL, 0, 0);
-	Config->PlanetTileLoadFlags = (int)SendDlgItemMessage (hWnd, IDC_ARCHIVE, CB_GETCURSEL, 0, 0) + 1;
-	Config->LightConfig   = (int)SendDlgItemMessage(hWnd, IDC_LIGHTCONFIG, CB_GETCURSEL, 0, 0);
-	Config->ShadowMapMode = (int)SendDlgItemMessage(hWnd, IDC_SELFSHADOWS, CB_GETCURSEL, 0, 0);
-	Config->ShadowFilter  = (int)SendDlgItemMessage(hWnd, IDC_SHADOWFILTER, CB_GETCURSEL, 0, 0);
-	Config->TerrainShadowing = (int)SendDlgItemMessage(hWnd, IDC_TERRAIN, CB_GETCURSEL, 0, 0);
-	Config->gcGUIMode	  = (int)SendDlgItemMessage(hWnd, IDC_GUIMODE, CB_GETCURSEL, 0, 0);
-	Config->MeshRes		  = int(SendDlgItemMessage(hWnd, IDC_MESHRES, CB_GETCURSEL, 0, 0));
-	Config->MaxTiles	  = int(SendDlgItemMessage(hWnd, IDC_TILECOUNT, CB_GETCURSEL, 0, 0));
+	Config->SketchpadFont = (int)DlgItem<QComboBox>(hWnd, IDC_FONT)->currentIndex();
+	Config->EnvMapMode	  = (int)DlgItem<QComboBox>(hWnd, IDC_ENVMODE)->currentIndex();
+	Config->CustomCamMode = (int)DlgItem<QComboBox>(hWnd, IDC_CAMMODE)->currentIndex();
+	Config->EnvMapFaces	  = (int)DlgItem<QComboBox>(hWnd, IDC_ENVFACES)->currentIndex() + 1;
+	Config->TextureMips	  = (int)DlgItem<QComboBox>(hWnd, IDC_TEXMIPS)->currentIndex();
+	Config->MicroMode	  = (int)DlgItem<QComboBox>(hWnd, IDC_MICROMODE)->currentIndex();
+	Config->MicroFilter	  = (int)DlgItem<QComboBox>(hWnd, IDC_MICROFILTER)->currentIndex();
+	Config->BlendMode	  = (int)DlgItem<QComboBox>(hWnd, IDC_BLENDMODE)->currentIndex();
+	Config->TileMipmaps   = (int)DlgItem<QComboBox>(hWnd, IDC_MIPMAPS)->currentIndex();
+	Config->PostProcess   = (int)DlgItem<QComboBox>(hWnd, IDC_POSTPROCESS)->currentIndex();
+	Config->PlanetTileLoadFlags = (int)DlgItem<QComboBox>(hWnd, IDC_ARCHIVE)->currentIndex() + 1;
+	Config->LightConfig   = (int)DlgItem<QComboBox>(hWnd, IDC_LIGHTCONFIG)->currentIndex();
+	Config->ShadowMapMode = (int)DlgItem<QComboBox>(hWnd, IDC_SELFSHADOWS)->currentIndex();
+	Config->ShadowFilter  = (int)DlgItem<QComboBox>(hWnd, IDC_SHADOWFILTER)->currentIndex();
+	Config->TerrainShadowing = (int)DlgItem<QComboBox>(hWnd, IDC_TERRAIN)->currentIndex();
+	Config->gcGUIMode	  = (int)DlgItem<QComboBox>(hWnd, IDC_GUIMODE)->currentIndex();
+	Config->MeshRes		  = int(DlgItem<QComboBox>(hWnd, IDC_MESHRES)->currentIndex());
+	Config->MaxTiles	  = int(DlgItem<QComboBox>(hWnd, IDC_TILECOUNT)->currentIndex());
 
 	if (Config->gcGUIMode == 1) Config->gcGUIMode = 0;
 
 	// Check boxes
-	Config->UseNormalMap  = (int)SendDlgItemMessage (hWnd, IDC_NORMALMAPS, BM_GETCHECK, 0, 0);
-	Config->PreLBaseVis   = (int)SendDlgItemMessage (hWnd, IDC_BASEVIS,    BM_GETCHECK, 0, 0);
-	Config->NearClipPlane = (int)SendDlgItemMessage (hWnd, IDC_NEARPLANE,  BM_GETCHECK, 0, 0);
-	Config->EnableGlass   = (int)SendDlgItemMessage (hWnd, IDC_GLASSSHADE,  BM_GETCHECK, 0, 0);
-	Config->EnableMeshDbg = (int)SendDlgItemMessage (hWnd, IDC_MESH_DEBUGGER,  BM_GETCHECK, 0, 0);
-	Config->CloudMicro    = (int)SendDlgItemMessage (hWnd, IDC_CLOUDMICRO, BM_GETCHECK, 0, 0);
-	Config->GDIOverlay	  = (int)SendDlgItemMessage (hWnd, IDC_GDIOVERLAY, BM_GETCHECK, 0, 0);
-	Config->bAbsAnims	  = (int)SendDlgItemMessage (hWnd, IDC_ABSANIM, BM_GETCHECK, 0, 0);
-	Config->bCloudNormals = (int)SendDlgItemMessage(hWnd, IDC_CLOUDNORM, BM_GETCHECK, 0, 0);
-	Config->bFlats		  = (int)SendDlgItemMessage(hWnd, IDC_FLATS, BM_GETCHECK, 0, 0);
-	Config->DebugBreak	  = (int)SendDlgItemMessage(hWnd, IDC_BREAK, BM_GETCHECK, 0, 0);
-	Config->bGlares		  = (int)SendDlgItemMessage(hWnd, IDC_ESUNGLARE, BM_GETCHECK, 0, 0);
-	Config->bLocalGlares  = (int)SendDlgItemMessage(hWnd, IDC_ELIGHTSGLARE, BM_GETCHECK, 0, 0);
-	Config->bIrradiance   = (int)SendDlgItemMessage(hWnd, IDC_EIRRAD, BM_GETCHECK, 0, 0);
-	Config->ShaderCacheUse= (int)SendDlgItemMessage(hWnd, IDC_ESCACHE, BM_GETCHECK, 0, 0);
-	Config->bAtmoQuality  = (int)SendDlgItemMessage(hWnd, IDC_EAQUALITY, BM_GETCHECK, 0, 0);
+	Config->UseNormalMap  = (int)DlgItem<QAbstractButton>(hWnd, IDC_NORMALMAPS)->isChecked();
+	Config->PreLBaseVis   = (int)DlgItem<QAbstractButton>(hWnd, IDC_BASEVIS)->isChecked();
+	Config->NearClipPlane = (int)DlgItem<QAbstractButton>(hWnd, IDC_NEARPLANE)->isChecked();
+	Config->EnableGlass   = (int)DlgItem<QAbstractButton>(hWnd, IDC_GLASSSHADE)->isChecked();
+	Config->EnableMeshDbg = (int)DlgItem<QAbstractButton>(hWnd, IDC_MESH_DEBUGGER)->isChecked();
+	Config->CloudMicro    = (int)DlgItem<QAbstractButton>(hWnd, IDC_CLOUDMICRO)->isChecked();
+	Config->GDIOverlay	  = (int)DlgItem<QAbstractButton>(hWnd, IDC_GDIOVERLAY)->isChecked();
+	Config->bAbsAnims	  = (int)DlgItem<QAbstractButton>(hWnd, IDC_ABSANIM)->isChecked();
+	Config->bCloudNormals = (int)DlgItem<QAbstractButton>(hWnd, IDC_CLOUDNORM)->isChecked();
+	Config->bFlats		  = (int)DlgItem<QAbstractButton>(hWnd, IDC_FLATS)->isChecked();
+	Config->DebugBreak	  = (int)DlgItem<QAbstractButton>(hWnd, IDC_BREAK)->isChecked();
+	Config->bGlares		  = (int)DlgItem<QAbstractButton>(hWnd, IDC_ESUNGLARE)->isChecked();
+	Config->bLocalGlares  = (int)DlgItem<QAbstractButton>(hWnd, IDC_ELIGHTSGLARE)->isChecked();
+	Config->bIrradiance   = (int)DlgItem<QAbstractButton>(hWnd, IDC_EIRRAD)->isChecked();
+	Config->ShaderCacheUse= (int)DlgItem<QAbstractButton>(hWnd, IDC_ESCACHE)->isChecked();
+	Config->bAtmoQuality  = (int)DlgItem<QAbstractButton>(hWnd, IDC_EAQUALITY)->isChecked();
 
 	// Sliders
-	Config->Convergence   = double(SendDlgItemMessage(hWnd, IDC_CONVERGENCE, TBM_GETPOS, 0, 0)) * 0.01;
-	Config->Separation	  = double(SendDlgItemMessage(hWnd, IDC_SEPARATION,  TBM_GETPOS, 0, 0));
-	Config->LODBias       = 0.2 * double(SendDlgItemMessage(hWnd, IDC_LODBIAS,  TBM_GETPOS, 0, 0));
-	Config->MicroBias     = int(SendDlgItemMessage(hWnd, IDC_MICROBIAS,  TBM_GETPOS, 0, 0));
+	Config->Convergence   = double(DlgItem<QSlider>(hWnd, IDC_CONVERGENCE)->value()) * 0.01;
+	Config->Separation	  = double(DlgItem<QSlider>(hWnd, IDC_SEPARATION)->value());
+	Config->LODBias       = 0.2 * double(DlgItem<QSlider>(hWnd, IDC_LODBIAS)->value());
+	Config->MicroBias     = int(DlgItem<QSlider>(hWnd, IDC_MICROBIAS)->value());
 
 	// Other things
-	GetWindowText(GetDlgItem(hWnd, IDC_HZ),  cbuf, 32);
+	oapiGetDlgItemText(hWnd, IDC_HZ, cbuf, 32);
 
 	Config->PlanetLoadFrequency = atoi(cbuf);
-	Config->PlanetPreloadMode = (int)SendDlgItemMessage (hWnd, IDC_SRFPRELOAD, BM_GETCHECK, 0, 0);
+	Config->PlanetPreloadMode = (int)DlgItem<QAbstractButton>(hWnd, IDC_SRFPRELOAD)->isChecked();
 
-	GetWindowText(GetDlgItem(hWnd, IDC_PLANETGLOW),  cbuf, 32);
+	oapiGetDlgItemText(hWnd, IDC_PLANETGLOW, cbuf, 32);
 	Config->PlanetGlow = atof(cbuf);
 
-	Config->DebugLvl = (int)SendDlgItemMessage (hWnd, IDC_DEBUG, CB_GETCURSEL, 0, 0);
+	Config->DebugLvl = (int)DlgItem<QComboBox>(hWnd, IDC_DEBUG)->currentIndex();
 
-	switch(SendDlgItemMessage (hWnd, IDC_AF, CB_GETCURSEL, 0, 0)) {
+	switch(DlgItem<QComboBox>(hWnd, IDC_AF)->currentIndex()) {
 		default:
 		case 0: Config->Anisotrophy = 2; break;
 		case 1: Config->Anisotrophy = 4; break;
@@ -930,7 +1016,7 @@ void VideoTab::SaveSetupState(HWND hWnd)
 		case 4: Config->Anisotrophy = 16; break;
 	}
 
-	switch(SendDlgItemMessage (hWnd, IDC_AA, CB_GETCURSEL, 0, 0)) {
+	switch(DlgItem<QComboBox>(hWnd, IDC_AA)->currentIndex()) {
 		default:
 		case 0: Config->SceneAntialias = 0; break;
 		case 1: Config->SceneAntialias = 2; break;
@@ -938,8 +1024,8 @@ void VideoTab::SaveSetupState(HWND hWnd)
 		case 3: Config->SceneAntialias = 8; break;
 	}
 
-	int EASel = (int)SendDlgItemMessage(hWnd, IDC_EARTHVISCFG, CB_GETCURSEL, 0, 0);
-	if (!AtmoCfgs["Earth"][EASel].file.empty()) Config->AtmoCfg["Earth"] = AtmoCfgs["Earth"][EASel].file;
+	int EASel = (int)DlgItem<QComboBox>(hWnd, IDC_EARTHVISCFG)->currentIndex();
+	if (EASel >= 0 && !AtmoCfgs["Earth"][EASel].file.empty()) Config->AtmoCfg["Earth"] = AtmoCfgs["Earth"][EASel].file; // EASel -1 (no selection) indexed out of range upstream
 	else Config->AtmoCfg["Earth"] = "Earth.atm.cfg";
 }
 
@@ -949,59 +1035,115 @@ void VideoTab::SaveSetupState(HWND hWnd)
 // Credist Dialog
 // ***************************************************************************************************
 
-INT_PTR CALLBACK VideoTab::CreditsDlgProcWrp(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void VideoTab::CreditsDlgProcWrp(QWidget *hWnd, void *context)
 {
 	static class VideoTab *VTab = NULL;
-	switch (uMsg) {
-		case WM_INITDIALOG: 
-			VTab = (class VideoTab *)lParam;
-			VTab->InitCreditsDialog(hWnd);
-			return true;
-		case WM_COMMAND:
-			if (VTab) VTab->CreditsDlgProc(hWnd, uMsg, wParam, lParam);
-	}
-	return false;
+	// WM_INITDIALOG
+	VTab = (class VideoTab *)context;
+	VTab->InitCreditsDialog(hWnd);
+	// WM_COMMAND
+	if (VTab) VTab->CreditsDlgProc(hWnd);
 }
 
 
 
-INT_PTR CALLBACK VideoTab::CreditsDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void VideoTab::CreditsDlgProc(QWidget *hWnd)
 {
-	switch (LOWORD(wParam)) {
+	oapiConnectDlgCommands(hWnd, [hWnd](int id, int code, QWidget *hCtrl) {
+	switch (id) {
 		case IDOK:
 		case IDCANCEL:
-			EndDialog (hWnd, 0);
+			qobject_cast<QDialog*>(hWnd)->done(0); // EndDialog
 			break;
 	}
-	return false;
+	});
 }
 
-void VideoTab::InitCreditsDialog(HWND hWnd)
+// not upstream: RTF reader for EM_SETTEXTEX (Qt has none): text, bold, underline, sizes, fields; fonts and colours left out
+static void SetRtfText(QTextEdit *te, const char *rtf)
 {
-	HANDLE hFile = CreateFile("Modules/D3D9Client/Credits.rtf", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL); 
+	struct State { bool b = false, ul = false, skip = false; int fs = 24, uc = 1; };
+	std::vector<State> st(1);
+	te->clear();
+	QTextCursor cur(te->document());
+	QString run;
+	int pending = 0; // characters \uN replaces
+	auto flush = [&]() {
+		if (run.isEmpty()) return;
+		QTextCharFormat f;
+		f.setFontWeight(st.back().b ? QFont::Bold : QFont::Normal);
+		f.setFontUnderline(st.back().ul);
+		f.setFontPointSize(st.back().fs * 0.5);
+		cur.insertText(run, f);
+		run.clear();
+	};
+	auto put = [&](QChar ch) {
+		if (st.back().skip) return;
+		if (pending > 0) { pending--; return; }
+		run += ch;
+	};
+	for (const char *p = rtf; *p; ) {
+		char c = *p++;
+		if (c == '{') { flush(); st.push_back(st.back()); continue; }
+		if (c == '}') { flush(); if (st.size() > 1) st.pop_back(); continue; }
+		if (c == '\r' || c == '\n') continue;
+		if (c != '\\') { put(QChar(uchar(c))); continue; }
+		c = *p;
+		if (c == '\'' && isxdigit((uchar)p[1]) && isxdigit((uchar)p[2])) {
+			char h[3] = { p[1], p[2], 0 };
+			put(QChar(uchar(strtol(h, NULL, 16))));
+			p += 3;
+			continue;
+		}
+		if (!isalpha((uchar)c)) { // control symbol
+			if (c == '*') st.back().skip = true; // ignorable destination
+			else if (c == '~') put(QChar(0xA0));
+			else if (c == '\\' || c == '{' || c == '}') put(QChar(c));
+			if (c) p++;
+			continue;
+		}
+		std::string word;
+		while (isalpha((uchar)*p)) word += *p++;
+		bool has = false, neg = (*p == '-');
+		int val = 0;
+		if (neg) p++;
+		while (isdigit((uchar)*p)) { has = true; val = val*10 + (*p++ - '0'); }
+		if (neg) val = -val;
+		if (*p == ' ') p++; // delimiter
+		State &s = st.back();
+		if (word == "par") { flush(); if (!s.skip) cur.insertBlock(); }
+		else if (word == "line") put(QChar::LineSeparator);
+		else if (word == "tab") put(QChar('\t'));
+		else if (word == "plain") { flush(); s.b = s.ul = false; s.fs = 24; }
+		else if (word == "b") { flush(); s.b = (!has || val != 0); }
+		else if (word == "ul") { flush(); s.ul = (!has || val != 0); }
+		else if (word == "ulnone") { flush(); s.ul = false; }
+		else if (word == "fs") { flush(); if (has) s.fs = val; }
+		else if (word == "uc") { if (has) s.uc = val; }
+		else if (word == "u") { put(QChar(char16_t(val))); pending = s.uc; }
+		else if (word == "fonttbl" || word == "colortbl" || word == "stylesheet" || word == "info" || word == "pict") s.skip = true;
+	}
+	flush();
+}
 
-	if (hFile==INVALID_HANDLE_VALUE) {
-		LogErr("Failed to open a file /Modules/D3D9Client/Credits.rtf");
+void VideoTab::InitCreditsDialog(QWidget *hWnd)
+{
+	QFile hFile(QString::fromStdString(oapiResolvePath("Modules/VulkanClient/Credits.rtf"))); // CreateFile
+
+	if (!hFile.open(QIODevice::ReadOnly)) {
+		LogErr("Failed to open a file /Modules/VulkanClient/Credits.rtf");
 		return;
 	}
 
-	DWORD size = GetFileSize(hFile, NULL);
-	char *credits = new char[size+1];
-	memset(credits,0,size+1);
-	DWORD bytes;
+	QByteArray credits = hFile.readAll(); // GetFileSize, ReadFile
 
-	if (ReadFile(hFile, credits, size, &bytes, NULL)) {
-		SETTEXTEX text;
-		text.flags = ST_DEFAULT;
-		text.codepage = CP_ACP;
-		SendDlgItemMessageA(hWnd, IDC_CREDITSTEXT, EM_SETTEXTEX, (WPARAM)&text, (LPARAM)credits);
+	if (hFile.error() == QFileDevice::NoError) {
+		// SETTEXTEX (ST_DEFAULT, CP_ACP): the control reads the RTF
+		SetRtfText(DlgItem<QTextEdit>(hWnd, IDC_CREDITSTEXT), credits.constData());
 	}
-	else LogErr("Failed to read a file \\Modules\\D3D9Client\\Credits.rtf Error=%u",GetLastError());
+	else LogErr("Failed to read a file /Modules/VulkanClient/Credits.rtf Error=%s",hFile.errorString().toUtf8().constData());
 
-	delete []credits;
-	credits = NULL;
-
-	CloseHandle(hFile);
+	// delete []credits, CloseHandle: QByteArray and QFile release themselves
 }
 
 bool VideoTab::GetConfigName(const char* file, string& cfg, string& planet)
@@ -1025,25 +1167,30 @@ void VideoTab::ScanAtmoCfgs()
 	_AtmoCfg cfg = { "Default", "Earth.atm.cfg"};
 	AtmoCfgs["Earth"].push_back(cfg);
 
-	WIN32_FIND_DATA FileInformation;
-	string name = string(OapiExtension::GetConfigDir()) + "GC\\*_atm.cfg";
-	HANDLE hFile = FindFirstFileA(name.c_str(), &FileInformation);
+	// FindFirstFile/FindNextFile of GC\*_atm.cfg: the resolved folder's names matching case-insensitively, in NTFS (sorted) order
+	std::error_code ec;
+	std::filesystem::path name = oapiResolvePath((string(OapiExtension::GetConfigDir()) + "GC").c_str());
+	std::vector<std::filesystem::directory_entry> FileInformation;
+	for (auto &e : std::filesystem::directory_iterator(name, ec)) {
+		string n = e.path().filename().string();
+		if (n.size() >= 8 && !strcasecmp(n.c_str() + n.size() - 8, "_atm.cfg")) FileInformation.push_back(e);
+	}
+	std::sort(FileInformation.begin(), FileInformation.end(), [](const auto &a, const auto &b) {
+		return strcasecmp(a.path().filename().c_str(), b.path().filename().c_str()) < 0;
+	});
 
-	if (hFile != INVALID_HANDLE_VALUE) {
-		do {
-			if (FileInformation.cFileName[0] != '.') {
-				if (!(FileInformation.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {		
+	for (auto &e : FileInformation) {
+			string cFileName = e.path().filename().string();
+			if (cFileName[0] != '.') {
+				if (!e.is_directory(ec)) {		
 					string cfgname, planet;
-					if (GetConfigName(FileInformation.cFileName, cfgname, planet)) {
-						_AtmoCfg cfg = { cfgname, FileInformation.cFileName };
+					if (GetConfigName(cFileName.c_str(), cfgname, planet)) {
+						_AtmoCfg cfg = { cfgname, cFileName };
 						AtmoCfgs[planet].push_back(cfg);
 					}
-					else oapiWriteLogV("File Not Found [%s]", FileInformation.cFileName);
+					else oapiWriteLogV("File Not Found [%s]", cFileName.c_str());
 				}
 			}
-		}
-		while (FindNextFileA(hFile, &FileInformation) == TRUE);
-		FindClose(hFile);
 	}
 }
 

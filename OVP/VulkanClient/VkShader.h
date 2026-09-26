@@ -97,6 +97,8 @@ public:
 	int SetMatrix (VkFxHandle h, const D3DXMATRIX *m);
 	int SetValue (VkFxHandle h, const void *data, UINT bytes);
 	int SetTexture (VkFxHandle h, VkTex *tex);
+	int GetSamplerState (VkFxHandle sampler, VkSamplerDesc *desc);       // the sampler's current state
+	int SetSamplerState (VkFxHandle sampler, const VkSamplerDesc *desc); // SetSamplerState on an effect sampler; NULL restores its sampler_state
 	int GetFloat (VkFxHandle h, float *f);
 	int GetMatrix (VkFxHandle h, D3DXMATRIX *m);
 
@@ -116,6 +118,7 @@ public:
 		int binding;
 		VkImageViewType view;
 		VkSamplerDesc desc;
+		VkSamplerDesc state;               // as declared in sampler_state
 	};
 
 private:

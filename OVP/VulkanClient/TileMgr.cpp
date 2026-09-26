@@ -13,7 +13,7 @@
 // LOD (level-of-detail) algorithm for surface patch resolution.
 // ==============================================================
 
-#include <ddraw.h>
+// ddraw.h left out: the DDSURFACEDESC2 file layout is declared below
 #include "TileMgr.h"
 #include "VPlanet.h"
 #include "D3D9Config.h"
@@ -21,6 +21,8 @@
 #include "D3D9Catalog.h"
 #include "D3D9Client.h"
 #include "OapiExtension.h"
+#include "VkTexFile.h"
+#include <chrono>
 
 using namespace oapi;
 
@@ -40,12 +42,36 @@ int tmissing = 0;
 
 // =======================================================================
 // Local prototypes
-void ReleaseTex(LPDIRECT3DTEXTURE9 pTex)
+void ReleaseTex(VkTex *pTex)
 {
-	pTex->Release();
+	delete pTex; // Release
 }
 
 int compare_idx (const void *el1, const void *el2);
+
+// ddraw.h left out: DDSURFACEDESC2 as laid out in a .dds file (the x64 ddraw.h struct is 12 bytes longer)
+#pragma pack(push, 1)
+struct DDSURFACEDESC2 {
+	DWORD dwSize, dwFlags, dwHeight, dwWidth;
+	DWORD dwLinearSize;                                 // union with lPitch
+	DWORD dwDepth, dwMipMapCount, dwAlphaBitDepth, dwReserved;
+	DWORD lpSurface;                                    // 32-bit in the file
+	DWORD ddckCKDestOverlay[2], ddckCKDestBlt[2], ddckCKSrcOverlay[2], ddckCKSrcBlt[2];
+	struct { DWORD dwSize, dwFlags, dwFourCC, dwRGBBitCount, dwRBitMask, dwGBitMask, dwBBitMask, dwRGBAlphaBitMask; } ddpfPixelFormat;
+	DWORD ddsCaps[4];
+	DWORD dwTextureStage;
+};
+#pragma pack(pop)
+#define DDSD_LINEARSIZE 0x00080000l
+#define MAKEFOURCC(a, b, c, d) ((DWORD)(BYTE)(a) | ((DWORD)(BYTE)(b) << 8) | ((DWORD)(BYTE)(c) << 16) | ((DWORD)(BYTE)(d) << 24))
+
+// not upstream: WaitForSingleObject(event, ms) on an auto-reset stop flag; true if it was set within ms
+static bool WaitForStop (std::atomic<bool> &stop, DWORD ms)
+{
+	auto t1 = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+	while (!stop && std::chrono::steady_clock::now() < t1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	return stop.exchange(false);
+}
 
 // =======================================================================
 
@@ -57,9 +83,9 @@ TileManager::TileManager (D3D9Client *gclient, const vPlanet *vplanet) : D3D9Eff
 	vp = vplanet;
 	obj = vp->Object();
 	char name[256];
-	oapiGetObjectName (obj, name, 256); int len = lstrlen(name) + 2;
+	oapiGetObjectName (obj, name, 256); int len = strlen(name) + 2;
 	objname = new char[len];
-	strcpy_s(objname, len, name);
+	snprintf(objname, len, "%s", name);
 	ntex = 0;
 	nhitex = 0;
 	nmask = 0;
@@ -117,10 +143,10 @@ bool TileManager::LoadPatchData ()
 	int i, idx, npatch;
 	nmask = 0;
 	char fname[128], path[MAX_PATH];
-	strcpy_s(fname, ARRAYSIZE(fname), objname);
-	strcat_s(fname, ARRAYSIZE(fname), "_lmask.bin");
+	snprintf(fname, std::size(fname), "%s", objname);
+	strncat(fname, "_lmask.bin", std::size(fname) - strlen(fname) - 1); // strcat_s
 
-	if (!(bGlobalSpecular || bGlobalLights) || !gc->TexturePath(fname, path) || fopen_s(&binf, path, "rb")) {
+	if (!(bGlobalSpecular || bGlobalLights) || !gc->TexturePath(fname, path) || !(binf = fopen(oapiResolvePath(path).c_str(), "rb"))) {
 
 		for (i = 0; i < patchidx[maxbaselvl]; i++)
 			tiledesc[i].flag = 1;
@@ -182,10 +208,10 @@ bool TileManager::LoadTileData ()
 		return false;
 
 	char fname[128], path[MAX_PATH];
-	strcpy_s (fname, ARRAYSIZE(fname), objname);
-	strcat_s (fname, ARRAYSIZE(fname), "_tile.bin");
+	snprintf (fname, std::size(fname), "%s", objname);
+	strncat (fname, "_tile.bin", std::size(fname) - strlen(fname) - 1); // strcat_s
 
-	if (!gc->TexturePath (fname, path) || fopen_s (&file, path, "rb")) {
+	if (!gc->TexturePath (fname, path) || !(file = fopen (oapiResolvePath(path).c_str(), "rb"))) {
 		LogWrn("Surface Tile TOC not found for %s", fname);
 		return false; // TOC file not found
 	}
@@ -268,10 +294,10 @@ bool TileManager::AddSubtileData (TILEDESC &td, TILEFILESPEC *tfs, DWORD idx, DW
 		if ((int)lvl <= maxlvl) {
 			td.subtile[sub] = tilebuf->AddTile();
 			td.subtile[sub]->flag = t.flags;
-			td.subtile[sub]->tex = (LPDIRECT3DTEXTURE9)t.sidx;
+			td.subtile[sub]->tex = (VkTex*)t.sidx;
 			if (bGlobalSpecular || bGlobalLights) {
 				if (t.midx != NOTILE) {
-					td.subtile[sub]->ltex = (LPDIRECT3DTEXTURE9)t.midx;
+					td.subtile[sub]->ltex = (VkTex*)t.midx;
 				}
 			} else {
 				td.subtile[sub]->flag = 1; // remove specular flag
@@ -298,11 +324,11 @@ void TileManager::LoadTextures (char *modstr)
 {
 	// pre-load level 1-8 textures
 	ntex = patchidx[maxbaselvl];
-	texbuf = new LPDIRECT3DTEXTURE9[ntex];
+	texbuf = new VkTex *[ntex];
 	char fname[256];
-	strcpy_s (fname, 256, objname);
-	if (modstr) strcat_s (fname, 256, modstr);
-	strcat_s (fname, 256, ".tex");
+	snprintf (fname, 256, "%s", objname);
+	if (modstr) strncat (fname, modstr, 256 - strlen(fname) - 1); // strcat_s
+	strncat (fname, ".tex", 256 - strlen(fname) - 1);
 
 	if (ntex = LoadPlanetTextures(fname, texbuf, 0, ntex)) {
 		while ((int)ntex < patchidx[maxbaselvl]) maxlvl = --maxbaselvl;
@@ -332,12 +358,12 @@ void TileManager::PreloadTileTextures (TILEDESC *tile8, DWORD ntex, DWORD nmask)
 
 	char fname[256];
 	DWORD i, j, nt = 0, nm = 0;
-	LPDIRECT3DTEXTURE9 *texbuf = NULL, *maskbuf = NULL;
+	VkTex **texbuf = NULL, **maskbuf = NULL;
 
 	if (ntex) {  // load surface textures
-		texbuf = new LPDIRECT3DTEXTURE9[ntex];
-		strcpy_s (fname, 256, objname);
-		strcat_s (fname, 256, "_tile.tex");
+		texbuf = new VkTex *[ntex];
+		snprintf (fname, 256, "%s", objname);
+		strncat (fname, "_tile.tex", 256 - strlen(fname) - 1); // strcat_s
 
 		gc->OutputLoadStatus(fname, 1);
 
@@ -345,9 +371,9 @@ void TileManager::PreloadTileTextures (TILEDESC *tile8, DWORD ntex, DWORD nmask)
 		LogAlw("Number of textures loaded = %u",nt);
 	}
 	if (nmask) { // load mask/light textures
-		maskbuf = new LPDIRECT3DTEXTURE9[nmask];
-		strcpy_s (fname, 256, objname);
-		strcat_s (fname, 256, "_tile_lmask.tex");
+		maskbuf = new VkTex *[nmask];
+		snprintf (fname, 256, "%s", objname);
+		strncat (fname, "_tile_lmask.tex", 256 - strlen(fname) - 1); // strcat_s
 
 		gc->OutputLoadStatus(fname, 1);
 
@@ -379,7 +405,7 @@ void TileManager::PreloadTileTextures (TILEDESC *tile8, DWORD ntex, DWORD nmask)
 
 // =======================================================================
 
-void TileManager::AddSubtileTextures (TILEDESC *td, LPDIRECT3DTEXTURE9 *tbuf, DWORD nt, LPDIRECT3DTEXTURE9 *mbuf, DWORD nm)
+void TileManager::AddSubtileTextures (TILEDESC *td, VkTex **tbuf, DWORD nt, VkTex **mbuf, DWORD nm)
 {
 	DWORD i;
 
@@ -426,12 +452,12 @@ void TileManager::LoadSpecularMasks ()
 		DWORD n;
 		char fname[256];
 
-		strcpy_s (fname, 256, objname);
-		strcat_s (fname, 256, "_lmask.tex");
+		snprintf (fname, 256, "%s", objname);
+		strncat (fname, "_lmask.tex", 256 - strlen(fname) - 1); // strcat_s
 
 		gc->OutputLoadStatus(fname, 1);
 
-		specbuf = new LPDIRECT3DTEXTURE9[nmask];
+		specbuf = new VkTex *[nmask];
 		if (n = LoadPlanetTextures(fname, specbuf, 0, nmask)) {
 			if (n < nmask) {
 				//LOGOUT1P("Transparency texture mask file too short: %s_lmask.tex", cbody->Name());
@@ -468,7 +494,7 @@ void TileManager::SetAmbientColor(D3DCOLOR c)
 
 // ==============================================================
 
-void TileManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, int level, double viewap, bool bfog)
+void TileManager::Render(VkDev *dev, D3DXMATRIX &wmat, double scale, int level, double viewap, bool bfog)
 {
 	VECTOR3 gpos;
 	D3DXMATRIX imat;
@@ -523,7 +549,7 @@ void TileManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, 
 
 	} else {
 
-		WaitForSingleObject (tilebuf->hQueueMutex, INFINITE); // make sure we can write to texture request queue
+		tilebuf->hQueueMutex.lock(); // make sure we can write to texture request queue
 		for (hemisp = idx = 0; hemisp < 2; hemisp++) {
 			if (hemisp) { // flip world transformation to southern hemisphere
 				D3DXMatrixMultiply(&RenderParam.wmat, &Rsouth, &RenderParam.wmat);
@@ -549,7 +575,7 @@ void TileManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, 
 
 			EndRenderTile();
 		}
-		ReleaseMutex (tilebuf->hQueueMutex);
+		tilebuf->hQueueMutex.unlock(); // ReleaseMutex
 	}
 
 	pcdir = RenderParam.cdir; // store camera direction
@@ -558,8 +584,8 @@ void TileManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, 
 // =======================================================================
 
 void TileManager::ProcessTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, TILEDESC *tile,
-	const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag,
-	const TEXCRDRANGE &bkp_range, LPDIRECT3DTEXTURE9 bkp_tex, LPDIRECT3DTEXTURE9 bkp_ltex, DWORD bkp_flag)
+	const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag,
+	const TEXCRDRANGE &bkp_range, VkTex *bkp_tex, VkTex *bkp_ltex, DWORD bkp_flag)
 {
 
 	// Check if patch is visible from camera position
@@ -773,7 +799,7 @@ void TileManager::GlobalInit (D3D9Client *gclient)
 {
 	LogAlw("TileManager::GlobalInit()...");
 
-	LPDIRECT3DDEVICE9 dev = gclient->GetDevice();
+	VkDev *dev = gclient->GetDevice();
 
 	bGlobalSpecular = *(bool*)gclient->GetConfigParam (CFGPRM_SURFACEREFLECT);
 	bGlobalRipple   = bGlobalSpecular && *(bool*)gclient->GetConfigParam (CFGPRM_SURFACERIPPLE);
@@ -840,10 +866,10 @@ void TileManager::GlobalInit (D3D9Client *gclient)
 	tilebuf = new TileBuffer (gclient);
 
 	// viewport size for clipping calculations
-	D3DVIEWPORT9 vp;
-	dev->GetViewport (&vp);
-	vpX0 = vp.X, vpX1 = vpX0 + vp.Width;
-	vpY0 = vp.Y, vpY1 = vpY0 + vp.Height;
+	DWORD vpW, vpH;
+	gclient->clbkGetViewportSize (&vpW, &vpH); // GetViewport: the full render viewport at this point
+	vpX0 = 0, vpX1 = vpX0 + vpW;
+	vpY0 = 0, vpY1 = vpY0 + vpH;
 
 	// rotation matrix for flipping patches onto southern hemisphere
 	D3DMAT_RotX (&Rsouth, PI);
@@ -941,12 +967,10 @@ TileBuffer::TileBuffer (const oapi::D3D9Client *gclient)
 	, last(0)
 	, bLoadMip(true)
 {
-	DWORD id;
-
 	// Initialize statics
 	nqueue = queue_in = queue_out = 0;
-	hQueueMutex = CreateMutex (0, FALSE, NULL);
-	hLoadThread = CreateThread (NULL, 2048, LoadTile_ThreadProc, this, 0, &id);
+	// CreateMutex left out: hQueueMutex is a static std::mutex
+	hLoadThread = std::thread (LoadTile_ThreadProc, this); // CreateThread (2048 byte stack size left out)
 }
 
 // =======================================================================
@@ -955,7 +979,7 @@ TileBuffer::~TileBuffer()
 {
 	LogAlw("=============== Deleting %u Tile Buffers =================",nbuf);
 
-	CloseHandle(hQueueMutex); hQueueMutex = NULL;
+	// CloseHandle(hQueueMutex) left out: std::mutex
 
 	TerminateLoadThread();
 
@@ -977,7 +1001,7 @@ TileBuffer::~TileBuffer()
 
 bool TileBuffer::ShutDown()
 {
-	if (hLoadThread) {
+	if (hLoadThread.joinable()) {
 		TerminateLoadThread();
 		return true;
 	}
@@ -995,14 +1019,12 @@ void TileBuffer::HoldThread(bool bHold)
 
 void TileBuffer::TerminateLoadThread()
 {
-	if (hLoadThread) {
+	if (hLoadThread.joinable()) {
 		// Signal thread to stop and wait for it to happen
-		SetEvent(hStopThread);
-		WaitForSingleObject(hLoadThread, INFINITE);
+		hStopThread = true; // SetEvent
+		hLoadThread.join(); // WaitForSingleObject, CloseHandle
 		// Clean up for next run
-		ResetEvent(hStopThread);
-		CloseHandle(hLoadThread);
-		hLoadThread = NULL;
+		hStopThread = false; // ResetEvent
 	}
 }
 
@@ -1106,7 +1128,7 @@ bool TileBuffer::LoadTileAsync (const char *name, TILEDESC *tile)
 
 // =======================================================================
 
-DWORD WINAPI TileBuffer::LoadTile_ThreadProc (void *data)
+DWORD TileBuffer::LoadTile_ThreadProc (void *data)
 {
 	static const LONG_PTR TILESIZE = 32896; // default texture size for old-style texture files
 	TileBuffer *tb = static_cast<TileBuffer*>(data);
@@ -1118,41 +1140,41 @@ DWORD WINAPI TileBuffer::LoadTile_ThreadProc (void *data)
 	LogAlw("TileBuffer::LoadTile thread started");
 
 	bool bFirstRun = true;
-	while (bFirstRun || WAIT_OBJECT_0 != WaitForSingleObject(hStopThread, idle))
+	while (bFirstRun || !WaitForStop(hStopThread, idle))
 	{
 		bFirstRun = false;
 
 		if (bHoldThread) continue;
 
-		WaitForSingleObject(hQueueMutex, INFINITE);
+		hQueueMutex.lock(); // WaitForSingleObject
 		if (load = (nqueue > 0)) {
 			memcpy (&qd, loadqueue+queue_out, sizeof(QUEUEDESC));
 		}
-		ReleaseMutex (hQueueMutex);
+		hQueueMutex.unlock(); // ReleaseMutex
 
 		if (load) {
 			char fname[MAX_PATH];
 			TILEDESC *td = qd.td;
-			LPDIRECT3DTEXTURE9 tex, mask = 0;
+			VkTex *tex, *mask = 0;
 			LONG_PTR tidx, midx;
 			LONG_PTR ofs;
 
 			if ((td->flag & 0x80) == 0)
-				MessageBeep (-1);
+				{} // MessageBeep(-1) left out: audible debug alert
 
 			tidx = (LONG_PTR)td->tex;
 			if (tidx == NOTILE)
 				tex = NULL; // "no texture" flag
 			else {
 				ofs = (td->flag & 0x40) ? tidx * TILESIZE : tidx;
-				strcpy_s (fname, 256, qd.name);
-				strcat_s (fname, 256, "_tile.tex");
+				snprintf (fname, 256, "%s", qd.name);
+				strncat (fname, "_tile.tex", 256 - strlen(fname) - 1); // strcat_s
 
-				HRESULT hr = ReadDDSSurface (device, fname, ofs, &tex, false);
+				int hr = ReadDDSSurface (device, fname, ofs, &tex, false);
 
-				if (hr != S_OK) {
+				if (hr != 0) {
 					tex = NULL;
-					LogErr("Failed to load a tile using ReadDDSSurface() offset=%u, name=%s, ErrorCode = %d",ofs,fname,hr);
+					LogErr("Failed to load a tile using ReadDDSSurface() offset=%ld, name=%s, ErrorCode = %d",(long)ofs,fname,hr);
 				}
 			}
 			// Load the specular mask and/or light texture
@@ -1162,19 +1184,19 @@ DWORD WINAPI TileBuffer::LoadTile_ThreadProc (void *data)
 					mask = NULL; // "no mask" flag
 				else {
 					ofs = (td->flag & 0x40) ? midx * TILESIZE : midx;
-					strcpy_s (fname, 256, qd.name);
-					strcat_s (fname, 256, "_tile_lmask.tex");
-					if (ReadDDSSurface (device, fname, ofs, &mask, false) != S_OK) mask = NULL;
+					snprintf (fname, 256, "%s", qd.name);
+					strncat (fname, "_tile_lmask.tex", 256 - strlen(fname) - 1); // strcat_s
+					if (ReadDDSSurface (device, fname, ofs, &mask, false) != 0) mask = NULL;
 				}
 			}
 			// apply loaded components
-			WaitForSingleObject (hQueueMutex, INFINITE);
+			hQueueMutex.lock(); // WaitForSingleObject
 			td->tex  = tex;
 			td->ltex = mask;
 			td->flag &= 0x3F; // mark as loaded
 			nqueue--;
 			queue_out = (queue_out+1) % MAXQUEUE;
-			ReleaseMutex (hQueueMutex);
+			hQueueMutex.unlock(); // ReleaseMutex
 		}
 	}
 
@@ -1183,7 +1205,7 @@ DWORD WINAPI TileBuffer::LoadTile_ThreadProc (void *data)
 }
 
 
-HRESULT TileBuffer::ReadDDSSurface (LPDIRECT3DDEVICE9 pDev, const char *fname, LONG_PTR ofs, LPDIRECT3DTEXTURE9* pTex, bool bManaged)
+int TileBuffer::ReadDDSSurface (VkDev *pDev, const char *fname, LONG_PTR ofs, VkTex** pTex, bool bManaged)
 {
 	_TRACE;
 	char cpath[256];
@@ -1193,9 +1215,9 @@ HRESULT TileBuffer::ReadDDSSurface (LPDIRECT3DDEVICE9 pDev, const char *fname, L
 
 	FILE *f = NULL;
 
-	sprintf_s(cpath,256,"%s%s", OapiExtension::GetHightexDir(), fname);
+	snprintf(cpath,256,"%s%s", OapiExtension::GetHightexDir(), fname);
 
-	if (fopen_s(&f, cpath, "rb")) return -3;
+	if (!(f = fopen(oapiResolvePath(cpath).c_str(), "rb"))) return -3;
 
 	fseek(f, (long)ofs, SEEK_SET);
 
@@ -1207,20 +1229,20 @@ HRESULT TileBuffer::ReadDDSSurface (LPDIRECT3DDEVICE9 pDev, const char *fname, L
 	// Read the surface description
 	fread(&ddsd, sizeof(DDSURFACEDESC2), 1, f);
 
-	D3DFORMAT Format;
+	VkFormat Format;
 
 	switch (ddsd.ddpfPixelFormat.dwFourCC) {
 
 		case MAKEFOURCC ('D','X','T','1'):
-			Format = D3DFMT_DXT1;
+			Format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
 			break;
 
 		case MAKEFOURCC ('D','X','T','3'):
-			Format = D3DFMT_DXT3;
+			Format = VK_FORMAT_BC2_UNORM_BLOCK;
 			break;
 
 		case MAKEFOURCC ('D','X','T','5'):
-			Format = D3DFMT_DXT5;
+			Format = VK_FORMAT_BC3_UNORM_BLOCK;
 			break;
 
 		default:
@@ -1232,40 +1254,42 @@ HRESULT TileBuffer::ReadDDSSurface (LPDIRECT3DDEVICE9 pDev, const char *fname, L
 
 	*pTex = NULL;
 
-	D3DLOCKED_RECT rect;
+	std::vector<BYTE> rect(VkLevelSize(Format, ddsd.dwWidth, ddsd.dwHeight)); // D3DLOCKED_RECT: the level in system memory
+	size_t nread = std::min((size_t)ddsd.dwLinearSize, rect.size()); // fread stays inside the level
 
 	if (bManaged) {
-		if (pDev->CreateTexture(ddsd.dwWidth, ddsd.dwHeight, 1, 0, Format, D3DPOOL_MANAGED, pTex, NULL)!=S_OK) {
+		*pTex = new VkTex(pDev, ddsd.dwWidth, ddsd.dwHeight, 1, Format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT); // D3DPOOL_MANAGED
+		if ((*pTex)->img == VK_NULL_HANDLE) {
+			SAFE_DELETE(*pTex);
 			LogErr("Surface Tile Allocation Failed. w=%u, h=%u", ddsd.dwWidth, ddsd.dwHeight);
 			return -10;
 		}
 		if ((*pTex)==NULL) return -8;
-		if ((*pTex)->LockRect(0, &rect, NULL, 0)==S_OK) {
+		{ // LockRect
 			if (ddsd.dwFlags & DDSD_LINEARSIZE) {
-				fread(rect.pBits, ddsd.dwLinearSize, 1, f);
-				(*pTex)->UnlockRect(0);
+				fread(rect.data(), nread, 1, f);
+				(*pTex)->Upload(0, 0, rect.data(), rect.size()); // UnlockRect
 				fclose(f);
-				return S_OK;
+				return 0;
 			}
 		}
 	}
 	else {
-		if (pDev->CreateTexture(ddsd.dwWidth, ddsd.dwHeight, 1, 0, Format, D3DPOOL_DEFAULT, pTex, NULL)!=S_OK) {
+		*pTex = new VkTex(pDev, ddsd.dwWidth, ddsd.dwHeight, 1, Format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT); // D3DPOOL_DEFAULT
+		if ((*pTex)->img == VK_NULL_HANDLE) {
+			SAFE_DELETE(*pTex);
 			LogErr("Surface Tile Allocation Failed. w=%u, h=%u", ddsd.dwWidth, ddsd.dwHeight);
 			return -9;
 		}
-		LPDIRECT3DTEXTURE9 pSys = NULL;
-		HR(pDev->CreateTexture(ddsd.dwWidth, ddsd.dwHeight, 1, 0, Format, D3DPOOL_SYSTEMMEM, &pSys, NULL));
+		// D3DPOOL_SYSTEMMEM texture: rect holds the level in system memory
 
-		if (pSys==NULL || (*pTex)==NULL) return -8;
-		if (pSys->LockRect(0, &rect, NULL, 0)==S_OK) {
+		if ((*pTex)==NULL) return -8;
+		{ // LockRect
 			if (ddsd.dwFlags & DDSD_LINEARSIZE) {
-				fread(rect.pBits, ddsd.dwLinearSize, 1, f);
-				pSys->UnlockRect(0);
-				HR(pDev->UpdateTexture(pSys,(*pTex)));
-				pSys->Release();
+				fread(rect.data(), nread, 1, f);
+				(*pTex)->Upload(0, 0, rect.data(), rect.size()); // UnlockRect, UpdateTexture
 				fclose(f);
-				return S_OK;
+				return 0;
 			}
 		}
 	}
@@ -1286,9 +1310,9 @@ bool TileBuffer::bHoldThread = false;
 int TileBuffer::nqueue = 0;
 int TileBuffer::queue_in = 0;
 int TileBuffer::queue_out = 0;
-HANDLE TileBuffer::hQueueMutex = NULL;
-HANDLE TileBuffer::hLoadThread = NULL;
-HANDLE TileBuffer::hStopThread(CreateEvent(NULL, FALSE, FALSE, NULL));
+std::mutex TileBuffer::hQueueMutex;
+std::thread TileBuffer::hLoadThread;
+std::atomic<bool> TileBuffer::hStopThread(false); // CreateEvent: auto-reset, not signalled
 struct TileBuffer::QUEUEDESC TileBuffer::loadqueue[MAXQUEUE] = {0};
 
 

@@ -12,7 +12,7 @@
 using std::min;
 using std::max;
 
-static const char* cfgfile = "D3D9Client.cfg";
+static const char* cfgfile = "Modules/VulkanClient/VulkanClient.cfg"; // D3D9Client.cfg in the root folder: the client's data folder holds it
 
 class D3D9Config *Config;				// configuration manager
 
@@ -112,8 +112,8 @@ void D3D9Config::Reset ()
 
 	AtmoCfg["Earth"] = "Earth.atm.cfg";
 
-	SolCfg = new char[64];   strcpy_s(SolCfg,64,"Sol");
-	DebugFont = new char[64];   strcpy_s(DebugFont,64,"Fixed");
+	SolCfg = new char[64];   snprintf(SolCfg,64,"%s","Sol");
+	DebugFont = new char[64];   snprintf(DebugFont,64,"%s","Fixed");
 }
 
 int D3D9Config::MaxLights()

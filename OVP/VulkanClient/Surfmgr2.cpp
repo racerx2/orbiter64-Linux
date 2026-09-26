@@ -22,6 +22,7 @@
 #include "DebugControls.h"
 #include "gcCore.h"
 #include "D3D9Surface.h"
+#include "VkTexFile.h"
 
 // =======================================================================
 extern void FilterElevationGraphics(OBJHANDLE hPlanet, int lvl, int ilat, int ilng, float *elev);
@@ -104,8 +105,8 @@ void SurfTile::PreLoad()
 	assert(tex == nullptr);
 	assert(ltex == nullptr);
 
-	LPDIRECT3DDEVICE9  pDev = mgr->Dev();
-	LPDIRECT3DTEXTURE9 pSysSrf = nullptr;
+	VkDev *pDev = mgr->Dev();
+	VkPixels *pSysSrf = nullptr; // D3DPOOL_SYSTEMMEM texture
 	
 	// Configure microtexture range for "Water texture" and "Cloud microtexture".
 	GetParentMicroTexRange(&microrange);
@@ -114,7 +115,7 @@ void SurfTile::PreLoad()
 	// Load surface texture
 
 	if (smgr->DoLoadIndividualFiles(0)) { // try loading from individual tile file
-		sprintf_s(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl + 4, ilat, ilng);
+		snprintf(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl + 4, ilat, ilng);
 		LoadTextureFile(path, &pSysSrf);
 	}
 	if (!pSysSrf && smgr->ZTreeManager(0)) { // try loading from compressed archive
@@ -133,7 +134,7 @@ void SurfTile::PreLoad()
 		}
 	}
 	
-	SAFE_RELEASE(pSysSrf);
+	SAFE_DELETE(pSysSrf); // Release
 
 
 	// Load mask texture
@@ -141,7 +142,7 @@ void SurfTile::PreLoad()
 	if (tex && (mgr->Cprm().bSpecular || mgr->Cprm().bLights))
 	{
 		if (smgr->DoLoadIndividualFiles(1)) { // try loading from individual tile file
-			sprintf_s(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl + 4, ilat, ilng);
+			snprintf(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl + 4, ilat, ilng);
 			LoadTextureFile(path, &pSysSrf);
 		}
 		if (!pSysSrf && smgr->ZTreeManager(1)) { // try loading from compressed archive
@@ -160,7 +161,7 @@ void SurfTile::PreLoad()
 			ltex = getSurfParent()->ltex;
 		}		
 		
-		SAFE_RELEASE(pSysSrf);
+		SAFE_DELETE(pSysSrf); // Release
 	}
 }
 
@@ -207,8 +208,8 @@ INT16 *SurfTile::ReadElevationFile (const char *name, int lvl, int ilat, int iln
 
 	// Elevation data
 	if (smgr->DoLoadIndividualFiles(2)) { // try loading from individual tile file
-		sprintf_s(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", mgr->DataRootDir().c_str(), lvl, ilat, ilng);
-		if (!fopen_s(&f, path, "rb")) {
+		snprintf(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", mgr->DataRootDir().c_str(), lvl, ilat, ilng);
+		if ((f = fopen(oapiResolvePath(path).c_str(), "rb"))) {
 			e = g_pMemgr_i->New(ndat);
 			elev = g_pMemgr_f->New(ndat);
 			// read the elevation file header
@@ -295,8 +296,8 @@ INT16 *SurfTile::ReadElevationFile (const char *name, int lvl, int ilat, int iln
 		bool do_rescale, do_shift;
 		ELEVFILEHEADER hdr;
 		if (smgr->DoLoadIndividualFiles(3)) { // try loading from individual tile file
-			sprintf_s (path, MAX_PATH, "%s\\Elev_mod\\%02d\\%06d\\%06d.elv", mgr->DataRootDir().c_str(), lvl, ilat, ilng);
-			if (!fopen_s(&f, path, "rb")) {
+			snprintf (path, MAX_PATH, "%s\\Elev_mod\\%02d\\%06d\\%06d.elv", mgr->DataRootDir().c_str(), lvl, ilat, ilng);
+			if ((f = fopen(oapiResolvePath(path).c_str(), "rb"))) {
 				fread (&hdr, sizeof(ELEVFILEHEADER), 1, f);
 				if (hdr.hdrsize != sizeof(ELEVFILEHEADER)) fseek (f, hdr.hdrsize, SEEK_SET);
 				LogClr("Teal", "NewElevMod[%s]: Lvl=%d, Scale=%g, Offset=%g", name, lvl - 4, hdr.scale, hdr.offset);
@@ -397,9 +398,9 @@ INT16 *SurfTile::ReadElevationFile (const char *name, int lvl, int ilat, int iln
 
 // -----------------------------------------------------------------------
 
-LPDIRECT3DTEXTURE9 SurfTile::SetOverlay(LPDIRECT3DTEXTURE9 pOverlay, bool bOwn)
+VkTex *SurfTile::SetOverlay(VkTex *pOverlay, bool bOwn)
 {
-	LPDIRECT3DTEXTURE9 pRet = NULL;
+	VkTex *pRet = NULL;
 	if (bOwn && ownoverlay && overlay) pRet = overlay;
 
 	overlay = pOverlay;
@@ -408,7 +409,7 @@ LPDIRECT3DTEXTURE9 SurfTile::SetOverlay(LPDIRECT3DTEXTURE9 pOverlay, bool bOwn)
 	for (int i = 0; i < 4; i++) {
 		auto x = node->Child(i);
 		if (x) if (x->Entry()) {
-			LPDIRECT3DTEXTURE9 pOld = x->Entry()->overlay;
+			VkTex *pOld = x->Entry()->overlay;
 			if (pOld == NULL || pOld == pRet) {
 				x->Entry()->GetParentOverlayRange(&overlayrange);
 				x->Entry()->SetOverlay(pOverlay, false);
@@ -420,7 +421,7 @@ LPDIRECT3DTEXTURE9 SurfTile::SetOverlay(LPDIRECT3DTEXTURE9 pOverlay, bool bOwn)
 
 // -----------------------------------------------------------------------
 
-bool SurfTile::DeleteOverlay(LPDIRECT3DTEXTURE9 pOverlay)
+bool SurfTile::DeleteOverlay(VkTex *pOverlay)
 {
 	bool bReturn = false;
 	if (pOverlay == NULL) pOverlay = overlay;
@@ -428,7 +429,7 @@ bool SurfTile::DeleteOverlay(LPDIRECT3DTEXTURE9 pOverlay)
 	if (overlay) {
 		if (pOverlay == overlay) {
 			if (ownoverlay) {
-				overlay->Release();
+				delete overlay; // Release
 				bReturn = true;
 			}
 			for (int i = 0; i < 4; i++) {
@@ -739,7 +740,7 @@ FVECTOR4 SurfTile::MicroTexRange(SurfTile *pT, int ml) const
 //
 void SurfTile::StepIn ()
 {
-	LPDIRECT3DDEVICE9 pDev = mgr->Dev();
+	VkDev *pDev = mgr->Dev();
 	const vPlanet *vPlanet = mgr->GetPlanet();
 
 	if (vPlanet != mgr->GetScene()->GetCameraProxyVisual()) return;
@@ -748,7 +749,7 @@ void SurfTile::StepIn ()
 	//
 	if (owntex && vPlanet->MicroCfg.bEnabled) {
 		double s = vPlanet->GetSize();
-		for (int i = 0; i < ARRAYSIZE(vPlanet->MicroCfg.Level); ++i) {
+		for (int i = 0; i < (int)std::size(vPlanet->MicroCfg.Level); ++i) {
 			double f = s / vPlanet->MicroCfg.Level[i].size;
 			MicroRep[i] = D3DXVECTOR2(fixinput(width*f, i), fixinput(height*f, i));
 		}
@@ -764,7 +765,7 @@ void SurfTile::Render ()
 
 	if (!mesh) return; // DEBUG : TEMPORARY
 
-	LPDIRECT3DDEVICE9 pDev = mgr->Dev();
+	VkDev *pDev = mgr->Dev();
 	vPlanet *vPlanet = mgr->GetPlanet();
 	const Scene *scene = mgr->GetScene();
 	const D3D9Client *pClient = mgr->GetClient();
@@ -833,7 +834,7 @@ void SurfTile::Render ()
 
 	if (render_shadows)
 	{
-		LPDIRECT3DTEXTURE9 pCloud = NULL, pCloud2 = NULL;
+		VkTex *pCloud = NULL, *pCloud2 = NULL;
 
 		const TileManager2<CloudTile> *cmgr = vPlanet->CloudMgr2();
 		int maxlvl = min(lvl,9);
@@ -1107,7 +1108,7 @@ void SurfTile::Render ()
 
 	pDev->SetStreamSource(0, mesh->pVB, 0, sizeof(VERTEX_2TEX));
 	pDev->SetIndices(mesh->pIB);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh->nv, 0, mesh->nf);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh->nf));
 	
 	// Render tile bounding box
 	//
@@ -1396,7 +1397,7 @@ void TileManager2<SurfTile>::Render (MATRIX4 &dwmat, bool use_zbuf, const vPlane
 
 	pShader->ClearTextures();
 	pShader->Setup(pPatchVertexDecl, bUseZ, 0);
-	pShader->GetDevice()->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	pShader->GetDevice()->SetCullMode(VK_CULL_MODE_BACK_BIT); // D3DCULL_CCW
 
 	ShaderParams* sp = vp->GetTerrainParams();
 	FlowControlPS* fc = vp->GetFlowControl();
@@ -1454,7 +1455,7 @@ void TileManager2<SurfTile>::Render (MATRIX4 &dwmat, bool use_zbuf, const vPlane
 
 	vp->InitEclipse(pShader);
 
-	if (Config->NoPlanetAA) pShader->GetDevice()->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, 0);
+	// D3DRS_MULTISAMPLEANTIALIAS off for Config->NoPlanetAA left out: Vulkan has no per-draw multisample switch
 
 	// ------------------------------------------------------------------
 	// TODO: render full sphere for levels < 4
@@ -1473,7 +1474,7 @@ void TileManager2<SurfTile>::Render (MATRIX4 &dwmat, bool use_zbuf, const vPlane
 
 	loader->ReleaseMutex();
 
-	if (Config->NoPlanetAA) pShader->GetDevice()->SetRenderState(D3DRS_MULTISAMPLEANTIALIAS, 1);
+	// D3DRS_MULTISAMPLEANTIALIAS back on: left out as above
 
 	// Backup the stats and clear counters
 	if (scene->GetRenderPass() == RENDERPASS_MAINSCENE) prevstat = elvstat;
@@ -1503,6 +1504,8 @@ void TileManager2<SurfTile>::RenderLabels(D3D9Pad *skp, oapi::Font **labelfont, 
 }
 
 // -----------------------------------------------------------------------
+
+template<> void TileManager2<SurfTile>::SetSubtreeLabels(QuadTreeNode<SurfTile> *node, bool activate); // g++: specialization declared before its use below
 
 template<>
 void TileManager2<SurfTile>::CreateLabels()
@@ -1570,8 +1573,8 @@ void TileManager2<SurfTile>::InitHasIndividualFiles()
 	if (cprm.tileLoadFlags & 0x0001) {
 		const char *name[] = { "Surf", "Mask", "Elev", "Elev_mod", "Label" };
 		char path[MAX_PATH], dummy[MAX_PATH];
-		for (int i = 0; i < ARRAYSIZE(name); ++i) {
-			sprintf_s(path, MAX_PATH, "%s\\%s", m_dataRootDir.c_str(), name[i]);
+		for (int i = 0; i < (int)std::size(name); ++i) {
+			snprintf(path, MAX_PATH, "%s\\%s", m_dataRootDir.c_str(), name[i]);
 			hasIndividualFiles[i] = FileExists(path);
 		}
 	}
@@ -1630,16 +1633,16 @@ template<>
 SURFHANDLE TileManager2<SurfTile>::SeekTileTexture(int iLng, int iLat, int level, int flags)
 {
 	bool bOk = false;
-	LPDIRECT3DTEXTURE9 pTex = NULL;
+	VkTex *pTex = NULL;
+	const VkImageUsageFlags SeekUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // D3DPOOL_DEFAULT texture for a SurfNative
 		
 	if (flags & gcTileFlags::TEXTURE)
 	{
 		if (flags & gcTileFlags::CACHE)
 		{
 			char path[MAX_PATH];
-			sprintf_s(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
-			bOk = (D3DXCreateTextureFromFileEx(Dev(), path, 0, 0, 0, 0, D3DFMT_FROM_FILE, D3DPOOL_DEFAULT,
-				D3DX_FILTER_NONE, D3DX_FILTER_BOX, 0, NULL, NULL, &pTex) == S_OK);
+			snprintf(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
+			bOk = ((pTex = VkCreateTextureFromFile(Dev(), oapiResolvePath(path).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, SeekUsage)) != NULL); // D3DXCreateTextureFromFileEx: full mip chain (D3DX_FILTER_BOX)
 		}
 
 		if (flags & gcTileFlags::TREE)
@@ -1649,8 +1652,9 @@ SURFHANDLE TileManager2<SurfTile>::SeekTileTexture(int iLng, int iLat, int level
 					BYTE *buf;
 					DWORD ndata = ZTreeManager(0)->ReadData(level + 4, iLat, iLng, &buf);
 					if (ndata) {
-						if (D3DXCreateTextureFromFileInMemoryEx(Dev(), buf, ndata, 0, 0, D3DX_FROM_FILE, 0,
-							D3DFMT_FROM_FILE, D3DPOOL_DEFAULT, D3DX_FILTER_NONE, D3DX_FILTER_BOX, 0, NULL, NULL, &pTex) == S_OK) bOk = true;
+						VkPixels px, cv; // D3DXCreateTextureFromFileInMemoryEx: mips and format from file
+						if (VkLoadPixelsFromMemory(buf, ndata, px) && VkConvertPixels(px, cv, VK_FORMAT_UNDEFINED, SWZ_NONE, 0, 0, VKTEX_FROM_FILE) &&
+							(pTex = VkCreateTexture(Dev(), cv, SeekUsage))) bOk = true;
 						ZTreeManager(0)->ReleaseData(buf);
 					}
 				}
@@ -1663,9 +1667,8 @@ SURFHANDLE TileManager2<SurfTile>::SeekTileTexture(int iLng, int iLat, int level
 		if (flags & gcTileFlags::CACHE)
 		{
 			char path[MAX_PATH];
-			sprintf_s(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
-			bOk = (D3DXCreateTextureFromFileEx(Dev(), path, 0, 0, 0, 0, D3DFMT_FROM_FILE, D3DPOOL_DEFAULT,
-				D3DX_FILTER_NONE, D3DX_FILTER_BOX, 0, NULL, NULL, &pTex) == S_OK);
+			snprintf(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
+			bOk = ((pTex = VkCreateTextureFromFile(Dev(), oapiResolvePath(path).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, SeekUsage)) != NULL); // D3DXCreateTextureFromFileEx: full mip chain (D3DX_FILTER_BOX)
 		}
 
 		if (flags & gcTileFlags::TREE)
@@ -1675,8 +1678,9 @@ SURFHANDLE TileManager2<SurfTile>::SeekTileTexture(int iLng, int iLat, int level
 					BYTE* buf;
 					DWORD ndata = ZTreeManager(1)->ReadData(level + 4, iLat, iLng, &buf);
 					if (ndata) {
-						if (D3DXCreateTextureFromFileInMemoryEx(Dev(), buf, ndata, 0, 0, D3DX_FROM_FILE, 0,
-							D3DFMT_FROM_FILE, D3DPOOL_DEFAULT, D3DX_FILTER_NONE, D3DX_FILTER_BOX, 0, NULL, NULL, &pTex) == S_OK) bOk = true;
+						VkPixels px, cv; // D3DXCreateTextureFromFileInMemoryEx: mips and format from file
+						if (VkLoadPixelsFromMemory(buf, ndata, px) && VkConvertPixels(px, cv, VK_FORMAT_UNDEFINED, SWZ_NONE, 0, 0, VKTEX_FROM_FILE) &&
+							(pTex = VkCreateTexture(Dev(), cv, SeekUsage))) bOk = true;
 						ZTreeManager(1)->ReleaseData(buf);
 					}
 				}
@@ -1698,7 +1702,7 @@ bool TileManager2<SurfTile>::HasTileData(int iLng, int iLat, int level, int flag
 	if (flags & gcTileFlags::TEXTURE) {
 		if (flags & gcTileFlags::CACHE) {
 			char path[MAX_PATH];
-			sprintf_s(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
+			snprintf(path, MAX_PATH, "%s\\Surf\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
 			bOk = FileExists(path);
 
 		}
@@ -1708,7 +1712,7 @@ bool TileManager2<SurfTile>::HasTileData(int iLng, int iLat, int level, int flag
 	if (flags & gcTileFlags::MASK) {
 		if (flags & gcTileFlags::CACHE) {
 			char path[MAX_PATH];
-			sprintf_s(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
+			snprintf(path, MAX_PATH, "%s\\Mask\\%02d\\%06d\\%06d.dds", m_dataRootDir.c_str(), level + 4, iLat, iLng);
 			bOk = FileExists(path);
 		}
 		if (flags & gcTileFlags::TREE) if (!bOk && ZTreeManager(1)) if (ZTreeManager(1)->Idx(level + 4, iLat, iLng) != ((DWORD)-1)) bOk = true;
@@ -1717,7 +1721,7 @@ bool TileManager2<SurfTile>::HasTileData(int iLng, int iLat, int level, int flag
 	if (flags & gcTileFlags::ELEVATION) {
 		if (flags & gcTileFlags::CACHE) {
 			char path[MAX_PATH];
-			sprintf_s(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", m_dataRootDir.c_str(), level + 4, iLat, iLng);
+			snprintf(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", m_dataRootDir.c_str(), level + 4, iLat, iLng);
 			bOk = FileExists(path);
 		}
 		if (flags & gcTileFlags::TREE) if (!bOk && ZTreeManager(2)) if (ZTreeManager(2)->Idx(level + 4, iLat, iLng) != ((DWORD)-1)) bOk = true;
@@ -1741,8 +1745,8 @@ float* TileManager2<SurfTile>::BrowseElevationData(int lvl, int ilat, int ilng, 
 
 	// Elevation data
 	if (flags & gcTileFlags::CACHE) { // try loading from individual tile file
-		sprintf_s(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", m_dataRootDir.c_str(), lvl + 4, ilat, ilng);
-		if (!fopen_s(&f, path, "rb")) {
+		snprintf(path, MAX_PATH, "%s\\Elev\\%02d\\%06d\\%06d.elv", m_dataRootDir.c_str(), lvl + 4, ilat, ilng);
+		if ((f = fopen(oapiResolvePath(path).c_str(), "rb"))) {
 			elev = new float[ndat];
 			fread(&ehdr, sizeof(ELEVFILEHEADER), 1, f);
 			if (ehdr.hdrsize != sizeof(ELEVFILEHEADER)) fseek(f, ehdr.hdrsize, SEEK_SET);
@@ -1803,9 +1807,9 @@ float* TileManager2<SurfTile>::BrowseElevationData(int lvl, int ilat, int ilng, 
 		bool ok = false;
 		ELEVFILEHEADER hdr;
 		if (flags & gcTileFlags::CACHE) { // try loading from individual tile file
-			sprintf_s(fname, ARRAYSIZE(fname), "%s\\Elev_mod\\%02d\\%06d\\%06d.elv", CbodyName(), lvl + 4, ilat, ilng);
+			snprintf(fname, std::size(fname), "%s\\Elev_mod\\%02d\\%06d\\%06d.elv", CbodyName(), lvl + 4, ilat, ilng);
 			bool found = GetClient()->TexturePath(fname, path);
-			if (found && !fopen_s(&f, path, "rb")) {
+			if (found && (f = fopen(oapiResolvePath(path).c_str(), "rb"))) {
 
 				fread(&hdr, sizeof(ELEVFILEHEADER), 1, f);
 				if (hdr.hdrsize != sizeof(ELEVFILEHEADER)) fseek(f, hdr.hdrsize, SEEK_SET);

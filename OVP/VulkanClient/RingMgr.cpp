@@ -13,10 +13,11 @@
 #define D3D_OVERLOADS
 #include "RingMgr.h"
 #include "D3D9Catalog.h"
+#include "VkTexFile.h"
 
 using namespace oapi;
 
-void ReleaseTex(LPDIRECT3DTEXTURE9 pTex);
+void ReleaseTex(VkTex *pTex);
 
 
 
@@ -41,7 +42,7 @@ RingManager::~RingManager ()
 	DWORD i;
 	for (i = 0; i < 3; i++)	if (mesh[i]) delete mesh[i];
 	for (i = 0; i < ntex; i++) ReleaseTex(tex[i]);
-	if (pTex) pTex->Release();
+	if (pTex) delete pTex;
 }
 
 void RingManager::GlobalInit(D3D9Client *gclient)
@@ -67,28 +68,28 @@ DWORD RingManager::LoadTextures ()
 	char path[MAX_PATH] = { '\0' };
 
 
-	oapiGetObjectName (vp->Object(), fname, ARRAYSIZE(fname));
+	oapiGetObjectName (vp->Object(), fname, std::size(fname));
 
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
+	VkDev *pDev = gc->GetDevice();
 
-	const D3DCAPS9 *caps = gc->GetHardwareCaps();
+	const VkDevCaps *caps = gc->GetHardwareCaps();
 
 	int size = max(min((int)caps->MaxTextureWidth, 8192), 2048);
 
-	sprintf_s(temp, ARRAYSIZE(temp), "%s_ring_%d.dds", fname, size);
+	snprintf(temp, std::size(temp), "%s_ring_%d.dds", fname, size);
 	if (gc->TexturePath(temp, path) &&
-	    D3DXCreateTextureFromFileExA(pDev, path, 0, 0, D3DFMT_FROM_FILE, 0, D3DFMT_FROM_FILE, D3DPOOL_DEFAULT, D3DX_DEFAULT, D3DX_DEFAULT, 0, NULL, NULL, &pTex) == S_OK)
+	    (pTex = VkCreateTextureFromFile(pDev, path, 0, 0, VKTEX_FROM_FILE, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT))) // D3DXCreateTextureFromFileExA: size, mips and format from file
 	{
 		LogAlw("High resolution ring texture loaded [%s]", path);
 	}
 	
 	// Fallback for old method
-	strcat_s(fname, ARRAYSIZE(fname), "_ring.tex");
+	strncat(fname, "_ring.tex", std::size(fname) - strlen(fname) - 1);
 	
 	return LoadPlanetTextures(fname, tex, 0, MAXRINGRES);
 }
 
-bool RingManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &mWorld, bool front)
+bool RingManager::Render(VkDev *dev, D3DXMATRIX &mWorld, bool front)
 {
 	MATRIX3 grot;
 	static D3DXMATRIX imat;
@@ -189,8 +190,8 @@ D3D9Mesh *RingManager::CreateRing(double irad, double orad, int nsect)
 
 	D3D9Mesh *msh = new D3D9Mesh(grp, &mat, NULL);
 
-	delete grp->Idx;
-	delete grp->Vtx;
+	delete[] grp->Idx; // upstream: delete (allocated with new[])
+	delete[] grp->Vtx;
 	delete grp;
 	return msh;
 }

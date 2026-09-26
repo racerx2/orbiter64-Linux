@@ -25,8 +25,8 @@ CloudManager::CloudManager(D3D9Client *gclient, const vPlanet *vplanet)
 {
 	size_t len = strlen(objname)+7;
 	char *texname = new char[len];
-	strcpy_s(texname, len, objname);
-	strcat_s(texname, len, "_cloud");
+	snprintf(texname, len, "%s", objname);
+	strncat(texname, "_cloud", len - strlen(texname) - 1); // strcat_s
 	delete []objname;
 	objname = texname;
 
@@ -57,7 +57,7 @@ void CloudManager::LoadData()
 
 // =======================================================================
 
-void CloudManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, int level, double viewap)
+void CloudManager::Render(VkDev *dev, D3DXMATRIX &wmat, double scale, int level, double viewap)
 {
 	LoadData();
 	if (bNoTextures) return;
@@ -86,7 +86,7 @@ void CloudManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale,
 }
 
 
-void CloudManager::RenderShadow(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, int level, double viewap, float shadowalpha)
+void CloudManager::RenderShadow(VkDev *dev, D3DXMATRIX &wmat, double scale, int level, double viewap, float shadowalpha)
 {
 	LoadData();
 	if (bNoTextures) return;
@@ -123,12 +123,12 @@ void CloudManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXMAT
 	if (bNoTextures) return;
 
 	// render complete sphere (used at low LOD levels)
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
-	pDev->SetVertexDeclaration(pPatchVertexDecl);
+	VkDev *pDev = gc->GetDevice();
+	pDev->SetVertexDecl(pPatchVertexDecl);
 
 	HR(FX->SetMatrix(eW, mWrld));
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	for (int idx = 0; idx < npatch; idx++) {
@@ -138,7 +138,7 @@ void CloudManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXMAT
 
 		pDev->SetStreamSource(0, mesh.pVB, 0, sizeof(VERTEX_2TEX));
 		pDev->SetIndices(mesh.pIB);
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh.nv, 0, mesh.nf);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh.nf));
 	}
 
 	HR(FX->EndPass());
@@ -148,12 +148,12 @@ void CloudManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXMAT
 
 void CloudManager::InitRenderTile()
 {
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
-	pDev->SetVertexDeclaration(pPatchVertexDecl);
+	VkDev *pDev = gc->GetDevice();
+	pDev->SetVertexDecl(pPatchVertexDecl);
 
 	HR(FX->SetFloat(eTime, float(fmod(oapiGetSimTime(),60.0))));
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 }
 
@@ -167,7 +167,7 @@ void CloudManager::EndRenderTile()
 // =======================================================================
 
 void CloudManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, double sdist,
-	TILEDESC *tile, const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag)
+	TILEDESC *tile, const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag)
 {
 	VBMESH &mesh = PATCH_TPL[lvl][ilat]; // patch template
 
@@ -186,6 +186,6 @@ void CloudManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int ilng
 	
 	pDev->SetStreamSource(0, mesh.pVB, 0, sizeof(VERTEX_2TEX));
 	pDev->SetIndices(mesh.pIB);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh.nv, 0, mesh.nf);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh.nf));
 }
 

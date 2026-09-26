@@ -10,13 +10,24 @@
 #include "D3D9Config.h"
 #include "D3D9Surface.h"
 #include "DebugControls.h"
-#include "Commctrl.h"
+// Commctrl.h left out: trackbars and tooltips are Qt widgets
 #include "VObject.h"
 #include "VVessel.h"
 #include "VPlanet.h"
 #include "Mesh.h"
 #include "MaterialMgr.h"
 #include "VectorHelpers.h"
+#include "OrbiterResource.h"
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QFileDialog>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <functional>
+#include <stdarg.h>
 #include <stdio.h>
 #include <imgui.h>
 #include <imgui_extras.h>
@@ -27,7 +38,7 @@ using namespace oapi;
 using std::min;
 using std::max;
 
-extern HINSTANCE g_hInst;
+extern void *g_hInst;
 extern D3D9Client *g_client;
 
 // Little binary helper
@@ -43,8 +54,8 @@ double resbias = 4.0;
 char visual[64];
 int  origwidth;
 GFXDialog *gfxDlg;
-HWND hDlg = NULL;
-HWND hDataWnd = NULL;
+QWidget *hDlg = NULL;
+QWidget *hDataWnd = NULL;
 vObject *vObj = NULL;
 std::string buffer("");
 std::string buffer2("");
@@ -52,15 +63,43 @@ D3DXVECTOR3 PickLocation;
 
 std::map<int, const LightEmitter*> Emitters;
 
-HWND hTipRed, hTipGrn, hTipBlu, hTipAlp;
+QWidget *hTipRed, *hTipGrn, *hTipBlu, *hTipAlp;
 
-OPENFILENAMEA OpenTex, SaveTex;
+// OPENFILENAMEA OpenTex, SaveTex left out: QFileDialog takes the folder, filter and flags where the dialogs open
 char OpenFileName[255];
 char SaveFileName[255];
 
 void UpdateMaterialDisplay(bool bSetup=false);
 
+// not upstream: upstream's 298 px narrow window in this font: the left column, IDC_DBG_MATGRP's right edge plus its left margin
+int NarrowWidth()
+{
+	QWidget *grp = oapiResDlgItem(hDlg, IDC_DBG_MATGRP);
+	return grp->x() + grp->width() + grp->x();
+}
+
 void OpenGFXDlgClbk(void *context);
+
+// not upstream: EN_SETFOCUS, which has no RESNOTIFY code; the edit boxes' focus events deliver it
+const int RESN_SETFOCUS = -1;
+
+// not upstream: Win32 notifications Qt delivers as events: DefDlgProc's WM_CLOSE (and Esc) → IDCANCEL, EN_SETFOCUS
+class DlgEvents : public QObject
+{
+public:
+	DlgEvents(QWidget *hWnd, QEvent::Type type, std::function<void()> notify) : QObject(hWnd), type(type), onEvent(notify) { hWnd->installEventFilter(this); }
+	bool eventFilter(QObject *o, QEvent *e) override
+	{
+		bool esc = (type == QEvent::Close && e->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape);
+		if (e->type() != type && !esc) return false;
+		if (type == QEvent::Close) e->ignore();
+		onEvent();
+		return (type == QEvent::Close); // FocusIn still reaches the control
+	}
+private:
+	QEvent::Type type;
+	std::function<void()> onEvent;
+};
 
 class GFXDialog: public ImGuiDialog
 {
@@ -136,49 +175,36 @@ const void *GetConfigParam (DWORD paramtype)
 
 // =============================================================================================
 //
-float GetFloatFromBox(HWND hWnd, int item)
+float GetFloatFromBox(QWidget *hWnd, int item)
 {
 	char lbl[32];
-	GetWindowTextA(GetDlgItem(hWnd, item), lbl, 32);	
+	oapiGetDlgItemText(hWnd, item, lbl, 32);	
 	return float(atof(lbl));
 }
 
 // =============================================================================================
 //
-HWND CreateToolTip(int toolID, HWND hDlg, PTSTR pszText)
+QWidget *CreateToolTip(int toolID, QWidget *hDlg, const char *pszText)
 {
     if (!toolID || !hDlg || !pszText) return NULL;
     
     // Get the window of the tool.
-    HWND hwndTool = GetDlgItem(hDlg, toolID);
-    // Create the tooltip. g_hInst is the global instance handle.
-    HWND hwndTip = CreateWindowEx(NULL, TOOLTIPS_CLASS, NULL, WS_POPUP |TTS_ALWAYSTIP | TTS_BALLOON, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hDlg, NULL, g_hInst, NULL);
+    QWidget *hwndTool = oapiResDlgItem(hDlg, toolID);
+    // tooltip window left out: the tool shows its own tooltip (TTS_BALLOON style has no Qt counterpart); the tool is returned as its handle
     
-    if (!hwndTool || !hwndTip) return NULL;
+    if (!hwndTool) return NULL;
                                                           
     // Associate the tooltip with the tool.
-    TOOLINFO toolInfo = { 0 };
-    toolInfo.cbSize = sizeof(toolInfo);
-    toolInfo.hwnd = hDlg;
-    toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-    toolInfo.uId = (UINT_PTR)hwndTool;
-    toolInfo.lpszText = pszText;
-    SendMessage(hwndTip, TTM_ADDTOOL, 0, (LPARAM)&toolInfo);
+    hwndTool->setToolTip(QString::fromUtf8(pszText)); // TTM_ADDTOOL
 
-    return hwndTip;
+    return hwndTool;
 }
 
 
-void SetToolTip(int toolID, HWND hTip, const char *a)
+void SetToolTip(int toolID, QWidget *hTip, const char *a)
 {
-	HWND hwndTool = GetDlgItem(hDlg, toolID);
-	TOOLINFO toolInfo = { 0 };
-	toolInfo.cbSize = sizeof(toolInfo);
-	toolInfo.hwnd = hDlg;
-	toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-	toolInfo.uId = (UINT_PTR)hwndTool;
-	toolInfo.lpszText = (PTSTR)a;
-	SendMessage(hTip, TTM_UPDATETIPTEXT, 0, (LPARAM)&toolInfo);
+	QWidget *hwndTool = oapiResDlgItem(hDlg, toolID);
+	if (hwndTool) hwndTool->setToolTip(QString::fromUtf8(a)); // TTM_UPDATETIPTEXT
 }
 
 // =============================================================================================
@@ -212,31 +238,11 @@ void Create()
 
 	resbias = 4.0 + Config->LODBias;
   
-	memset(&OpenTex, 0, sizeof(OPENFILENAME));
+	// OpenTex setup left out: the folder "Textures" and the filter go to QFileDialog::getOpenFileName (existing files only by default)
 	memset(OpenFileName, 0, sizeof(OpenFileName));
 
-	OpenTex.lStructSize = sizeof(OPENFILENAME);
-	OpenTex.lpstrFile = OpenFileName;
-	OpenTex.lpstrInitialDir = "Textures\0";
-	OpenTex.nMaxFile = sizeof(OpenFileName);
-	OpenTex.lpstrFilter = "*.dds;*.jpg;*.png;*.hdr;*.bmp;*.tga\0";
-	OpenTex.nFilterIndex = 0;
-	OpenTex.lpstrFileTitle = NULL;
-	OpenTex.nMaxFileTitle = 0;
-	OpenTex.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-
-	memset(&SaveTex, 0, sizeof(OPENFILENAME));
+	// SaveTex setup left out: the filter goes to QFileDialog::getSaveFileName (it asks before overwriting by default)
 	memset(SaveFileName, 0, sizeof(SaveFileName));
-
-	SaveTex.lStructSize = sizeof(OPENFILENAME);
-	SaveTex.lpstrFile = SaveFileName;
-	SaveTex.lpstrInitialDir = "Textures\0";
-	SaveTex.nMaxFile = sizeof(SaveFileName);
-	SaveTex.lpstrFilter = "*.dds\0";
-	SaveTex.nFilterIndex = 0;
-	SaveTex.lpstrFileTitle = NULL;
-	SaveTex.nMaxFileTitle = 0;
-	SaveTex.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
 
 	PrmList.push_back(MatParams("Diffuse", 0));
 	PrmList.push_back(MatParams("Ambient", 1));
@@ -281,7 +287,7 @@ bool IsActive()
 int GetSceneDebug()
 {
 	if (!hDlg) return -1;
-	return (int)SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_GETCURSEL, 0, 0);
+	return (int)DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG)->currentIndex();
 }
 
 // =============================================================================================
@@ -289,7 +295,7 @@ int GetSceneDebug()
 int GetSelectedEnvMap()
 {
 	if (!hDlg) return 0;
-	return (int)SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_GETCURSEL, 0, 0);
+	return (int)DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP)->currentIndex();
 }
 
 // =============================================================================================
@@ -303,27 +309,27 @@ void Release()
 	gfxDlg = NULL;
 	if (dwCmd) oapiUnregisterCustomCmd(dwCmd);
 	if (dwGFX) oapiUnregisterCustomCmd(dwGFX);
-	dwCmd = NULL;
-	dwGFX = NULL;
+	dwCmd = 0;
+	dwGFX = 0;
 }
 
 // =============================================================================================
 //
 void UpdateFlags()
 {
-	SETFLAG(debugFlags, DBG_FLAGS_SELGRPONLY,	(SendDlgItemMessageA(hDlg, IDC_DBG_GRPO, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_SELMSHONLY,	(SendDlgItemMessageA(hDlg, IDC_DBG_MSHO, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_TILEBOXES,	(SendDlgItemMessageA(hDlg, IDC_DBG_TILEBB, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_BOXES,		(SendDlgItemMessageA(hDlg, IDC_DBG_BOXES, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_SPHERES,		(SendDlgItemMessageA(hDlg, IDC_DBG_SPHERES, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_HLMESH,		(SendDlgItemMessageA(hDlg, IDC_DBG_HSM, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_HLGROUP,		(SendDlgItemMessageA(hDlg, IDC_DBG_HSG, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_SELVISONLY,	(SendDlgItemMessageA(hDlg, IDC_DBG_VISO, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_AMBIENT,	    (SendDlgItemMessageA(hDlg, IDC_DBG_AMBIENT, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_WIREFRAME,	(SendDlgItemMessageA(hDlg, IDC_DBG_WIRE, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_DUALSIDED,	(SendDlgItemMessageA(hDlg, IDC_DBG_DUAL, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_PICK,			(SendDlgItemMessageA(hDlg, IDC_DBG_PICK, BM_GETCHECK, 0, 0)==BST_CHECKED));
-	SETFLAG(debugFlags, DBG_FLAGS_FPSLIM,		(SendDlgItemMessageA(hDlg, IDC_DBG_FPSLIM, BM_GETCHECK, 0, 0)==BST_CHECKED));
+	SETFLAG(debugFlags, DBG_FLAGS_SELGRPONLY,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_GRPO)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_SELMSHONLY,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_MSHO)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_TILEBOXES,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_TILEBB)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_BOXES,		(DlgItem<QAbstractButton>(hDlg, IDC_DBG_BOXES)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_SPHERES,		(DlgItem<QAbstractButton>(hDlg, IDC_DBG_SPHERES)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_HLMESH,		(DlgItem<QAbstractButton>(hDlg, IDC_DBG_HSM)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_HLGROUP,		(DlgItem<QAbstractButton>(hDlg, IDC_DBG_HSG)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_SELVISONLY,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_VISO)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_AMBIENT,	    (DlgItem<QAbstractButton>(hDlg, IDC_DBG_AMBIENT)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_WIREFRAME,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_WIRE)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_DUALSIDED,	(DlgItem<QAbstractButton>(hDlg, IDC_DBG_DUAL)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_PICK,			(DlgItem<QAbstractButton>(hDlg, IDC_DBG_PICK)->isChecked()));
+	SETFLAG(debugFlags, DBG_FLAGS_FPSLIM,		(DlgItem<QAbstractButton>(hDlg, IDC_DBG_FPSLIM)->isChecked()));
 
 	Config->EnableLimiter = (int)((debugFlags&DBG_FLAGS_FPSLIM)>0);
 }
@@ -344,7 +350,7 @@ inline _Variable DefVar(float min, float max, float extmax, scale scl, const cha
 	var.max = max;
 	var.extmax = extmax;
 	var.min = min;
-	strncpy_s(var.tip, 80, tip, 80);
+	snprintf(var.tip, 80, "%s", tip);
 	return var;
 }
 
@@ -357,7 +363,7 @@ inline _Variable DefVar(float min, float max, scale scl, const char *tip, bool b
 	var.max = max;
 	var.extmax = max;
 	var.min = min;
-	strncpy_s(var.tip, 80, tip, 80);
+	snprintf(var.tip, 80, "%s", tip);
 	return var;
 }
 
@@ -371,24 +377,24 @@ DWORD DropdownList(DWORD x)
 //
 void InitMatList(WORD shader)
 {
-	LRESULT idx = SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_RESETCONTENT, 0, 0);
+	int idx = DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex();
+	DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->clear();
 	
 	Dropdown.clear();
 
 	if (shader == SHADER_NULL) {
 		std::list<char> list = { 0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17 };
 		for (auto x : list) Dropdown.push_back(PrmList[x]);
-		for (auto x : Dropdown) SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_ADDSTRING, 0, (LPARAM)x.name.c_str());	
+		for (auto x : Dropdown) oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP), x.name.c_str());	
 	}
 
 	if (shader == SHADER_METALNESS) {
 		std::list<char> list = { 0, 3, 5, 7, 8, 9 };
 		for (auto x : list) Dropdown.push_back(PrmList[x]);
-		for (auto x : Dropdown) SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_ADDSTRING, 0, (LPARAM)x.name.c_str());
+		for (auto x : Dropdown) oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP), x.name.c_str());
 	}
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_SETCURSEL, idx, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->setCurrentIndex(idx);
 
 	switch (shader) {
 	case SHADER_NULL:
@@ -409,101 +415,105 @@ void InitMatList(WORD shader)
 void OpenDlgClbk(void *context)
 {
 	DWORD idx = 0;
-	HWND l_hDlg = oapiOpenDialog(g_hInst, IDD_D3D9MESHDEBUG, WndProc);
+	QWidget *l_hDlg = oapiOpenDialog(g_hInst, IDD_D3D9MESHDEBUG, WndProc);
 
 	if (l_hDlg) hDlg = l_hDlg; // otherwise open already
 	else return;
 
-	RECT rect;
-	GetWindowRect(hDlg, &rect);
-	SetWindowPos(hDlg, NULL, rect.left, rect.top, 298, rect.bottom - rect.top, SWP_SHOWWINDOW);
-	origwidth = rect.right - rect.left;
+	// GetWindowRect/SetWindowPos: the dialog's own size; the 298 px narrow width is the left column (see NarrowWidth)
+	int width = hDlg->width();
+	hDlg->resize(NarrowWidth(), hDlg->height());
+	hDlg->show(); // SWP_SHOWWINDOW
+	origwidth = width;
 
-	SendDlgItemMessage(hDlg, IDC_DBG_FPSLIM, BM_SETCHECK, Config->EnableLimiter==1, 0);
+	DlgItem<QAbstractButton>(hDlg, IDC_DBG_FPSLIM)->setChecked(Config->EnableLimiter==1);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_ADDSTRING, 0, (LPARAM)"Everything");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_ADDSTRING, 0, (LPARAM)"Selected Visual");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_ADDSTRING, 0, (LPARAM)"Selected Mesh");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_ADDSTRING, 0, (LPARAM)"Selected Group");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DISPLAY, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY), "Everything");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY), "Selected Visual");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY), "Selected Mesh");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY), "Selected Group");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_DISPLAY)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_CAMERA, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_CAMERA, CB_ADDSTRING, 0, (LPARAM)"Center on visual");
-	SendDlgItemMessageA(hDlg, IDC_DBG_CAMERA, CB_ADDSTRING, 0, (LPARAM)"Wheel Fly/Pan Cam");
-	SendDlgItemMessageA(hDlg, IDC_DBG_CAMERA, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_CAMERA)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_CAMERA), "Center on visual");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_CAMERA), "Wheel Fly/Pan Cam");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_CAMERA)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_ADDSTRING, 0, (LPARAM)"PBR (Old)");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_ADDSTRING, 0, (LPARAM)"Metalness PBR");
-	SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER), "PBR (Old)");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER), "Metalness PBR");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"Normals Global");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"Normals Tangent");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"Height");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"Height Mk2");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_ADDSTRING, 0, (LPARAM)"Tile Level");
-	SendDlgItemMessageA(hDlg, IDC_DBG_SCENEDBG, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "Normals Global");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "Normals Tangent");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "Height");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "Height Mk2");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG), "Tile Level");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_SCENEDBG)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_ADDSTRING, 0, (LPARAM)"Convert to DXT5");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_ADDSTRING, 0, (LPARAM)"Convert to RGB8");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_ADDSTRING, 0, (LPARAM)"Convert to RGB4");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION), "Convert to DXT5");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION), "Convert to RGB8");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION), "Convert to RGB4");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_ADDSTRING, 0, (LPARAM)"Save");
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_ADDSTRING, 0, (LPARAM)"Assign to slot 0");
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_ADDSTRING, 0, (LPARAM)"Assign to slot 1");
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_ADDSTRING, 0, (LPARAM)"Assign to slot 2");
-	SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET), "Save");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET), "Assign to slot 0");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET), "Assign to slot 1");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET), "Assign to slot 2");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET)->setCurrentIndex(0);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"None");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Mirror");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Blur 1");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Blur 2");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Blur 3");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Blur 4");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Irrad.Probe");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"IrdPreItg");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"ShadowMap");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Irradiance");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"GlowMask");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"ScreenDepth");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"Normals");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"LightVisbil.");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_ADDSTRING, 0, (LPARAM)"EclipseTbl");
-	SendDlgItemMessageA(hDlg, IDC_DBG_ENVMAP, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "None");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Mirror");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Blur 1");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Blur 2");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Blur 3");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Blur 4");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Irrad.Probe");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "IrdPreItg");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "ShadowMap");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Irradiance");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "GlowMask");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "ScreenDepth");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "Normals");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "LightVisbil.");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP), "EclipseTbl");
+	DlgItem<QComboBox>(hDlg, IDC_DBG_ENVMAP)->setCurrentIndex(0);
 
 
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_VARA), "1.3");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_VARB), "0.01");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_VARC), "0.00");
+	oapiSetDlgItemText(hDlg, IDC_DBG_VARA, "1.3");
+	oapiSetDlgItemText(hDlg, IDC_DBG_VARB, "0.01");
+	oapiSetDlgItemText(hDlg, IDC_DBG_VARC, "0.00");
 
-	// Speed slider
-	SendDlgItemMessage(hDlg, IDC_DBG_RESBIAS, TBM_SETRANGEMAX, 1,  10);
-	SendDlgItemMessage(hDlg, IDC_DBG_RESBIAS, TBM_SETRANGEMIN, 1, -10);
-	SendDlgItemMessage(hDlg, IDC_DBG_RESBIAS, TBM_SETTICFREQ, 1, 0);
-	SendDlgItemMessage(hDlg, IDC_DBG_RESBIAS, TBM_SETPOS, 1, int((resbias-4.0)*5.0));
+	// TBM_ messages don't send WM_HSCROLL
+	QSignalBlocker blockRes(DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)), blockSpd(DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)), blockMat(DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ));
 
 	// Speed slider
-	SendDlgItemMessage(hDlg, IDC_DBG_SPEED, TBM_SETRANGEMAX, 1, 200);
-	SendDlgItemMessage(hDlg, IDC_DBG_SPEED, TBM_SETRANGEMIN, 1, 1);
-	SendDlgItemMessage(hDlg, IDC_DBG_SPEED, TBM_SETTICFREQ,  1, 0);
-	SendDlgItemMessage(hDlg, IDC_DBG_SPEED, TBM_SETPOS,  1, 75);
-	SetWindowTextA(GetDlgItem(hDlg, IDC_DBG_SPEEDDSP), "29");
+	DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)->setMaximum(10);
+	DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)->setMinimum(-10);
+	DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)->setTickInterval(1);
+	DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)->setValue(int((resbias-4.0)*5.0));
+
+	// Speed slider
+	DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)->setMaximum(200);
+	DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)->setMinimum(1);
+	DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)->setTickInterval(1);
+	DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)->setValue(75);
+	oapiSetDlgItemText(hDlg, IDC_DBG_SPEEDDSP, "29");
 
 	// Meterial slider
-	SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_SETRANGEMAX, 1, 255);
-	SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_SETRANGEMIN, 1, 0);
-	SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_SETTICFREQ,  1, 0);
-	SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_SETPOS,  1, 0);
+	DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->setMaximum(255);
+	DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->setMinimum(0);
+	DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->setTickInterval(1);
+	DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->setValue(0);
 	
 	// Set the "pick" checked
-	SendDlgItemMessage(hDlg, IDC_DBG_PICK, BM_SETCHECK, 1, 0);
+	DlgItem<QAbstractButton>(hDlg, IDC_DBG_PICK)->setChecked(1);
 
 	camMode = 0;
 	dspMode = 0;
@@ -613,7 +623,7 @@ void OpenDlgClbk(void *context)
 //
 void SetTuningValue(int idx, D3DCOLORVALUE *pClr, DWORD clr, float value)
 {
-	bool bExtend = (SendDlgItemMessageA(hDlg, IDC_DBG_EXTEND, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool bExtend = (DlgItem<QAbstractButton>(hDlg, IDC_DBG_EXTEND)->isChecked());
 
 	float mi = Params[idx].var[clr].min;
 	float mx = (bExtend ? Params[idx].var[clr].extmax : Params[idx].var[clr].max);
@@ -651,7 +661,7 @@ float GetTuningValue(int idx, D3DCOLORVALUE *pClr, DWORD clr)
 //
 float _Clamp(float value, DWORD p, DWORD v)
 {
-	bool bExtend = (SendDlgItemMessageA(hDlg, IDC_DBG_EXTEND, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool bExtend = (DlgItem<QAbstractButton>(hDlg, IDC_DBG_EXTEND)->isChecked());
 	return CLAMP(value, Params[p].var[v].min, (bExtend ? Params[p].var[v].extmax : Params[p].var[v].max));
 }
 
@@ -659,7 +669,7 @@ float _Clamp(float value, DWORD p, DWORD v)
 //
 void UpdateShader()
 {
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 
 	if (!oapiIsVessel(hObj)) return;
 
@@ -667,7 +677,7 @@ void UpdateShader()
 
 	if (!hMesh) return;
 
-	DWORD Shader = DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_GETCURSEL, 0, 0));
+	DWORD Shader = DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER)->currentIndex());
 
 	vVessel *vVes = (vVessel *)vObj;
 	MatMgr *pMgr = vVes->GetMaterialManager();
@@ -690,7 +700,7 @@ void UpdateShader()
 //
 void UpdateMeshMaterial(float value, DWORD MatPrp, DWORD clr)
 {
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 
 	if (!oapiIsVessel(hObj)) return;
 
@@ -855,7 +865,7 @@ DWORD GetModFlags(DWORD MatPrp)
 //
 bool IsMaterialModified(DWORD MatPrp)
 {
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 
 	if (!oapiIsVessel(hObj)) return false;
 
@@ -877,7 +887,7 @@ bool IsMaterialModified(DWORD MatPrp)
 //
 void SetMaterialModified(DWORD MatPrp, bool bState)
 {
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 
 	if (!oapiIsVessel(hObj)) return;
 
@@ -902,7 +912,7 @@ void SetMaterialModified(DWORD MatPrp, bool bState)
 //
 float GetMaterialValue(DWORD MatPrp, DWORD clr)
 {
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 
 	if (!oapiIsVessel(hObj)) return 0.0f;
 
@@ -1065,8 +1075,8 @@ float GetMaterialValue(DWORD MatPrp, DWORD clr)
 //
 void SetColorSlider()
 {
-	DWORD MatPrp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
-	bool bExtend = (SendDlgItemMessageA(hDlg, IDC_DBG_EXTEND, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	DWORD MatPrp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));
+	bool bExtend = (DlgItem<QAbstractButton>(hDlg, IDC_DBG_EXTEND)->isChecked());
 
 	float mi = Params[MatPrp].var[SelColor].min;
 	float mx = (bExtend ? Params[MatPrp].var[SelColor].extmax : Params[MatPrp].var[SelColor].max);
@@ -1078,7 +1088,8 @@ void SetColorSlider()
 	if (Params[MatPrp].var[SelColor].Scl == scale::SQRT) val = sqrt(val);
 	if (Params[MatPrp].var[SelColor].Scl == scale::SQR) val = val*val;
 
-	SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_SETPOS,  1, WORD(val*255.0f));
+	QSignalBlocker block(DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)); // TBM_SETPOS doesn't send WM_HSCROLL
+	DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->setValue(WORD(val*255.0f));
 }
 
 // =============================================================================================
@@ -1087,41 +1098,41 @@ void DisplayMat(bool bRed, bool bGreen, bool bBlue, bool bAlpha)
 {
 	char lbl[32];
 
-	DWORD MatPrp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
+	DWORD MatPrp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));
 	
 	float r = GetMaterialValue(MatPrp, 0);
 	float g = GetMaterialValue(MatPrp, 1);
 	float b = GetMaterialValue(MatPrp, 2);
 	float a = GetMaterialValue(MatPrp, 3);
 
-	if (bRed) sprintf_s(lbl,32,"%3.3f", r);
-	else	  sprintf_s(lbl,32,"");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_RED),   lbl);
+	if (bRed) snprintf(lbl,32,"%3.3f", r);
+	else	  snprintf(lbl,32,"%s","");
+	oapiSetDlgItemText(hDlg, IDC_DBG_RED, lbl);
 	
-	if (bGreen) sprintf_s(lbl,32,"%3.3f", g);
-	else		sprintf_s(lbl,32,"");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_GREEN), lbl);
+	if (bGreen) snprintf(lbl,32,"%3.3f", g);
+	else		snprintf(lbl,32,"%s","");
+	oapiSetDlgItemText(hDlg, IDC_DBG_GREEN, lbl);
 
-	if (bBlue) sprintf_s(lbl,32,"%3.3f", b);
-	else	   sprintf_s(lbl,32,"");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_BLUE),  lbl);
+	if (bBlue) snprintf(lbl,32,"%3.3f", b);
+	else	   snprintf(lbl,32,"%s","");
+	oapiSetDlgItemText(hDlg, IDC_DBG_BLUE, lbl);
 
-	if (bAlpha) sprintf_s(lbl,32,"%3.3f", a);
-	else	    sprintf_s(lbl,32,"");
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_ALPHA), lbl);
+	if (bAlpha) snprintf(lbl,32,"%3.3f", a);
+	else	    snprintf(lbl,32,"%s","");
+	oapiSetDlgItemText(hDlg, IDC_DBG_ALPHA, lbl);
 
-	if (bRed)   EnableWindow(GetDlgItem(hDlg, IDC_DBG_RED), true);
-	else	    EnableWindow(GetDlgItem(hDlg, IDC_DBG_RED), false);	
-	if (bGreen) EnableWindow(GetDlgItem(hDlg, IDC_DBG_GREEN), true);
-	else		EnableWindow(GetDlgItem(hDlg, IDC_DBG_GREEN), false);	
-	if (bBlue)  EnableWindow(GetDlgItem(hDlg, IDC_DBG_BLUE), true);
-	else	    EnableWindow(GetDlgItem(hDlg, IDC_DBG_BLUE), false);	
-	if (bAlpha) EnableWindow(GetDlgItem(hDlg, IDC_DBG_ALPHA), true);
-	else		EnableWindow(GetDlgItem(hDlg, IDC_DBG_ALPHA), false);
+	if (bRed)   oapiResDlgItem(hDlg, IDC_DBG_RED)->setEnabled(true);
+	else	    oapiResDlgItem(hDlg, IDC_DBG_RED)->setEnabled(false);	
+	if (bGreen) oapiResDlgItem(hDlg, IDC_DBG_GREEN)->setEnabled(true);
+	else		oapiResDlgItem(hDlg, IDC_DBG_GREEN)->setEnabled(false);	
+	if (bBlue)  oapiResDlgItem(hDlg, IDC_DBG_BLUE)->setEnabled(true);
+	else	    oapiResDlgItem(hDlg, IDC_DBG_BLUE)->setEnabled(false);	
+	if (bAlpha) oapiResDlgItem(hDlg, IDC_DBG_ALPHA)->setEnabled(true);
+	else		oapiResDlgItem(hDlg, IDC_DBG_ALPHA)->setEnabled(false);
 
 	bool bModified = IsMaterialModified(MatPrp);
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_DEFINED, BM_SETCHECK, bModified, 0);
+	DlgItem<QAbstractButton>(hDlg, IDC_DBG_DEFINED)->setChecked(bModified);
 }
 
 // =============================================================================================
@@ -1131,29 +1142,29 @@ void UpdateMaterialDisplay(bool bSetup)
 	char lbl[256];
 	char lbl2[64];
 
-	OBJHANDLE hObj = vObj->GetObjectA();
+	OBJHANDLE hObj = vObj->GetObject();
 	if (!oapiIsVessel(hObj)) return;
 	
 	D3D9Mesh *hMesh = (D3D9Mesh *)vObj->GetMesh(sMesh);
 	if (!hMesh) return;
 
 	WORD Shader = hMesh->GetDefaultShader();
-	if (Shader == SHADER_NULL) SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_SETCURSEL, 0, 0);
-	if (Shader == SHADER_METALNESS) SendDlgItemMessageA(hDlg, IDC_DBG_DEFSHADER, CB_SETCURSEL, 1, 0);
+	if (Shader == SHADER_NULL) DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER)->setCurrentIndex(0);
+	if (Shader == SHADER_METALNESS) DlgItem<QComboBox>(hDlg, IDC_DBG_DEFSHADER)->setCurrentIndex(1);
 
 	DWORD matidx = hMesh->GetMeshGroupMaterialIdx(sGroup);
 
 	// Set material info
 	const char *skin = NULL;
-	if (skin)	sprintf_s(lbl, 256, "Material %u: [Skin %s]", matidx, skin);
-	else		sprintf_s(lbl, 256, "Material %u:", matidx);
+	if (skin)	snprintf(lbl, 256, "Material %u: [Skin %s]", matidx, skin);
+	else		snprintf(lbl, 256, "Material %u:", matidx);
 
-	GetWindowText(GetDlgItem(hDlg, IDC_DBG_MATGRP), lbl2, 64);
-	if (strcmp(lbl, lbl2)) SetWindowText(GetDlgItem(hDlg, IDC_DBG_MATGRP), lbl); // Avoid causing flashing
+	oapiGetDlgItemText(hDlg, IDC_DBG_MATGRP, lbl2, 64);
+	if (strcmp(lbl, lbl2)) oapiSetDlgItemText(hDlg, IDC_DBG_MATGRP, lbl); // Avoid causing flashing
 
 	if (bSetup) SelColor = 0;
 
-	DWORD MatPrp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
+	DWORD MatPrp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));
 	
 	DisplayMat(Params[MatPrp].var[0].bUsed, Params[MatPrp].var[1].bUsed, Params[MatPrp].var[2].bUsed, Params[MatPrp].var[3].bUsed);
 
@@ -1164,20 +1175,20 @@ void UpdateMaterialDisplay(bool bSetup)
 
 	DWORD texidx = hMesh->GetMeshGroupTextureIdx(sGroup);
 
-	if (texidx==0) SetWindowText(GetDlgItem(hDlg, IDC_DBG_TEXTURE), "Texture: None");
+	if (texidx==0) oapiSetDlgItemText(hDlg, IDC_DBG_TEXTURE, "Texture: None");
 	else {
 		SURFHANDLE hSrf = hMesh->GetTexture(texidx);
 		if (hSrf) {
-			sprintf_s(lbl, 256, "Texture: %s [%u]", RemovePath(SURFACE(hSrf)->GetName()), texidx);
-			SetWindowText(GetDlgItem(hDlg, IDC_DBG_TEXTURE), lbl);
+			snprintf(lbl, 256, "Texture: %s [%u]", RemovePath(SURFACE(hSrf)->GetName()), texidx);
+			oapiSetDlgItemText(hDlg, IDC_DBG_TEXTURE, lbl);
 		}
 	}
 
-	sprintf_s(lbl, 256, "Mesh: %s", RemovePath(hMesh->GetName()));
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_MESHNAME), lbl);
+	snprintf(lbl, 256, "Mesh: %s", RemovePath(hMesh->GetName()));
+	oapiSetDlgItemText(hDlg, IDC_DBG_MESHNAME, lbl);
 	
-	GetWindowText(GetDlgItem(hDlg, IDC_DBG_MESHGRP), lbl2, 64);
-	if (strcmp(lbl, lbl2)) SetWindowText(GetDlgItem(hDlg, IDC_DBG_MESHGRP), lbl); // Avoid causing flashing
+	oapiGetDlgItemText(hDlg, IDC_DBG_MESHGRP, lbl2, 64);
+	if (strcmp(lbl, lbl2)) oapiSetDlgItemText(hDlg, IDC_DBG_MESHGRP, lbl); // Avoid causing flashing
 }
 
 // =============================================================================================
@@ -1196,10 +1207,10 @@ void UpdateColorSlider(WORD pos)
 {
 	float val = float(pos)/255.0f;
 	
-	DWORD MatPrp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));	
+	DWORD MatPrp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));	
 
-	bool bLink = (SendDlgItemMessageA(hDlg, IDC_DBG_LINK, BM_GETCHECK, 0, 0)==BST_CHECKED);
-	bool bExtend = (SendDlgItemMessageA(hDlg, IDC_DBG_EXTEND, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool bLink = (DlgItem<QAbstractButton>(hDlg, IDC_DBG_LINK)->isChecked());
+	bool bExtend = (DlgItem<QAbstractButton>(hDlg, IDC_DBG_EXTEND)->isChecked());
 
 	float mi = Params[MatPrp].var[SelColor].min;
 	float mx = (bExtend ? Params[MatPrp].var[SelColor].extmax : Params[MatPrp].var[SelColor].max);
@@ -1274,7 +1285,7 @@ void SetupMeshGroups()
 
 	if (!vObj) return; 
 
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_VISUAL), visual);
+	oapiSetDlgItemText(hDlg, IDC_DBG_VISUAL, visual);
 
 	if (nMesh!=0) {
 		if (sMesh>0xFFFF) sMesh = nMesh-1;
@@ -1282,13 +1293,13 @@ void SetupMeshGroups()
 	}
 	else {
 		sMesh=0, sGroup=0, nGroup=0;
-		SetWindowText(GetDlgItem(hDlg, IDC_DBG_MESH), "N/A");
-		SetWindowText(GetDlgItem(hDlg, IDC_DBG_GROUP), "N/A");
+		oapiSetDlgItemText(hDlg, IDC_DBG_MESH, "N/A");
+		oapiSetDlgItemText(hDlg, IDC_DBG_GROUP, "N/A");
 		return;
 	}
 
-	sprintf_s(lbl,256,"%u/%u",sMesh,nMesh-1);
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_MESH), lbl);
+	snprintf(lbl,256,"%u/%u",sMesh,nMesh-1);
+	oapiSetDlgItemText(hDlg, IDC_DBG_MESH, lbl);
 
 	D3D9Mesh *mesh = (class D3D9Mesh *)vObj->GetMesh(sMesh);
 
@@ -1301,12 +1312,12 @@ void SetupMeshGroups()
 	}
 	else {
 		sGroup=0;
-		SetWindowText(GetDlgItem(hDlg, IDC_DBG_GROUP), "N/A");
+		oapiSetDlgItemText(hDlg, IDC_DBG_GROUP, "N/A");
 		return;
 	}
 
-	sprintf_s(lbl,256,"%u/%u",sGroup,nGroup-1);
-	SetWindowText(GetDlgItem(hDlg, IDC_DBG_GROUP), lbl);
+	snprintf(lbl,256,"%u/%u",sGroup,nGroup-1);
+	oapiSetDlgItemText(hDlg, IDC_DBG_GROUP, lbl);
 
 	UpdateMaterialDisplay();
 	SetColorSlider();
@@ -1318,7 +1329,7 @@ void SetupMeshGroups()
 double GetVisualSize()
 {
 	if (hDlg && vObj) {
-		OBJHANDLE hObj = vObj->GetObjectA();
+		OBJHANDLE hObj = vObj->GetObject();
 		if (hObj) return oapiGetSize(hObj);
 	}
 	return 1.0;
@@ -1349,18 +1360,18 @@ void UpdateVisual()
 {
 	if (!vObj || !hDlg) return; 
 	nMesh = vObj->GetMeshCount();
-	sprintf_s(visual, 64, "Visual: %s", vObj->GetName());
+	snprintf(visual, 64, "Visual: %s", vObj->GetName());
 	SetupMeshGroups();
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_CONES, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_CONES)->clear();
 	Emitters.clear();
 
 	if (vObj->Type() == OBJTP_VESSEL) {
 
-		SendDlgItemMessageA(hDlg, IDC_DBG_CONES, CB_ADDSTRING, 0, (LPARAM)"NONE");
+		oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_CONES), "NONE");
 		Emitters[0] = NULL;
 
-		char line[64];
+		char line[64] = ""; // upstream left it uninitialised for directional emitters before strcat_s
 
 		vVessel *vV = static_cast<vVessel*>(vObj);
 		VESSEL *vessel = vV->GetInterface();
@@ -1375,30 +1386,30 @@ void UpdateVisual()
 				double P = sl->GetPenumbra()*DEG;
 				double U = sl->GetUmbra()*DEG;
 				double R = sl->GetRange();
-				sprintf_s(line, 64, "%s P%1.0f U%1.0f R%1.0f", _PTR(em), P, U, R);
+				snprintf(line, 64, "%s P%1.0f U%1.0f R%1.0f", _PTR(em), P, U, R);
 			}	
 
 			if (em->GetType() == LightEmitter::LT_POINT) {
 				const PointLight *pl = static_cast<const PointLight*>(em);
 				double R = pl->GetRange();
-				sprintf_s(line, 64, "%s R%1.0f", _PTR(em), R);
+				snprintf(line, 64, "%s R%1.0f", _PTR(em), R);
 			}
 
 			switch (em->GetVisibility())
 			{
-			case LightEmitter::VIS_EXTERNAL: strcat_s(line, 64, " EXT"); break;
-			case LightEmitter::VIS_COCKPIT: strcat_s(line, 64, " VC"); break;
-			case LightEmitter::VIS_ALWAYS: strcat_s(line, 64, " ALW"); break;
+			case LightEmitter::VIS_EXTERNAL: strncat(line, " EXT", 63 - strlen(line)); break;
+			case LightEmitter::VIS_COCKPIT: strncat(line, " VC", 63 - strlen(line)); break;
+			case LightEmitter::VIS_ALWAYS: strncat(line, " ALW", 63 - strlen(line)); break;
 			}
 
 			if ((em->GetType() == LightEmitter::LT_SPOT) || (em->GetType() == LightEmitter::LT_POINT)) {
-				SendDlgItemMessageA(hDlg, IDC_DBG_CONES, CB_ADDSTRING, 0, (LPARAM)line);
+				oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_DBG_CONES), line);
 				Emitters[j + 1] = em;
 			}
 		}
 	}
 
-	SendDlgItemMessageA(hDlg, IDC_DBG_CONES, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hDlg, IDC_DBG_CONES)->setCurrentIndex(0);
 }
 
 // =============================================================================================
@@ -1412,7 +1423,7 @@ void RemoveVisual(vObject *vo)
 //
 void SetColorValue(const char *lbl)
 {
-	DWORD MatPrp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
+	DWORD MatPrp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));
 	UpdateMeshMaterial(float(atof(lbl)), MatPrp, SelColor);
 	SetColorSlider();
 }
@@ -1455,7 +1466,8 @@ D3DXCOLOR ProcessColor(D3DXVECTOR4 C, PCParam *prm, int x, int y)
 		if (prm->Mip==0) return D3DXCOLOR(C.x, C.y, C.z, C.w);		// Do nothing for the main level
 
 		C = C*2.0f - 1.0f;			// Expand to [-1, 1]
-		C *= pow(a, -abs(C)*fMip);
+		D3DXVECTOR4 e = -abs(C)*fMip; // named: VectorHelpers' pow takes a non-const reference (MSVC bound the temporary)
+		C *= pow(a, e);
 
 		float k = b * fMip;
 
@@ -1468,47 +1480,53 @@ D3DXCOLOR ProcessColor(D3DXVECTOR4 C, PCParam *prm, int x, int y)
 
 // =============================================================================================
 //
-bool Execute(HWND hWnd, LPOPENFILENAME pOF)
+bool Execute(QWidget *hWnd, const char *file)
 {
-	LPDIRECT3DDEVICE9 pDevice = g_client->GetDevice();
+	VkDev *pDevice = g_client->GetDevice();
 
-	SaveTex.hwndOwner = hWnd;
+	// SaveTex.hwndOwner: hWnd is the parent of the save dialog below
 
-	D3DLOCKED_RECT in, out;
+	// D3DLOCKED_RECT in, out left out: the images are VkPixels in memory (D3DPOOL_SYSTEMMEM)
 	PCParam prm;
 
 	DWORD Func = 0;
-	DWORD Action = DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_ACTION, CB_GETCURSEL, 0, 0));
-	DWORD Target = DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_TARGET, CB_GETCURSEL, 0, 0));
+	DWORD Action = DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_ACTION)->currentIndex());
+	DWORD Target = DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_TARGET)->currentIndex());
 
-	if (SendDlgItemMessageA(hDlg, IDC_DBG_NORM, BM_GETCHECK, 0, 0)==BST_CHECKED) Func |= 0x1;
-	if (SendDlgItemMessageA(hDlg, IDC_DBG_FADE, BM_GETCHECK, 0, 0)==BST_CHECKED) Func |= 0x2;
-	if (SendDlgItemMessageA(hDlg, IDC_DBG_SEAMS, BM_GETCHECK, 0, 0)==BST_CHECKED) Func |= 0x4;
+	if (DlgItem<QAbstractButton>(hDlg, IDC_DBG_NORM)->isChecked()) Func |= 0x1;
+	if (DlgItem<QAbstractButton>(hDlg, IDC_DBG_FADE)->isChecked()) Func |= 0x2;
+	if (DlgItem<QAbstractButton>(hDlg, IDC_DBG_SEAMS)->isChecked()) Func |= 0x4;
 	
 	if (Action>=0 && Action<=2) {
 
-		LPDIRECT3DTEXTURE9 pTex = NULL;
-		LPDIRECT3DTEXTURE9 pWork = NULL;
-		LPDIRECT3DTEXTURE9 pSave = NULL;
-		D3DXIMAGE_INFO info;
+		VkPixels *pTex = NULL;
+		VkPixels *pWork = NULL;
+		VkPixels *pSave = NULL;
+		VkImageInfo info;
 
-		HR(D3DXCreateTextureFromFileExA(pDevice, pOF->lpstrFile, D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 0, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, D3DX_DEFAULT, D3DX_DEFAULT, 0, &info, NULL, &pTex));
+		// D3DXCreateTextureFromFileEx into system memory: the file as A8R8G8B8 with a full mip chain
+		VkPixels src;
+		if (VkGetImageInfoFromFile(file, &info) && VkLoadPixels(file, src)) {
+			pTex = new VkPixels;
+			if (!VkConvertPixels(src, *pTex, VK_FORMAT_B8G8R8A8_UNORM, SWZ_NONE, 0, 0, 0)) SAFE_DELETE(pTex);
+		}
 
 		if (!pTex) {
-			LogErr("Failed to open a file [%s]", pOF->lpstrFile); 
+			LogErr("Failed to open a file [%s]", file); 
 			return false;
 		}
 
-		DWORD mips = pTex->GetLevelCount();
+		DWORD mips = pTex->levels;
 
 		if (true) {
 
-			HR(D3DXCreateTexture(pDevice, info.Width, info.Height, mips, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &pWork));
+			pWork = new VkPixels(*pTex); // D3DXCreateTexture A8R8G8B8: the levels of pTex, overwritten below
 			if (!pWork) return false;
 
-			if (Action==0) { HR(D3DXCreateTexture(pDevice, info.Width, info.Height, mips, 0, D3DFMT_DXT5, D3DPOOL_SYSTEMMEM, &pSave)); }
-			if (Action==1) { HR(D3DXCreateTexture(pDevice, info.Width, info.Height, mips, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &pSave)); }
-			if (Action==2) { HR(D3DXCreateTexture(pDevice, info.Width, info.Height, mips, 0, D3DFMT_A4R4G4B4, D3DPOOL_SYSTEMMEM, &pSave)); }
+			// D3DXCreateTexture: the format only, VkConvertPixels fills the levels below
+			if (Action==0) { pSave = new VkPixels; pSave->fmt = VK_FORMAT_BC3_UNORM_BLOCK; }
+			if (Action==1) { pSave = new VkPixels; pSave->fmt = VK_FORMAT_B8G8R8A8_UNORM; }
+			if (Action==2) { pSave = new VkPixels; pSave->fmt = VK_FORMAT_A4R4G4B4_UNORM_PACK16; }
 
 			if (!pSave) return false;
 
@@ -1521,10 +1539,9 @@ bool Execute(HWND hWnd, LPOPENFILENAME pOF)
 
 				DWORD w = info.Width>>n;
 				DWORD h = info.Height>>n;
-				HR(pTex->LockRect(n, &in, NULL, 0)); 
-				HR(pWork->LockRect(n, &out, NULL, 0));
-				DWORD *pIn  = (DWORD *)in.pBits;
-				DWORD *pOut = (DWORD *)out.pBits;
+				// LockRect: the levels are in memory, rows packed (B8G8R8A8 is A8R8G8B8 as DWORDs)
+				DWORD *pIn  = (DWORD *)pTex->Level(n).data();
+				DWORD *pOut = (DWORD *)pWork->Level(n).data();
 
 				prm.Mip = n;
 				prm.Action = Action;
@@ -1567,26 +1584,19 @@ bool Execute(HWND hWnd, LPOPENFILENAME pOF)
 				}
 
 
-				HR(pTex->UnlockRect(n));
-				HR(pWork->UnlockRect(n));
+				// UnlockRect left out: the pixels are in memory
 			}
 
-			SAFE_RELEASE(pTex);
+			SAFE_DELETE(pTex);
 
 			// Convert texture format --------------------------------------
 			//
-			for (DWORD n=0;n<mips;n++) {
-				LPDIRECT3DSURFACE9 pIn, pOut;
-				pWork->GetSurfaceLevel(n, &pIn);
-				pSave->GetSurfaceLevel(n, &pOut);
-				if (D3DXLoadSurfaceFromSurface(pOut, NULL, NULL, pIn, NULL, NULL, D3DX_FILTER_LINEAR, 0)!=S_OK) {
-					LogErr("D3DXLoadSurfaceFromSurface Failed");
-					return false;
-				}
-				pIn->Release();
-				pOut->Release();
+			// D3DXLoadSurfaceFromSurface of each level → one conversion of all levels (same sizes: nothing to filter)
+			if (!VkConvertPixels(*pWork, *pSave, pSave->fmt, SWZ_NONE, 0, 0, mips)) {
+				LogErr("VkConvertPixels Failed");
+				return false;
 			}
-			SAFE_RELEASE(pWork);
+			SAFE_DELETE(pWork);
 		}
 		else {
 			// Copy input to output	
@@ -1596,13 +1606,15 @@ bool Execute(HWND hWnd, LPOPENFILENAME pOF)
 		// Save the texture into a file -------------------------------
 		//
 		if (Target==0) {
-			strcpy_s(SaveTex.lpstrFile, 255, OpenTex.lpstrFile);
-			if (GetSaveFileName(&SaveTex)) {
-				if (D3DXSaveTextureToFileA(SaveTex.lpstrFile, D3DXIFF_DDS, pSave, NULL)!=S_OK) {
-					LogErr("Failed to create a file [%s]",SaveTex.lpstrFile); 
+			snprintf(SaveFileName, sizeof(SaveFileName), "%s", OpenFileName);
+			QString save = QFileDialog::getSaveFileName(hWnd, QString(), QString::fromUtf8(SaveFileName), "*.dds"); // GetSaveFileName
+			snprintf(SaveFileName, sizeof(SaveFileName), "%s", save.toUtf8().constData());
+			if (!save.isEmpty()) {
+				if (!VkSavePixels(SaveFileName, VKIFF_DDS, *pSave)) {
+					LogErr("Failed to create a file [%s]",SaveFileName); 
 					return false;
 				}
-				SAFE_RELEASE(pSave);
+				SAFE_DELETE(pSave);
 				return true;
 			}
 		}
@@ -1611,8 +1623,10 @@ bool Execute(HWND hWnd, LPOPENFILENAME pOF)
 		//
 		if (Target==1 || Target==2 || Target==3) {
 			vPlanet *vP = g_client->GetScene()->GetCameraProxyVisual();	
-			if (vP) vP->SetMicroTexture(pSave, Target-1);
-			SAFE_RELEASE(pSave);
+			VkTex *pSrc = VkCreateTexture(pDevice, *pSave, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT); // the texture SetMicroTexture copies
+			if (vP && pSrc) vP->SetMicroTexture(pSrc, Target-1);
+			SAFE_DELETE(pSrc);
+			SAFE_DELETE(pSave);
 			return true;
 		}
 	}
@@ -1625,14 +1639,15 @@ bool Execute(HWND hWnd, LPOPENFILENAME pOF)
 //
 void SaveEnvMap()
 {
-	LPDIRECT3DDEVICE9 pDevice = g_client->GetDevice();
+	VkDev *pDevice = g_client->GetDevice();
 
 	OBJHANDLE hObj = vObj->Object();
 
 	if (oapiIsVessel(hObj)) {
 		vVessel *vVes = (vVessel *)vObj;
-		LPDIRECT3DCUBETEXTURE9 pTex = vVes->GetEnvMap(ENVMAP_MAIN);
-		if (D3DXSaveTextureToFileA("EnvMap.dds", D3DXIFF_DDS, pTex, NULL) != S_OK) {
+		VkTex *pTex = vVes->GetEnvMap(ENVMAP_MAIN);
+		VkPixels px; // D3DXSaveTextureToFile: all faces and levels read back, then written as DDS
+		if (!pTex || !VkReadPixels(pDevice, pTex, px, 0) || !VkSavePixels("EnvMap.dds", VKIFF_DDS, px)) {
 			LogErr("Failed to save envmap");
 		}
 	}
@@ -1646,7 +1661,7 @@ void Append(const char *format, ...)
 	char buf[256];
 	va_list args;
 	va_start(args, format);
-	_vsnprintf_s(buf, 256, 256, format, args);
+	vsnprintf(buf, 256, format, args);
 	va_end(args);
 	buffer += buf;
 }
@@ -1659,7 +1674,7 @@ void Append2(const char *format, ...)
 	char buf[256];
 	va_list args;
 	va_start(args, format);
-	_vsnprintf_s(buf, 256, 256, format, args);
+	vsnprintf(buf, 256, format, args);
 	va_end(args);
 	buffer2 += buf;
 }
@@ -1672,7 +1687,7 @@ void Refresh2()
 
 	Append2("LocalPos = [%f, %f, %f]", PickLocation.x, PickLocation.y, PickLocation.z);
 
-	SetWindowTextA(GetDlgItem(hDataWnd, IDC_DBG_DATAVIEW2), buffer2.c_str());
+	oapiSetDlgItemText(hDataWnd, IDC_DBG_DATAVIEW2, buffer2.c_str());
 	buffer2.clear();
 }
 
@@ -1681,7 +1696,7 @@ void Refresh2()
 void Refresh()
 {
 	if (hDataWnd == NULL) return;
-	SetWindowTextA(GetDlgItem(hDataWnd, IDC_DBG_DATAVIEW), buffer.c_str());
+	oapiSetDlgItemText(hDataWnd, IDC_DBG_DATAVIEW, buffer.c_str());
 	buffer.clear();
 	Refresh2();
 }
@@ -1760,89 +1775,96 @@ oapiWriteLogV("TotalWeight = %f", w);
 // ==============================================================
 // Dialog message handler
 
-INT_PTR CALLBACK ViewProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void ViewProc(QWidget *hWnd, void *context)
 {
 	static bool isOpen = false; // IDC_DBG_MORE (full or reduced width)
 
-	DWORD Prp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
+	// DWORD Prp (IDC_DBG_MATPRP selection) left out: unused here, and hDlg may be closed while this window is open
 	
-	switch (uMsg) {
-
-	case WM_INITDIALOG:
+	// WM_INITDIALOG
 	{
-		SetWindowTextA(GetDlgItem(hWnd, IDC_DBG_DATAVIEW), "-- Select a mesh group --");
+		oapiSetDlgItemText(hWnd, IDC_DBG_DATAVIEW, "-- Select a mesh group --");
 		buffer.clear();
-		return TRUE;	// All Init actions are done in OpenDlgClbk();
+		// All Init actions are done in OpenDlgClbk();
 	}
 
-	case WM_COMMAND:
+	// not upstream: the core destroys the window at session end without IDCANCEL; a stale HWND was harmless, a QWidget* isn't
+	QObject::connect(hWnd, &QObject::destroyed, [hWnd]() { if (hDataWnd == hWnd) hDataWnd = NULL; });
 
-		switch (LOWORD(wParam)) {
+	// WM_COMMAND
+	auto command = [hWnd](int id, int code, QWidget *hCtrl) {
+
+		switch (id) {
 
 		case IDCANCEL:
 			oapiCloseDialog(hWnd);
 			if (!buffer.empty()) buffer.clear();
 			hDataWnd = NULL;
-			return TRUE;
+			return;
 		}
-		break;
-	}
+	};
+	oapiConnectDlgCommands(hWnd, command);
+	new DlgEvents(hWnd, QEvent::Close, [command]() { command(IDCANCEL, RESN_CLICKED, NULL); });
 
-	return oapiDefDialogProc(hWnd, uMsg, wParam, lParam);
+	// oapiDefDialogProc left out: oapiOpenDialog wires the default dialog behaviour
 }
 
 
 // ==============================================================
 // Dialog message handler
 
-INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void WndProc(QWidget *hWnd, void *context)
 {
-	char lbl[32];
-	RECT rect;
-	bool bPaused;
 	static bool isOpen = false; // IDC_DBG_MORE (full or reduced width)
 
-	OpenTex.hwndOwner = hWnd;
+	// OpenTex.hwndOwner: hWnd is the parent of the file dialog below
 
-	DWORD Prp = DropdownList(DWORD(SendDlgItemMessageA(hDlg, IDC_DBG_MATPRP, CB_GETCURSEL, 0, 0)));
-	
-	switch (uMsg) {
-
-	case WM_INITDIALOG:
+	// WM_INITDIALOG
 	{
 		isOpen = false; // We always start with reduced width
-		return TRUE;	// All Init actions are done in OpenDlgClbk();
+		// All Init actions are done in OpenDlgClbk();
 	}
 
-	case WM_HSCROLL:
-	{
-		if (LOWORD(wParam)==TB_THUMBTRACK || LOWORD(wParam)==TB_ENDTRACK) {
-			WORD pos = HIWORD(wParam);
+	// not upstream: the core destroys the dialog at session end without IDCANCEL; a stale HWND was harmless, a QWidget* isn't
+	QObject::connect(hWnd, &QObject::destroyed, [hWnd]() { if (hDlg == hWnd) hDlg = NULL; });
 
-			if (HWND(lParam)==GetDlgItem(hWnd, IDC_DBG_SPEED)) {
-				if (pos==0) pos = WORD(SendDlgItemMessage(hDlg, IDC_DBG_SPEED, TBM_GETPOS,  0, 0));
+	// WM_HSCROLL
+	for (int id : {IDC_DBG_SPEED, IDC_DBG_RESBIAS, IDC_DBG_MATADJ}) {
+		QSlider *tb = DlgItem<QSlider>(hWnd, id);
+		QObject::connect(tb, &QSlider::valueChanged, hWnd, [hWnd, tb](int value) { // TB_THUMBTRACK, TB_ENDTRACK
+			char lbl[32];
+			WORD pos = WORD(value);
+
+			if (tb==DlgItem<QSlider>(hWnd, IDC_DBG_SPEED)) {
+				if (pos==0) pos = WORD(DlgItem<QSlider>(hDlg, IDC_DBG_SPEED)->value());
 				double fpos = pow(2.0,double(pos)*13.0/200.0); 
-				sprintf_s(lbl,32,"%1.0f",fpos);
-				SetWindowTextA(GetDlgItem(hWnd, IDC_DBG_SPEEDDSP), lbl);
+				snprintf(lbl,32,"%1.0f",fpos);
+				oapiSetDlgItemText(hWnd, IDC_DBG_SPEEDDSP, lbl);
 				camSpeed = fpos/50.0;
 			}
 
-			if (HWND(lParam) == GetDlgItem(hWnd, IDC_DBG_RESBIAS)) {
-				resbias = 4.0 + 0.2 * double(SendDlgItemMessage(hDlg, IDC_DBG_RESBIAS, TBM_GETPOS, 0, 0));
+			if (tb == DlgItem<QSlider>(hWnd, IDC_DBG_RESBIAS)) {
+				resbias = 4.0 + 0.2 * double(DlgItem<QSlider>(hDlg, IDC_DBG_RESBIAS)->value());
 			}
 
-			if (HWND(lParam)==GetDlgItem(hWnd, IDC_DBG_MATADJ)) {
-				if (pos==0) pos = WORD(SendDlgItemMessage(hDlg, IDC_DBG_MATADJ, TBM_GETPOS,  0, 0));
+			if (tb==DlgItem<QSlider>(hWnd, IDC_DBG_MATADJ)) {
+				if (pos==0) pos = WORD(DlgItem<QSlider>(hDlg, IDC_DBG_MATADJ)->value());
 				UpdateColorSlider(pos);
 				UpdateMaterialDisplay();
 			}
-		}
-		return false;
+		});
 	}
 
-	case WM_COMMAND:
+	// WM_COMMAND
+	auto command = [hWnd](int id, int code, QWidget *hCtrl) {
+		char lbl[32];
+		bool bPaused;
 
-		switch (LOWORD(wParam)) {
+		if (!hDlg) return; // not upstream: a closing dialog still reports focus changes (Win32 sent them to a NULL handle, harmless)
+
+		DWORD Prp = DropdownList(DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_MATPRP)->currentIndex()));
+
+		switch (id) {
 
 			case IDCANCEL:
 				Close();
@@ -1856,7 +1878,7 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 			case IDC_DBG_MATSAVE:
 			{
-				OBJHANDLE hObj = vObj->GetObjectA();
+				OBJHANDLE hObj = vObj->GetObject();
 				if (oapiIsVessel(hObj)) {
 					vVessel *vVes = (vVessel *)vObj;
 					vVes->GetMaterialManager()->SaveConfiguration();
@@ -1866,7 +1888,7 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 			case IDC_DBG_DATAWND:
 			{
-				HWND hW = oapiOpenDialog(g_hInst, IDD_DEBUGVIEW, ViewProc);
+				QWidget *hW = oapiOpenDialog(g_hInst, IDD_DEBUGVIEW, ViewProc);
 				if (hW) hDataWnd = hW;
 			}
 				break;
@@ -1875,7 +1897,7 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case IDC_DBG_DEFINED:
-				SetMaterialModified(Prp, (SendDlgItemMessageA(hDlg, IDC_DBG_DEFINED, BM_GETCHECK, 0, 0) == BST_CHECKED));
+				SetMaterialModified(Prp, (DlgItem<QAbstractButton>(hDlg, IDC_DBG_DEFINED)->isChecked()));
 				break;
 
 			case IDC_DBG_COPY:
@@ -1897,105 +1919,105 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 
 			case IDC_DBG_RED:
-				if (HIWORD(wParam)==EN_SETFOCUS) {
+				if (code==RESN_SETFOCUS) {
 					SelColor = 0;
 					UpdateMaterialDisplay();
 					SetColorSlider();
 				}
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
-					GetWindowTextA(HWND(lParam), lbl, 32);
+				if (code==RESN_KILLFOCUS) {
+					oapiGetDlgText(hCtrl, lbl, 32);
 					SetColorValue(lbl);
 				}
 				break;
 
 			case IDC_DBG_GREEN:
-				if (HIWORD(wParam)==EN_SETFOCUS) {
+				if (code==RESN_SETFOCUS) {
 					SelColor = 1;
 					UpdateMaterialDisplay();
 					SetColorSlider();
 				}
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
-					GetWindowTextA(HWND(lParam), lbl, 32);
+				if (code==RESN_KILLFOCUS) {
+					oapiGetDlgText(hCtrl, lbl, 32);
 					SetColorValue(lbl);
 				}
 				break;
 
 			case IDC_DBG_BLUE:
-				if (HIWORD(wParam)==EN_SETFOCUS) {
+				if (code==RESN_SETFOCUS) {
 					SelColor = 2;
 					UpdateMaterialDisplay();
 					SetColorSlider();
 				}
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
-					GetWindowTextA(HWND(lParam), lbl, 32);
+				if (code==RESN_KILLFOCUS) {
+					oapiGetDlgText(hCtrl, lbl, 32);
 					SetColorValue(lbl);
 				}
 				break;
 
 			case IDC_DBG_ALPHA:
-				if (HIWORD(wParam)==EN_SETFOCUS) {
+				if (code==RESN_SETFOCUS) {
 					SelColor = 3;
 					UpdateMaterialDisplay();
 					SetColorSlider();
 				}
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
-					GetWindowTextA(HWND(lParam), lbl, 32);
+				if (code==RESN_KILLFOCUS) {
+					oapiGetDlgText(hCtrl, lbl, 32);
 					SetColorValue(lbl);
 				}
 				break;
 
 			case IDC_DBG_MATPRP:
-				if (HIWORD(wParam)==CBN_SELCHANGE) {
+				if (code==RESN_SELCHANGE) {
 					UpdateMaterialDisplay(true);
 					SetColorSlider();	
 				}
 				break;
 
 			case IDC_DBG_CONES:
-				if (HIWORD(wParam) == CBN_SELCHANGE) {
-					sEmitter = DWORD(SendDlgItemMessage(hDlg, IDC_DBG_CONES, CB_GETCURSEL, 0, 0));
+				if (code == RESN_SELCHANGE) {
+					sEmitter = DWORD(DlgItem<QComboBox>(hDlg, IDC_DBG_CONES)->currentIndex());
 				}
 				break;
 
 			case IDC_DBG_DEFSHADER:
-				if (HIWORD(wParam) == CBN_SELCHANGE) {
+				if (code == RESN_SELCHANGE) {
 					UpdateShader();
 				}
 				break;
 
 			case IDC_DBG_DISPLAY:
-				if (HIWORD(wParam)==CBN_SELCHANGE) dspMode = DWORD(SendDlgItemMessage(hWnd, IDC_DBG_DISPLAY, CB_GETCURSEL, 0, 0));
+				if (code==RESN_SELCHANGE) dspMode = DWORD(DlgItem<QComboBox>(hWnd, IDC_DBG_DISPLAY)->currentIndex());
 				break;
 
 			case IDC_DBG_CAMERA:
-				if (HIWORD(wParam)==CBN_SELCHANGE) camMode = DWORD(SendDlgItemMessage(hWnd, IDC_DBG_CAMERA, CB_GETCURSEL, 0, 0));
+				if (code==RESN_SELCHANGE) camMode = DWORD(DlgItem<QComboBox>(hWnd, IDC_DBG_CAMERA)->currentIndex());
 				break;
 
 			case IDC_DBG_MSHUP: 
-				if (HIWORD(wParam)==BN_CLICKED) sMesh--;
+				if (code==RESN_CLICKED) sMesh--;
 				SetupMeshGroups();
 				break;
 
 			case IDC_DBG_MSHDN: 
-				if (HIWORD(wParam)==BN_CLICKED) sMesh++;
+				if (code==RESN_CLICKED) sMesh++;
 				SetupMeshGroups();
 				break;
 
 			case IDC_DBG_GRPUP: 
-				if (HIWORD(wParam)==BN_CLICKED) sGroup--;
+				if (code==RESN_CLICKED) sGroup--;
 				SetupMeshGroups();
 				break;
 
 			case IDC_DBG_GRPDN: 
-				if (HIWORD(wParam)==BN_CLICKED) sGroup++;	
+				if (code==RESN_CLICKED) sGroup++;	
 				SetupMeshGroups();
 				break;
 
 			
 			case IDC_DBG_MESH: 
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
+				if (code==RESN_KILLFOCUS) {
 					char cbuf[32];
-					GetWindowText(GetDlgItem(hWnd, IDC_DBG_MESH),  cbuf, 32); 
+					oapiGetDlgItemText(hWnd, IDC_DBG_MESH, cbuf, 32); 
 					for (int i=0; i<32;i++) if (cbuf[i]==0 || cbuf[i]=='/') { cbuf[i]=0; break; }
 					sMesh = atoi(cbuf);
 					SetupMeshGroups();
@@ -2003,9 +2025,9 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case IDC_DBG_GROUP: 
-				if (HIWORD(wParam)==EN_KILLFOCUS) {
+				if (code==RESN_KILLFOCUS) {
 					char cbuf[32];
-					GetWindowText(GetDlgItem(hWnd, IDC_DBG_GROUP),  cbuf, 32);
+					oapiGetDlgItemText(hWnd, IDC_DBG_GROUP, cbuf, 32);
 					for (int i=0; i<32;i++) if (cbuf[i]==0 || cbuf[i]=='/') { cbuf[i]=0; break; }
 					sGroup = atoi(cbuf);
 					SetupMeshGroups();
@@ -2013,18 +2035,23 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case IDC_DBG_OPEN:
+			{
 				bPaused = oapiGetPause();
 				oapiSetPause(true);
-				if (GetOpenFileNameA(&OpenTex)) {
-					SetWindowText(GetDlgItem(hWnd, IDC_DBG_FILE), OpenTex.lpstrFile);
+				// GetOpenFileName (OpenTex): folder "Textures" unless a file was chosen before
+				QString open = QFileDialog::getOpenFileName(hWnd, QString(), OpenFileName[0] ? QString::fromUtf8(OpenFileName) : QString("Textures"), "*.dds *.jpg *.png *.hdr *.bmp *.tga");
+				if (!open.isEmpty()) {
+					snprintf(OpenFileName, sizeof(OpenFileName), "%s", open.toUtf8().constData());
+					oapiSetDlgItemText(hWnd, IDC_DBG_FILE, OpenFileName);
 				}
 				oapiSetPause(bPaused);
+			}
 				break;
 
 			case IDC_DBG_EXECUTE:
 				bPaused = oapiGetPause();
 				oapiSetPause(true);
-				if (Execute(hWnd, &OpenTex)==false) MessageBox(hWnd,"Failed :(","D3D9 Controls", MB_OK);
+				if (Execute(hWnd, OpenFileName)==false) QMessageBox(QMessageBox::NoIcon, "D3D9 Controls", "Failed :(", QMessageBox::Ok, hWnd).exec();
 				oapiSetPause(bPaused);
 				break;
 
@@ -2032,14 +2059,15 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case IDC_DBG_MORE:
-				GetWindowRect(hDlg, &rect);
-				SetWindowPos(hDlg, NULL, rect.left, rect.top, isOpen ?   298 : origwidth, rect.bottom - rect.top, SWP_SHOWWINDOW);
-				SetWindowText(GetDlgItem(hWnd, IDC_DBG_MORE), isOpen ? ">>>" : "<<<");
+				// GetWindowRect/SetWindowPos: the dialog's own size (NarrowWidth is upstream's 298 px)
+				hDlg->resize(isOpen ? NarrowWidth() : origwidth, hDlg->height());
+				hDlg->show(); // SWP_SHOWWINDOW
+				oapiSetDlgItemText(hWnd, IDC_DBG_MORE, isOpen ? ">>>" : "<<<");
 				isOpen = !isOpen;
 				break;
 
 			case IDC_DBG_RELOADSHD:
-				D3D9Effect::D3D9TechInit(g_client, g_client->GetDevice(), "D3D9Client");
+				D3D9Effect::D3D9TechInit(g_client, g_client->GetDevice(), "VulkanClient");
 				break;
 
 			case IDC_DBG_RELOADTEX:
@@ -2081,13 +2109,18 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 		
 			default: 
-				LogErr("LOWORD(%hu), HIWORD(0x%hX)",LOWORD(wParam),HIWORD(wParam));
+				LogErr("LOWORD(%hu), HIWORD(0x%hX)",WORD(id),WORD(code));
 				break;
 		}
-		break;
+	};
+	oapiConnectDlgCommands(hWnd, command);
+	for (int id : {IDC_DBG_RED, IDC_DBG_GREEN, IDC_DBG_BLUE, IDC_DBG_ALPHA}) { // EN_SETFOCUS
+		QWidget *hCtrl = oapiResDlgItem(hWnd, id);
+		new DlgEvents(hCtrl, QEvent::FocusIn, [command, id, hCtrl]() { command(id, RESN_SETFOCUS, hCtrl); });
 	}
+	new DlgEvents(hWnd, QEvent::Close, [command]() { command(IDCANCEL, RESN_CLICKED, NULL); });
 
-	return oapiDefDialogProc(hWnd, uMsg, wParam, lParam);
+	// oapiDefDialogProc left out: oapiOpenDialog wires the default dialog behaviour
 }
 
 // =============================================================================================
@@ -2099,6 +2132,5 @@ void OpenGFXDlgClbk(void *context)
 }
 
 } //namespace
-
 
 

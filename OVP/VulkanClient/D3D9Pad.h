@@ -15,6 +15,19 @@
 #include <mutex>
 #include "DrawAPI.h"
 
+// not upstream: the wingdi.h values the pads keep (pen style, background mode, font weight and quality)
+#define PS_SOLID				0
+#define PS_DOT					2
+#define PS_NULL					5
+#define TRANSPARENT				1
+#define OPAQUE					2
+#define FW_NORMAL				400
+#define FW_BOLD					700
+#define PROOF_QUALITY			2
+#define NONANTIALIASED_QUALITY	3
+#define ANTIALIASED_QUALITY		4
+#define CLEARTYPE_QUALITY		5
+
 using namespace oapi;
 
 extern oapi::Font *deffont;
@@ -114,8 +127,8 @@ struct SkpVtx {
 // GradientFillRect [only]
 inline void SkpVtxGF(SkpVtx &v, int _x, int _y, DWORD c)
 {
-	v.x = float(_x) - 0.5f;
-	v.y = float(_y) - 0.5f;
+	v.x = float(_x); // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = float(_y);
 	v.clr = c;
 	v.fnc = SKPSW_CENTER | SKPSW_FRAGMENT;
 	v.l = 0.0f;
@@ -123,8 +136,8 @@ inline void SkpVtxGF(SkpVtx &v, int _x, int _y, DWORD c)
 
 inline void SkpVtxFC(SkpVtx& v, float _x, float _y, DWORD c)
 {
-	v.x = _x - 0.5f;
-	v.y = _y - 0.5f;
+	v.x = _x; // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = _y;
 	v.clr = c;
 	v.fnc = SKPSW_CENTER | SKPSW_FRAGMENT;
 	v.l = 0.0f;
@@ -133,8 +146,8 @@ inline void SkpVtxFC(SkpVtx& v, float _x, float _y, DWORD c)
 // Fill Rect, Ellipse, Polygon [only]
 inline void SkpVtxIC(SkpVtx &v, int _x, int _y, const SkpColor &c)
 {
-	v.x = float(_x) - 0.5f;
-	v.y = float(_y) - 0.5f;
+	v.x = float(_x); // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = float(_y);
 	v.clr = c.dclr;
 	v.fnc = SKPSW_CENTER | SKPSW_FRAGMENT;
 	v.l = 0.0f;
@@ -143,8 +156,8 @@ inline void SkpVtxIC(SkpVtx &v, int _x, int _y, const SkpColor &c)
 // Copy, Stretch, Colorkey Rect [only]
 inline void SkpVtxII(SkpVtx &v, int _tx, int _ty, int _sx, int _sy)
 {
-	v.x = float(_tx) - 0.5f;
-	v.y = float(_ty) - 0.5f;
+	v.x = float(_tx); // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = float(_ty);
 	v.nx = float(_sx);
 	v.ny = float(_sy);
 	v.l = 0.0f;
@@ -153,8 +166,8 @@ inline void SkpVtxII(SkpVtx &v, int _tx, int _ty, int _sx, int _sy)
 // Pattern Fill [only]
 inline void SkpVtxPF(SkpVtx &v, int _x, int _y, DWORD c)
 {
-	v.x = float(_x) - 0.5f;
-	v.y = float(_y) - 0.5f;
+	v.x = float(_x); // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = float(_y);
 	v.l = 0.0f;
 	v.clr = c;
 	v.fnc = SKPSW_FRAGMENT | SKPSW_CENTER;
@@ -164,8 +177,8 @@ inline void SkpVtxPF(SkpVtx &v, int _x, int _y, DWORD c)
 // Rotate Rect [only]
 inline void SkpVtxFI(SkpVtx &v, float _x, float _y, int _tx, int _ty)
 {
-	v.x = _x - 0.5f;
-	v.y = _y - 0.5f;
+	v.x = _x; // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = _y;
 	v.nx = float(_tx);
 	v.ny = float(_ty);
 	v.l = 0.0f;
@@ -174,8 +187,8 @@ inline void SkpVtxFI(SkpVtx &v, float _x, float _y, int _tx, int _ty)
 // D3DTextManager Print Font [only]
 inline void SkpVtxFF(SkpVtx &v, float _x, float _y, float _tx, float _ty)
 {
-	v.x = _x - 0.5f;
-	v.y = _y - 0.5f;
+	v.x = _x; // D3D9 half-pixel offset (-0.5f) left out: Vulkan pixel centres are at .5
+	v.y = _y;
 	v.nx = _tx;
 	v.ny = _ty;
 	v.l = 0.0f;
@@ -712,6 +725,7 @@ private:
 	static VkFxHandle   eCovEn;
 	static VkFxHandle   eClearEn;
 	static VkFxHandle   eEffectsEn;
+	static VkFxHandle   eTexS;			// not upstream: sampler s0 (SetSamplerState filter override)
 };
 
 
@@ -866,6 +880,7 @@ private:
 	WORD nVtx, nPt, nIdx, iI, vI;
 	VkBuf *pVB; ///< (Local) Vertex buffer pointer
 	VkBuf *pIB;
+	VkDev *pDev; // not upstream: Update makes a new buffer (D3DLOCK_DISCARD)
 };
 
 
@@ -885,6 +900,7 @@ private:
 	int style;
 	WORD nPt;
 	VkBuf *pVB;
+	VkDev *pDev; // not upstream: Update makes a new buffer (D3DLOCK_DISCARD)
 };
 
 #endif

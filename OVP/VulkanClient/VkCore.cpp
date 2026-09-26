@@ -437,6 +437,8 @@ VkSurf::VkSurf (VkDev *_dev, UINT _w, UINT _h, VkFormat fmt, VkImageUsageFlags u
 
 VkSurf::~VkSurf ()
 {
+	VkDev *td = owner ? dev : (tex ? tex->Device() : NULL);
+	if (td) td->ForgetTarget (this);
 	if (owner) { delete tex; return; }
 	if (view && view != tex->view) {
 		VkDev *d = tex->Device();
@@ -474,6 +476,7 @@ VkDev::VkDev (QVulkanInstance *inst, VkPhysicalDevice _phys)
 	iFrame = 0;
 	recording = false;
 	rtColor = rtDepth = NULL;
+	rtExtra[0] = rtExtra[1] = rtExtra[2] = NULL;
 	streamStride[0] = streamStride[1] = 0;
 	rendering = false;
 	scissorSet = false;
@@ -832,12 +835,27 @@ void VkDev::SetRenderTarget (VkSurf *color, VkSurf *depth)
 	if (t) SetViewport (0.0f, 0.0f, (float)t->w, (float)t->h);
 	scissorSet = false;
 }
+void VkDev::SetRenderTargetN (UINT idx, VkSurf *color)
+{
+	if (idx == 0) { SetRenderTarget (color, rtDepth); return; }
+	if (idx > 3 || rtExtra[idx - 1] == color) return;
+	EndRendering ();
+	rtExtra[idx - 1] = color;
+}
+void VkDev::ForgetTarget (const VkSurf *s)
+{
+	if (s != rtColor && s != rtDepth && s != rtExtra[0] && s != rtExtra[1] && s != rtExtra[2]) return;
+	EndRendering ();
+	if (rtColor == s) rtColor = NULL;
+	if (rtDepth == s) rtDepth = NULL;
+	for (auto &e : rtExtra) if (e == s) e = NULL;
+}
 
 void VkDev::BeginRendering ()
 {
 	if (rendering || !recording || (!rtColor && !rtDepth)) return;
 	VkCommandBuffer cmd = Cmd();
-	VkRenderingAttachmentInfo ca = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+	VkRenderingAttachmentInfo ca[4] = { { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO } };
 	VkRenderingAttachmentInfo da = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 	VkRenderingAttachmentInfo sa = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 	VkRenderingInfo ri = { VK_STRUCTURE_TYPE_RENDERING_INFO };
@@ -845,13 +863,18 @@ void VkDev::BeginRendering ()
 	ri.renderArea = { { 0, 0 }, { t->w, t->h } };
 	ri.layerCount = 1;
 	if (rtColor) {
-		rtColor->tex->Transition (cmd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-		ca.imageView = rtColor->view;
-		ca.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		ca.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-		ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		ri.colorAttachmentCount = 1;
-		ri.pColorAttachments = &ca;
+		VkSurf *c[4] = { rtColor, rtExtra[0], rtExtra[1], rtExtra[2] };
+		UINT n = 0;
+		for (; n < 4 && c[n]; n++) {
+			c[n]->tex->Transition (cmd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			ca[n] = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+			ca[n].imageView = c[n]->view;
+			ca[n].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			ca[n].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			ca[n].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		}
+		ri.colorAttachmentCount = n;
+		ri.pColorAttachments = ca;
 	}
 	if (rtDepth) {
 		rtDepth->tex->Transition (cmd, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
@@ -880,6 +903,7 @@ void VkDev::EndRendering ()
 	vkCmdEndRendering (cmd);
 	rendering = false;
 	if (rtColor && (rtColor->tex->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) rtColor->tex->Transition (cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	for (VkSurf *e : rtExtra) if (e && (e->tex->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) e->tex->Transition (cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	if (rtDepth && (rtDepth->tex->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) rtDepth->tex->Transition (cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
@@ -887,12 +911,12 @@ void VkDev::Clear (bool color, bool depth, bool stencil, DWORD argb, float z, DW
 {
 	BeginRendering ();
 	if (!rendering) return;
-	VkClearAttachment ca[2];
+	VkClearAttachment ca[5];
 	UINT n = 0;
-	if (color && rtColor) {
+	for (UINT i = 0; color && rtColor && i < 4 && (i == 0 || rtExtra[i - 1]); i++) { // D3D9 Clear clears every render target
 		ca[n] = {};
 		ca[n].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		ca[n].colorAttachment = 0;
+		ca[n].colorAttachment = i;
 		ca[n].clearValue.color = { { ((argb >> 16) & 0xFF)/255.0f, ((argb >> 8) & 0xFF)/255.0f, (argb & 0xFF)/255.0f, ((argb >> 24) & 0xFF)/255.0f } };
 		n++;
 	}
@@ -972,10 +996,12 @@ void VkDev::ReplayState ()
 	vkx.CmdSetSampleMaskEXT (cmd, VK_SAMPLE_COUNT_32_BIT, &mask); // one mask word covers up to 32 samples
 	vkx.CmdSetAlphaToCoverageEnableEXT (cmd, VK_FALSE);
 	vkx.CmdSetDepthClampEnableEXT (cmd, VK_FALSE);
-	VkBool32 blend = st.blend;
-	vkx.CmdSetColorBlendEnableEXT (cmd, 0, 1, &blend);
-	vkx.CmdSetColorBlendEquationEXT (cmd, 0, 1, &st.blendEq);
-	vkx.CmdSetColorWriteMaskEXT (cmd, 0, 1, &st.writeMask);
+	VkBool32 blend[4] = { st.blend, st.blend, st.blend, st.blend }; // the same for every MRT attachment, as D3D9 without independent blend
+	VkColorBlendEquationEXT eq[4] = { st.blendEq, st.blendEq, st.blendEq, st.blendEq };
+	VkColorComponentFlags wm[4] = { st.writeMask, st.writeMask, st.writeMask, st.writeMask };
+	vkx.CmdSetColorBlendEnableEXT (cmd, 0, 4, blend);
+	vkx.CmdSetColorBlendEquationEXT (cmd, 0, 4, eq);
+	vkx.CmdSetColorWriteMaskEXT (cmd, 0, 4, wm);
 	if (st.decl) SetVertexDecl (st.decl);
 	else vkx.CmdSetVertexInputEXT (cmd, 0, NULL, 0, NULL);
 	if (curVS || curFS) BindShaders (curVS, curFS);
@@ -1015,8 +1041,8 @@ void VkDev::SetFillMode (VkPolygonMode mode)
 void VkDev::SetBlend (bool enable)
 {
 	st.blend = enable;
-	VkBool32 b = enable;
-	if (recording) vkx.CmdSetColorBlendEnableEXT (Cmd(), 0, 1, &b);
+	VkBool32 b[4] = { enable, enable, enable, enable };
+	if (recording) vkx.CmdSetColorBlendEnableEXT (Cmd(), 0, 4, b);
 }
 
 void VkDev::SetBlendFunc (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op)
@@ -1029,7 +1055,7 @@ void VkDev::SetBlendFunc (VkBlendFactor src, VkBlendFactor dst, VkBlendOp op)
 		st.blendEq.dstAlphaBlendFactor = dst;
 		st.blendEq.alphaBlendOp = op;
 	}
-	if (recording) vkx.CmdSetColorBlendEquationEXT (Cmd(), 0, 1, &st.blendEq);
+	if (recording) { VkColorBlendEquationEXT q[4] = { st.blendEq, st.blendEq, st.blendEq, st.blendEq }; vkx.CmdSetColorBlendEquationEXT (Cmd(), 0, 4, q); }
 }
 
 void VkDev::SetSrcBlend (VkBlendFactor src)
@@ -1048,13 +1074,14 @@ void VkDev::SetBlendFuncAlpha (VkBlendFactor src, VkBlendFactor dst, VkBlendOp o
 	st.blendEq.srcAlphaBlendFactor = src;
 	st.blendEq.dstAlphaBlendFactor = dst;
 	st.blendEq.alphaBlendOp = op;
-	if (recording) vkx.CmdSetColorBlendEquationEXT (Cmd(), 0, 1, &st.blendEq);
+	if (recording) { VkColorBlendEquationEXT q[4] = { st.blendEq, st.blendEq, st.blendEq, st.blendEq }; vkx.CmdSetColorBlendEquationEXT (Cmd(), 0, 4, q); }
 }
 
 void VkDev::SetColorWrite (VkColorComponentFlags mask)
 {
 	st.writeMask = mask;
-	if (recording) vkx.CmdSetColorWriteMaskEXT (Cmd(), 0, 1, &mask);
+	VkColorComponentFlags m[4] = { mask, mask, mask, mask };
+	if (recording) vkx.CmdSetColorWriteMaskEXT (Cmd(), 0, 4, m);
 }
 
 void VkDev::SetStencil (bool enable, VkCompareOp op, UINT ref, UINT mask, VkStencilOp pass, VkStencilOp fail, VkStencilOp zfail)
@@ -1330,12 +1357,16 @@ void VkDev::ColorFill (VkSurf *s, const RECT *r, DWORD argb)
 {
 	if (!recording || !s || !s->tex->img) return;
 	if (s->tex->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) { // clear through a rendering pass; the device state stays as it was
-		VkSurf *oc = rtColor, *od = rtDepth;
+		VkSurf *oc = rtColor, *od = rtDepth, *oe[3] = { rtExtra[0], rtExtra[1], rtExtra[2] };
 		VkViewport ov = viewport;
+		EndRendering ();
+		rtExtra[0] = rtExtra[1] = rtExtra[2] = NULL;
 		VkRect2D os = scissor;
 		bool oss = scissorSet;
 		SetRenderTarget (s, NULL);
 		Clear (true, false, false, argb, 1.0f, 0, r);
+		EndRendering ();
+		for (int i = 0; i < 3; i++) rtExtra[i] = oe[i];
 		SetRenderTarget (oc, od);
 		viewport = ov;
 		scissor = os;

@@ -63,37 +63,33 @@ void VBMESH::ComputeSphere()
 }
 
 
-void VBMESH::MapVertices(LPDIRECT3DDEVICE9 pDev, DWORD MemFlag)
+void VBMESH::MapVertices(VkDev *pDev, DWORD MemFlag)
 {
 	if (nv!=nv_cur && vtx) {
 		pVB = g_pVtxmgr_vb->New(nv); nv_cur = nv;
+	}
+	else if (pVB && vtx) { // not upstream: Lock(D3DLOCK_DISCARD) renames, frames in flight keep reading the old buffer
+		VkBuf *pOld = pVB;
+		pVB = g_pVtxmgr_vb->New(nv);
+		g_pVtxmgr_vb->Free(pOld);
 	}
 
 	if (nf!=nf_cur && idx) {
 		pIB = g_pIdxmgr_ib->New(nf); nf_cur = nf;
 	}
 
-	VERTEX_2TEX *pVBuffer;
-	WORD *pIBuffer;
-
 	if (vtx) {
 
 		HR(D3DXComputeBoundingSphere((const D3DXVECTOR3 *)&vtx->x, nv, sizeof(VERTEX_2TEX), &bsCnt, &bsRad));
 
 		if (pVB) {
-			if (HROK(pVB->Lock(0, 0, (LPVOID*)&pVBuffer, D3DLOCK_DISCARD))) {
-				memcpy(pVBuffer, vtx, nv*sizeof(VERTEX_2TEX));
-				pVB->Unlock();
-			}
+			pVB->Upload(vtx, nv*sizeof(VERTEX_2TEX)); // Lock(D3DLOCK_DISCARD), memcpy, Unlock
 		} else LogErr("Failed to create vertex buffer");
 	}
 
 	if (idx) {
 		if (pIB) {
-			if (HROK(pIB->Lock(0, 0, (LPVOID*)&pIBuffer, D3DLOCK_DISCARD))) {
-				memcpy(pIBuffer, idx, nf*sizeof(WORD)*3);
-				pIB->Unlock();
-			}
+			pIB->Upload(idx, nf*sizeof(WORD)*3); // Lock(D3DLOCK_DISCARD), memcpy, Unlock
 		} else LogErr("Failed to create index buffer");
 	}
 }
@@ -113,7 +109,7 @@ void VBMESH::MapVertices(LPDIRECT3DDEVICE9 pDev, DWORD MemFlag)
 //  20      822   4800
 //  24     1178   6912
 
-void CreateSphere (LPDIRECT3DDEVICE9 pDev, VBMESH &mesh, DWORD nrings, bool hemisphere, int which_half, int texres)
+void CreateSphere (VkDev *pDev, VBMESH &mesh, DWORD nrings, bool hemisphere, int which_half, int texres)
 {
 	// Allocate memory for the vertices and indices
 	DWORD       nVtx = hemisphere ? nrings*(nrings+1)+2 : nrings*(2*nrings+1)+2;
@@ -213,7 +209,7 @@ void CreateSphere (LPDIRECT3DDEVICE9 pDev, VBMESH &mesh, DWORD nrings, bool hemi
 
 // ==============================================================
 
-void CreateSpherePatch (LPDIRECT3DDEVICE9 pDev, VBMESH &mesh, int nlng, int nlat, int ilat, int res, int bseg,
+void CreateSpherePatch (VkDev *pDev, VBMESH &mesh, int nlng, int nlat, int ilat, int res, int bseg,
 	bool reduce, bool outside, bool store_vtx, bool shift_origin)
 {
 

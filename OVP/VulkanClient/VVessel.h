@@ -15,7 +15,7 @@
 #include <unordered_set>
 #include <vector>
 
-class oapi::D3D9Client;
+namespace oapi { class D3D9Client; } // class oapi::D3D9Client; g++ takes no qualified forward declaration
 
 typedef struct {
 	float fdata;

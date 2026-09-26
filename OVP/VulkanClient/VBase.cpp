@@ -27,10 +27,7 @@
 #include "D3D9Config.h"
 #include "VPlanet.h"
 
-#pragma warning(push)
-#pragma warning(disable : 4838)
-#include <xnamath.h>
-#pragma warning(pop)
+// xnamath.h left out (Windows only): its vector operations below are written out on D3DXVECTOR3
 
 typedef struct {
 	float rad;
@@ -44,22 +41,22 @@ void CheckMeshStats(MESHHANDLE hMesh, MeshStats *stats)
 	int nGrp = oapiMeshGroupCount(hMesh);
 	if (nGrp == 0) return;
 
-	XMVECTOR mi = XMLoadFloat3(ptr(XMFLOAT3(1e12f, 1e12f, 1e12f)));
-	XMVECTOR mx = -mi;
+	D3DXVECTOR3 mi = D3DXVECTOR3(1e12f, 1e12f, 1e12f); // XMVECTOR, XMLoadFloat3
+	D3DXVECTOR3 mx = -mi;
 
 	for (int i = 0; i < nGrp; i++) {
 
 		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, i);
 		
 		for (DWORD v = 0; v < grp->nVtx; v++) {
-			XMVECTOR x = XMLoadFloat3((XMFLOAT3 *)&grp->Vtx[v].x);
-			mi = XMVectorMin(mi, x);
-			mx = XMVectorMax(mx, x);
+			D3DXVECTOR3 x = D3DXVECTOR3(grp->Vtx[v].x, grp->Vtx[v].y, grp->Vtx[v].z); // XMLoadFloat3
+			mi = D3DXVECTOR3(std::min(mi.x, x.x), std::min(mi.y, x.y), std::min(mi.z, x.z)); // XMVectorMin
+			mx = D3DXVECTOR3(std::max(mx.x, x.x), std::max(mx.y, x.y), std::max(mx.z, x.z)); // XMVectorMax
 		}
 	}
 
-	XMStoreFloat3((XMFLOAT3 *)&stats->min.x, mi);
-	XMStoreFloat3((XMFLOAT3 *)&stats->max.x, mx);
+	stats->min = mi; // XMStoreFloat3
+	stats->max = mx;
 
 	stats->width = stats->max.x - stats->min.x;
 	stats->height = stats->max.y - stats->min.y;
@@ -380,7 +377,7 @@ bool vBase::Update (bool bMainScene)
 
 // ===========================================================================================
 //
-bool vBase::RenderSurface(LPDIRECT3DDEVICE9 dev)
+bool vBase::RenderSurface(VkDev *dev)
 {
 	// note: assumes z-buffer disabled
 	if (!active) return false;
@@ -411,7 +408,7 @@ bool vBase::RenderSurface(LPDIRECT3DDEVICE9 dev)
 
 // ===========================================================================================
 //
-bool vBase::RenderStructures(LPDIRECT3DDEVICE9 dev)
+bool vBase::RenderStructures(VkDev *dev)
 {
 	if (!active) return false;
 	if (!IsVisible()) return false;
@@ -437,7 +434,7 @@ bool vBase::RenderStructures(LPDIRECT3DDEVICE9 dev)
 
 // ===========================================================================================
 //
-void vBase::RenderRunwayLights(LPDIRECT3DDEVICE9 dev)
+void vBase::RenderRunwayLights(VkDev *dev)
 {
 	if (!active) return;
 	if (!IsVisible()) return;
@@ -468,7 +465,7 @@ void vBase::RenderRunwayLights(LPDIRECT3DDEVICE9 dev)
 
 // ===========================================================================================
 //
-void vBase::RenderGroundShadow(LPDIRECT3DDEVICE9 dev, float alpha)
+void vBase::RenderGroundShadow(VkDev *dev, float alpha)
 {
 	if (!nstructure_as) return; // nothing to do
 	if (!active) return;

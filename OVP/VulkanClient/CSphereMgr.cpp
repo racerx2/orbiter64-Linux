@@ -48,7 +48,7 @@ VBMESH *CSphereManager::PATCH_TPL[15] = {
 };
 
 
-void ReleaseTex(LPDIRECT3DTEXTURE9 pTex);
+void ReleaseTex(VkTex *pTex);
 
 
 // =======================================================================
@@ -64,7 +64,7 @@ CSphereManager::CSphereManager(D3D9Client *gc, const Scene *scene) : gc(gc), tex
 	NLNG = TileManager::NLNG;
 	NLAT = TileManager::NLAT;
 
-	pShader = new ShaderClass(gc->GetDevice(), "Modules/D3D9Client/CelSphere.hlsl", "CelVS", "CelPS", "CelSphere", "");
+	pShader = new ShaderClass(gc->GetDevice(), "Modules/VulkanClient/CelSphere.glsl", "CelVS", "CelPS", "CelSphere", "");
 
 	// Get Handles for faster access
 	hTexA = pShader->GetPSHandle("tTexA");
@@ -161,14 +161,13 @@ void CSphereManager::GlobalInit(oapi::D3D9Client *gclient)
 {
 	LogAlw("CSphereManager::GlobalInit()...");
 
-	LPDIRECT3DDEVICE9 dev = gclient->GetDevice();
-	D3DVIEWPORT9 vp;
-	dev->GetViewport (&vp);
-	vpX0 = vp.X, vpX1 = vpX0 + vp.Width;
-	vpY0 = vp.Y, vpY1 = vpY0 + vp.Height;
+	VkDev *dev = gclient->GetDevice();
+	VkViewport vp = dev->GetViewport (); // D3DVIEWPORT9
+	vpX0 = DWORD(vp.x), vpX1 = vpX0 + DWORD(vp.width);
+	vpY0 = DWORD(vp.y), vpY1 = vpY0 + DWORD(vp.height);
 	// viewport size for clipping calculations
 
-	diagscale = (double)vp.Width/(double)vp.Height;
+	diagscale = (double)vp.width/(double)vp.height;
 	diagscale = sqrt(1.0 + diagscale*diagscale);
 
 	// Level 1 patch template
@@ -259,15 +258,14 @@ void CSphereManager::GlobalExit ()
 
 // =======================================================================
 
-void CSphereManager::CreateDeviceObjects (LPDIRECT3D9 d3d, LPDIRECT3DDEVICE9 dev)
+void CSphereManager::CreateDeviceObjects (QVulkanInstance *d3d, VkDev *dev)
 {
-	D3DVIEWPORT9 vp;
-	dev->GetViewport (&vp);
-	vpX0 = vp.X, vpX1 = vpX0 + vp.Width;
-	vpY0 = vp.Y, vpY1 = vpY0 + vp.Height;
+	VkViewport vp = dev->GetViewport (); // D3DVIEWPORT9
+	vpX0 = DWORD(vp.x), vpX1 = vpX0 + DWORD(vp.width);
+	vpY0 = DWORD(vp.y), vpY1 = vpY0 + DWORD(vp.height);
 	// viewport size for clipping calculations
 
-	diagscale = (double)vp.Width/(double)vp.Height;
+	diagscale = (double)vp.width/(double)vp.height;
 	diagscale = sqrt(1.0 + diagscale*diagscale);
 }
 
@@ -395,7 +393,7 @@ void CSphereManager::SetBgBrightness(double val)
 
 // =======================================================================
 
-void CSphereManager::Render (LPDIRECT3DDEVICE9 dev, int level, double bglvl)
+void CSphereManager::Render (VkDev *dev, int level, double bglvl)
 {
 	if (m_bDisabled) return;
 
@@ -428,7 +426,7 @@ void CSphereManager::Render (LPDIRECT3DDEVICE9 dev, int level, double bglvl)
 
 	RenderParam.camdir = _V(rcam.m13, rcam.m23, rcam.m33);
 
-	WaitForSingleObject (tilebuf->hQueueMutex, INFINITE);
+	tilebuf->hQueueMutex.lock(); // WaitForSingleObject
 
 	CelFlow.bAlpha = m_bBkgImg;
 	CelFlow.bBeta = m_bStarImg;
@@ -455,14 +453,14 @@ void CSphereManager::Render (LPDIRECT3DDEVICE9 dev, int level, double bglvl)
 		}
 	}
 
-	ReleaseMutex (tilebuf->hQueueMutex);
+	tilebuf->hQueueMutex.unlock(); // ReleaseMutex
 }
 
 // =======================================================================
 
 void CSphereManager::ProcessTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, TILEDESC *tile,
-	const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag,
-	const TEXCRDRANGE &bkp_range, LPDIRECT3DTEXTURE9 bkp_tex, LPDIRECT3DTEXTURE9 bkp_ltex, DWORD bkp_flag)
+	const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag,
+	const TEXCRDRANGE &bkp_range, VkTex *bkp_tex, VkTex *bkp_ltex, DWORD bkp_flag)
 {
 	
 	static const double rad0 = sqrt(2.0)*PI05;
@@ -497,7 +495,7 @@ void CSphereManager::SetWorldMatrix (int ilng, int nlng, int ilat, int nlat)
 // =======================================================================
 
 void CSphereManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng,
-	TILEDESC *tile, const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag)
+	TILEDESC *tile, const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag)
 {
 	VBMESH &mesh = PATCH_TPL[lvl][ilat]; // patch template
 	
@@ -508,10 +506,10 @@ void CSphereManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int il
 	pShader->SetVSConstants(hVSConst, &CelData, sizeof(CelData));
 	pShader->UpdateTextures();
 
-	LPDIRECT3DDEVICE9 pDev = pShader->GetDevice();
+	VkDev *pDev = pShader->GetDevice();
 	pDev->SetStreamSource(0, mesh.pVB, 0, sizeof(VERTEX_2TEX));
 	pDev->SetIndices(mesh.pIB);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh.nv, 0, mesh.nf);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh.nf));
 }
 
 // =======================================================================

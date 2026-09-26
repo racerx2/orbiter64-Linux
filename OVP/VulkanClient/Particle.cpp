@@ -409,14 +409,14 @@ void D3D9ParticleStream::CalcNormals(const VECTOR3 &ppos, NTVERTEX *vtx)
 	vtx[3].nz = scale*(float)(-cdir.z+uz-vz);
 }
 
-void D3D9ParticleStream::Render(LPDIRECT3DDEVICE9 dev)
+void D3D9ParticleStream::Render(VkDev *dev)
 {
 	if (!pfirst) return;
 	if (diffuse) RenderDiffuse(dev);
 	else         RenderEmissive(dev);
 }
 
-void D3D9ParticleStream::RenderDiffuse(LPDIRECT3DDEVICE9 dev)
+void D3D9ParticleStream::RenderDiffuse(VkDev *dev)
 {
 	static D3DMATERIAL9 smokemat = { // emissive material for engine exhaust
 		{1,1,1,1},
@@ -435,13 +435,13 @@ void D3D9ParticleStream::RenderDiffuse(LPDIRECT3DDEVICE9 dev)
 
 	CalcNormals(plast->pos - camera_gpos, dvtx);
 
-	HR(dev->SetVertexDeclaration(pNTVertexDecl));
+	dev->SetVertexDecl(pNTVertexDecl);
 	HR(FX->SetTechnique(eDiffuseTech));
 	HR(FX->SetMatrix(eW, &mWorld));
 
 	if (tex) HR(FX->SetTexture(eTex0, SURFACE(tex)->GetTexture()));
 
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	for (p = pfirst, vtx = dvtx, n = i0 = 0; p; p = p->next) {
@@ -463,7 +463,7 @@ void D3D9ParticleStream::RenderDiffuse(LPDIRECT3DDEVICE9 dev)
 			float alpha = (float)max (0.1, p->alpha0*(1.0-(oapiGetSimTime()-p->t0)*ipht2));
 			HR(FX->SetFloat(eMix, alpha));
 			HR(FX->CommitChanges());
-			HR(dev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, n*4, n*2, idx, D3DFMT_INDEX16, dvtx+i0*4, sizeof(NTVERTEX)));
+			dev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*2), idx, VK_INDEX_TYPE_UINT16, dvtx+i0*4, sizeof(NTVERTEX));
 			i0 += n;
 			n = 0;
 		}
@@ -474,7 +474,7 @@ void D3D9ParticleStream::RenderDiffuse(LPDIRECT3DDEVICE9 dev)
 }
 
 
-void D3D9ParticleStream::RenderEmissive(LPDIRECT3DDEVICE9 dev)
+void D3D9ParticleStream::RenderEmissive(VkDev *dev)
 {
 	static D3DMATERIAL9 smokemat = { // emissive material for engine exhaust
 		{0,0,0,1},
@@ -491,7 +491,7 @@ void D3D9ParticleStream::RenderEmissive(LPDIRECT3DDEVICE9 dev)
 
 	VECTOR3 camera_gpos = pGC->GetScene()->GetCameraGPos();
 
-	HR(dev->SetVertexDeclaration(pPosTexDecl));
+	dev->SetVertexDecl(pPosTexDecl);
 	HR(FX->SetTechnique(eEmissiveTech));
 	HR(FX->SetMatrix(eW, &mWorld));
 
@@ -502,7 +502,7 @@ void D3D9ParticleStream::RenderEmissive(LPDIRECT3DDEVICE9 dev)
 
 	HR(FX->SetValue(eColor, &color, sizeof(D3DCOLORVALUE)));
 
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	for (p = pfirst, vtx = evtx, n = i0 = 0; p; p = p->next) {
@@ -521,7 +521,7 @@ void D3D9ParticleStream::RenderEmissive(LPDIRECT3DDEVICE9 dev)
 			float alpha = (float)max (0.1, p->alpha0*(1.0-(oapiGetSimTime()-p->t0)*ipht2));
 			HR(FX->SetFloat(eMix, alpha));
 			HR(FX->CommitChanges());
-			HR(dev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, n*4, n*2, idx, D3DFMT_INDEX16, evtx+i0*4, sizeof(VERTEX_XYZ_TEX)));
+			dev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*2), idx, VK_INDEX_TYPE_UINT16, evtx+i0*4, sizeof(VERTEX_XYZ_TEX));
 			i0 += n;
 			n = 0;
 		}
@@ -679,7 +679,7 @@ void ExhaustStream::Update ()
 }
 
 
-void ExhaustStream::RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE9 &prevtex)
+void ExhaustStream::RenderGroundShadow (VkDev *dev, VkTex*&prevtex)
 {
 	if (!diffuse || !hPlanet || !pfirst) return;
 	if (Config->TerrainShadowing == 0) return;
@@ -712,7 +712,7 @@ void ExhaustStream::RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE
 	VECTOR3 shp = sd*a;           // projection point in global frame
 	hn = unit (shp + pv0);        // horizon normal in global frame
 
-	HR(dev->SetVertexDeclaration(pPosTexDecl));
+	dev->SetVertexDecl(pPosTexDecl);
 	HR(FX->SetTechnique(eEmissiveTech));
 	HR(FX->SetMatrix(eW, &mWorld));
 
@@ -720,7 +720,7 @@ void ExhaustStream::RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE
 
 	UINT numPasses = 0;
 
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(1));
 
 	for (p = pfirst, vtx = evtx, n = i0 = 0; p; p = p->next) {
@@ -749,7 +749,7 @@ void ExhaustStream::RenderGroundShadow (LPDIRECT3DDEVICE9 dev, LPDIRECT3DTEXTURE
 			if (alpha>0.01f) {
 				HR(FX->SetFloat(eMix, alpha));
 				HR(FX->CommitChanges());
-				HR(dev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, n*4, n*2, idx, D3DFMT_INDEX16, evtx+i0*4, sizeof(VERTEX_XYZ_TEX)));
+				dev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, n*2), idx, VK_INDEX_TYPE_UINT16, evtx+i0*4, sizeof(VERTEX_XYZ_TEX));
 			}
 			i0 += n;
 			n = 0;

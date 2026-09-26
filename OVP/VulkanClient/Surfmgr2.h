@@ -17,6 +17,7 @@
  * Planetary surface rendering engine v2, including a simple
  * LOD (level-of-detail) algorithm for surface patch resolution.
  */
+class TileLabel; // g++: the friend declaration below doesn't introduce it (TileLabel.h includes this header first)
 class SurfTile: public Tile {
 	friend class TileManager2Base;
 	template<class SurfTile> friend class TileManager2;

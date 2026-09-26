@@ -37,8 +37,8 @@ const char *value_string (double val);
 void LogComp(ANIMATIONCOMP *AC, int ident)
 {
 	char id[64];
-	strcpy_s(id, 64, "");
-	for (int i = 0; i < ident; i++) strcat_s(id, 64, " ");
+	snprintf(id, 64, "%s", "");
+	for (int i = 0; i < ident; i++) strncat(id, " ", 64 - strlen(id) - 1); // strcat_s
 	oapiWriteLogV("%s COMP[%s] has %u children, Parent = %s", id, _PTR(AC), AC->nchildren, _PTR(AC->parent));
 	for (UINT i = 0; i < AC->nchildren; i++) LogComp(AC->children[i], ident + 2);
 }
@@ -63,11 +63,11 @@ vVessel::vVessel(OBJHANDLE _hObj, const Scene *scene): vObject (_hObj, scene)
 	pIrdEnv = NULL;
 
 	pMatMgr = new MatMgr(this, scene->GetClient());
-	for (int i = 0; i < ARRAYSIZE(pEnv); i++) pEnv[i] = NULL;
+	for (int i = 0; i < int(std::size(pEnv)); i++) pEnv[i] = NULL;
 
-	if (strncmp(vessel->GetClassNameA(), "XR2Ravenstar", 12) == 0) vClass = VCLASS_XR2;
-	if (strncmp(vessel->GetClassNameA(), "SpaceShuttleUltra", 17) == 0) vClass = VCLASS_ULTRA;
-	if (strncmp(vessel->GetClassNameA(), "SSU_CentaurGPrime", 17) == 0) vClass = VCLASS_SSU_CENTAUR;
+	if (strncmp(vessel->GetClassName(), "XR2Ravenstar", 12) == 0) vClass = VCLASS_XR2;
+	if (strncmp(vessel->GetClassName(), "SpaceShuttleUltra", 17) == 0) vClass = VCLASS_ULTRA;
+	if (strncmp(vessel->GetClassName(), "SSU_CentaurGPrime", 17) == 0) vClass = VCLASS_SSU_CENTAUR;
 
 	bBSRecompute = true;
 	ExhaustLength = 0.0f;
@@ -100,10 +100,10 @@ vVessel::vVessel(OBJHANDLE _hObj, const Scene *scene): vObject (_hObj, scene)
 vVessel::~vVessel ()
 {
 	SAFE_DELETE(pMatMgr);
-	SAFE_RELEASE(pIrrad);
-	SAFE_RELEASE(pIrdEnv);
+	SAFE_DELETE(pIrrad);
+	SAFE_DELETE(pIrdEnv);
 
-	for (int i = 0; i < ARRAYSIZE(pEnv); i++) SAFE_RELEASE(pEnv[i]);
+	for (int i = 0; i < int(std::size(pEnv)); i++) SAFE_DELETE(pEnv[i]);
 
 	LogAlw("Deleting Vessel Visual %s ...", _PTR(this));
 	DisposeAnimations();
@@ -240,7 +240,7 @@ void vVessel::PreInitObject()
 		for (DWORD i=0;i<nmesh;i++) if (meshlist[i].mesh) pMatMgr->ApplyConfiguration(meshlist[i].mesh);
 		pMatMgr->LoadCameraConfig();
 	}
-	else LogErr("Failed to load a custom configuration for %s",vessel->GetClassNameA());
+	else LogErr("Failed to load a custom configuration for %s",vessel->GetClassName());
 }
 
 
@@ -279,7 +279,7 @@ void vVessel::LoadMeshes()
 
 	memset(meshlist, 0, nmesh*sizeof(MESHREC));
 
-	LogAlw("Vessel(%s) %s has %u meshes", _PTR(vessel), vessel->GetClassNameA(), nmesh);
+	LogAlw("Vessel(%s) %s has %u meshes", _PTR(vessel), vessel->GetClassName(), nmesh);
 
 	for (idx=0;idx<nmesh;idx++) {
 
@@ -317,13 +317,13 @@ void vVessel::LoadMeshes()
 			}
 		}
 		else {
-			LogWrn("Vessel %s has a NULL mesh in index %u",vessel->GetClassNameA(),idx);
+			LogWrn("Vessel %s has a NULL mesh in index %u",vessel->GetClassName(),idx);
 		}
 	}
 
 	UpdateBoundingBox();
 
-	LogOk("Loaded %u meshed for %s",nmesh,vessel->GetClassNameA());
+	LogOk("Loaded %u meshed for %s",nmesh,vessel->GetClassName());
 }
 
 
@@ -643,7 +643,7 @@ void vVessel::GetMinMaxLightDist(float *mind, float *maxd)
 
 // ============================================================================================
 //
-bool vVessel::Render(LPDIRECT3DDEVICE9 dev)
+bool vVessel::Render(VkDev *dev)
 {
 	_TRACE;
 	if (!active) return false;
@@ -657,7 +657,7 @@ bool vVessel::Render(LPDIRECT3DDEVICE9 dev)
 
 // ============================================================================================
 //
-bool vVessel::Render(LPDIRECT3DDEVICE9 dev, bool internalpass)
+bool vVessel::Render(VkDev *dev, bool internalpass)
 {
 	_TRACE;
 	if (!active) return false;
@@ -830,7 +830,7 @@ bool vVessel::Render(LPDIRECT3DDEVICE9 dev, bool internalpass)
 
 // ============================================================================================
 //
-void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
+void vVessel::RenderVectors (VkDev *dev, D3D9Pad *pSkp)
 {
 	const double threshold = 0;//0.25; // threshold for forces to be drawn
 	VECTOR3 vector;
@@ -876,7 +876,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetDragVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(1,0,0,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "D = %sN", value_string(length(vector)));
+					snprintf(label, 64, "D = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(1,0,0,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -885,7 +885,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetWeightVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(1,1,0,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "G = %sN", value_string(length(vector)));
+					snprintf(label, 64, "G = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(1,1,0,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -894,7 +894,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetThrustVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(0,0,1,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "T = %sN", value_string(length(vector)));
+					snprintf(label, 64, "T = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(0,0,1,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -903,7 +903,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetLiftVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(0,1,0,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "L = %sN", value_string(length(vector)));
+					snprintf(label, 64, "L = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(0,1,0,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -912,7 +912,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetForceVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(1,1,1,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "F = %sN", value_string(length(vector)));
+					snprintf(label, 64, "F = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(1,1,1,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -921,7 +921,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetTorqueVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(1,0,1,alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "M = %sNm", value_string(length(vector)));
+					snprintf(label, 64, "M = %sNm", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(1,0,1,alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -930,7 +930,7 @@ void vVessel::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad *pSkp)
 				vessel->GetSideForceVector(vector);
 				if (length(vector) > threshold) {
 					RenderAxisVector(pSkp, ptr(D3DXCOLOR(0.0392, 0.6235, 0.4941, alpha)), vector, lscale, scale, bLog);
-					sprintf_s(label, 64, "SF = %sN", value_string(length(vector)));
+					snprintf(label, 64, "SF = %sN", value_string(length(vector)));
 					RenderAxisLabel(pSkp, ptr(D3DXCOLOR(0.0392, 0.6235, 0.4941, alpha)), vector, lscale, scale, label, bLog);
 				}
 			}
@@ -970,7 +970,7 @@ bool vVessel::RenderExhaust()
 
 // ============================================================================================
 //
-void vVessel::RenderBeacons(LPDIRECT3DDEVICE9 dev)
+void vVessel::RenderBeacons(VkDev *dev)
 {
 	if (nmesh < 1) return;
 	DWORD idx = 0;
@@ -992,7 +992,7 @@ void vVessel::RenderBeacons(LPDIRECT3DDEVICE9 dev)
 
 // ============================================================================================
 //
-void vVessel::RenderGrapplePoints (LPDIRECT3DDEVICE9 dev)
+void vVessel::RenderGrapplePoints (VkDev *dev)
 {
 	if (!oapiGetShowGrapplePoints()) return; // nothing to do
 
@@ -1035,7 +1035,7 @@ void vVessel::RenderGrapplePoints (LPDIRECT3DDEVICE9 dev)
 
 // ============================================================================================
 //
-void vVessel::RenderGroundShadow(LPDIRECT3DDEVICE9 dev, OBJHANDLE hPlanet, float alpha)
+void vVessel::RenderGroundShadow(VkDev *dev, OBJHANDLE hPlanet, float alpha)
 {
 	if (!bStencilShadow && scn->GetRenderPass() == RENDERPASS_MAINSCENE) return;
 	if (Config->TerrainShadowing == 0) return;
@@ -1129,7 +1129,7 @@ void vVessel::RenderGroundShadow(LPDIRECT3DDEVICE9 dev, OBJHANDLE hPlanet, float
 // Return true if it's time to move to a next vessel
 // false, if more rendereing is required here.
 //
-bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
+bool vVessel::RenderENVMap(VkDev *pDev, DWORD cnt, DWORD flags)
 {
 
 	bool bReflective = false;
@@ -1147,7 +1147,7 @@ bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 
 	if (!bReflective) return true;
 
-	LPDIRECT3DSURFACE9 pEnvDS = GetScene()->GetEnvDepthStencil();
+	VkSurf *pEnvDS = GetScene()->GetEnvDepthStencil();
 
 	if (!pEnvDS) {
 		LogErr("EnvDepthStencil doesn't exists");
@@ -1158,12 +1158,14 @@ bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 	// Create a main EnvMap with mipmap chain for blurred maps --------------------------------------------------------------------
 	//
 	if (pEnv[ENVMAP_MAIN] == NULL) {
-		D3DSURFACE_DESC desc;
-		pEnvDS->GetDesc(&desc);
-		if (D3DXCreateCubeTexture(pDev, desc.Width, 5, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pEnv[ENVMAP_MAIN]) != S_OK) {
+		// D3DXCreateCubeTexture, D3DUSAGE_RENDERTARGET, D3DFMT_X8R8G8B8 (GetDesc: the width is pEnvDS->w)
+		pEnv[ENVMAP_MAIN] = new VkTex(pDev, pEnvDS->w, pEnvDS->w, 5, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 6, true);
+		if (!pEnv[ENVMAP_MAIN]->img) {
+			SAFE_DELETE(pEnv[ENVMAP_MAIN]);
 			LogErr("Failed to create env cubemap for visual %s", _PTR(this));
 			return true;
 		}
+		pEnv[ENVMAP_MAIN]->SetSwizzle(VkSwizzleMap(SWZ_NOALPHA)); // X8: alpha reads 1
 		nEnv++;
 	}
 
@@ -1238,12 +1240,12 @@ bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 
 	D3DXMATRIX mEnv;
 	D3DXVECTOR3 dir, up;
-	LPDIRECT3DSURFACE9 pSrf = NULL;
+	VkSurf *pSrf = NULL;
 
 
 	for (DWORD i=0;i<cnt;i++) {
 
-		HR(pEnv[ENVMAP_MAIN]->GetCubeMapSurface(D3DCUBEMAP_FACES(eFace), 0, &pSrf));
+		pSrf = new VkSurf(pEnv[ENVMAP_MAIN], 0, eFace); // GetCubeMapSurface(D3DCUBEMAP_FACES(eFace), 0)
 	
 		gc->AlterRenderTarget(pSrf, pEnvDS);
 
@@ -1259,7 +1261,8 @@ bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 		scn->SetupInternalCamera(&mEnv, NULL, 0.7853981634, 1.0);
 		scn->RenderSecondaryScene(RndList, AddLightSrc, flags);
 
-		SAFE_RELEASE(pSrf);
+		pDev->SetRenderTarget(NULL, pDev->GetDepthStencil()); // not upstream: the device kept a reference to the released surface in D3D9
+		SAFE_DELETE(pSrf);
 
 		eFace++;
 		if (eFace >= 6) break;
@@ -1279,10 +1282,10 @@ bool vVessel::RenderENVMap(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 // Return true if it's time to move to a next vessel
 // false, if more rendereing is required here.
 //
-bool vVessel::ProbeIrradiance(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
+bool vVessel::ProbeIrradiance(VkDev *pDev, DWORD cnt, DWORD flags)
 {
 
-	LPDIRECT3DSURFACE9 pIrDS = GetScene()->GetIrradianceDepthStencil();
+	VkSurf *pIrDS = GetScene()->GetIrradianceDepthStencil();
 
 	if (!pIrDS) return true; // Feature disabled
 
@@ -1291,13 +1294,17 @@ bool vVessel::ProbeIrradiance(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 	//
 	if (pIrdEnv == NULL) 
 	{
-		D3DSURFACE_DESC desc;
-		pIrDS->GetDesc(&desc);
-		if (D3DXCreateCubeTexture(pDev, desc.Width, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pIrdEnv) != S_OK) {
+		// D3DXCreateCubeTexture, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F (GetDesc: the width is pIrDS->w)
+		pIrdEnv = new VkTex(pDev, pIrDS->w, pIrDS->w, 1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 6, true);
+		if (!pIrdEnv->img) {
+			SAFE_DELETE(pIrdEnv);
 			LogErr("Failed to create env cubemap for visual %s", _PTR(this));
 			return true;
 		}
-		if (D3DXCreateTexture(pDev, 128, 64, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pIrrad) != S_OK) {
+		// D3DXCreateTexture, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F
+		pIrrad = new VkTex(pDev, 128, 64, 1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+		if (!pIrrad->img) {
+			SAFE_DELETE(pIrrad);
 			LogErr("Failed to create irradiance map for visual %s", _PTR(this));
 			return true;
 		}
@@ -1354,11 +1361,11 @@ bool vVessel::ProbeIrradiance(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 
 	D3DXMATRIX mEnv;
 	D3DXVECTOR3 dir, up;
-	LPDIRECT3DSURFACE9 pSrf = NULL;
+	VkSurf *pSrf = NULL;
 	
 	for (DWORD i = 0; i<cnt; i++) {
 
-		HR(pIrdEnv->GetCubeMapSurface(D3DCUBEMAP_FACES(iFace), 0, &pSrf));
+		pSrf = new VkSurf(pIrdEnv, 0, iFace); // GetCubeMapSurface(D3DCUBEMAP_FACES(iFace), 0)
 
 		gc->AlterRenderTarget(pSrf, pIrDS);
 
@@ -1374,7 +1381,8 @@ bool vVessel::ProbeIrradiance(LPDIRECT3DDEVICE9 pDev, DWORD cnt, DWORD flags)
 		scn->SetupInternalCamera(&mEnv, NULL, 0.7853981634, 1.0);
 		scn->RenderSecondaryScene(RndList, AddLightSrc, flags);
 
-		SAFE_RELEASE(pSrf);
+		pDev->SetRenderTarget(NULL, pDev->GetDepthStencil()); // not upstream: the device kept a reference to the released surface in D3D9
+		SAFE_DELETE(pSrf);
 
 		iFace++;
 		if (iFace >= 6) break;
@@ -1451,7 +1459,7 @@ void vVessel::RenderLightCone(LPD3DXMATRIX pWT)
 
 // ============================================================================================
 //
-LPDIRECT3DCUBETEXTURE9 vVessel::GetEnvMap(int idx)
+VkTex *vVessel::GetEnvMap(int idx)
 {
 	if (idx>=0 && idx<4) return pEnv[idx];
 	return NULL;
@@ -1715,7 +1723,7 @@ void vVessel::AnimateComponent (ANIMATIONCOMP *comp, const D3DXMATRIX &T)
 // ============================================================================================
 //
 
-void vVessel::RenderReentry(LPDIRECT3DDEVICE9 dev)
+void vVessel::RenderReentry(VkDev *dev)
 {
 
 	if (defreentrytex == NULL || nmesh < 1) return;
@@ -1906,15 +1914,15 @@ int vVessel::GetMatrixTransform(gcCore::MatrixId func, DWORD mi, DWORD gi, FMATR
 	if (pMesh == NULL) return -2;
 	if (gi >= pMesh->GetGroupCount()) return -3;
 
-	if (func == gcCore::MatrixId::MESH)	memcpy_s(pMat, sizeof(FMATRIX4), ptr(pMesh->GetTransform(-1, false)), sizeof(D3DXMATRIX));
-	if (func == gcCore::MatrixId::GROUP) memcpy_s(pMat, sizeof(FMATRIX4), ptr(pMesh->GetTransform(gi, false)), sizeof(D3DXMATRIX));
+	if (func == gcCore::MatrixId::MESH)	memcpy(pMat, ptr(pMesh->GetTransform(-1, false)), sizeof(D3DXMATRIX)); // memcpy_s: the sizes are equal
+	if (func == gcCore::MatrixId::GROUP) memcpy(pMat, ptr(pMesh->GetTransform(gi, false)), sizeof(D3DXMATRIX));
 
 	if (func == gcCore::MatrixId::OFFSET) {
-		if (meshlist[mi].trans) memcpy_s(pMat, sizeof(FMATRIX4), meshlist[mi].trans, sizeof(D3DXMATRIX));
+		if (meshlist[mi].trans) memcpy(pMat, meshlist[mi].trans, sizeof(D3DXMATRIX));
 		else {
 			D3DXMATRIX Ident;
 			D3DXMatrixIdentity(&Ident);
-			memcpy_s(pMat, sizeof(FMATRIX4), &Ident, sizeof(D3DXMATRIX));
+			memcpy(pMat, &Ident, sizeof(D3DXMATRIX));
 		}
 		return 0;
 	}
@@ -1924,9 +1932,9 @@ int vVessel::GetMatrixTransform(gcCore::MatrixId func, DWORD mi, DWORD gi, FMATR
 		if (meshlist[mi].trans) {
 			D3DXMATRIX MeshGrpTrans;
 			D3DXMatrixMultiply(&MeshGrpTrans, &MeshGrp, meshlist[mi].trans);
-			memcpy_s(pMat, sizeof(FMATRIX4), &MeshGrpTrans, sizeof(D3DXMATRIX));
+			memcpy(pMat, &MeshGrpTrans, sizeof(D3DXMATRIX));
 		}
-		else memcpy_s(pMat, sizeof(FMATRIX4), &MeshGrp, sizeof(D3DXMATRIX));
+		else memcpy(pMat, &MeshGrp, sizeof(D3DXMATRIX));
 	}
 
 	return 0;
@@ -1943,7 +1951,7 @@ int vVessel::SetMatrixTransform(gcCore::MatrixId func, DWORD mi, DWORD gi, const
 
 	if (func == gcCore::MatrixId::OFFSET) {
 		if (meshlist[mi].trans == NULL) meshlist[mi].trans = new D3DXMATRIX;
-		memcpy_s(meshlist[mi].trans, sizeof(D3DXMATRIX), pMat, sizeof(FMATRIX4));
+		memcpy(meshlist[mi].trans, pMat, sizeof(FMATRIX4));
 	}
 
 	if (func == gcCore::MatrixId::MESH) if (!pMesh->SetTransform(-1, (LPD3DXMATRIX)pMat)) return -4;
@@ -2021,7 +2029,7 @@ inline const char *value_string (char *buf, size_t buf_size, double val)
 
 	// apply array index offset (+2) [-2...5] => [0...7]
 	index = clip(index+2, 0, ARRAY_ELEMS(unit_prefixes) -1);
-	sprintf_s(buf, buf_size, "%.3f %c", val, unit_prefixes[index]);
+	snprintf(buf, buf_size, "%.3f %c", val, unit_prefixes[index]);
 
 	return buf;
 }

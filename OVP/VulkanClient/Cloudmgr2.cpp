@@ -13,6 +13,7 @@
 #include "Cloudmgr2.h"
 #include "D3D9Catalog.h"
 #include "D3D9Config.h"
+#include "VkTexFile.h"
 
 // =======================================================================
 // =======================================================================
@@ -44,12 +45,12 @@ void CloudTile::PreLoad()
 	// Configure microtexture range for "Water texture" and "Cloud microtexture".
 	GetParentMicroTexRange(&microrange);
 	
-	LPDIRECT3DDEVICE9  pDev = mgr->Dev();
-	LPDIRECT3DTEXTURE9 pSysSrf = nullptr;
+	VkDev *pDev = mgr->Dev();
+	VkPixels *pSysSrf = nullptr; // D3DPOOL_SYSTEMMEM texture
 
 	if (cmgr->DoLoadIndividualFiles(0)) { // try loading from individual tile file
 		char path[MAX_PATH];
-		sprintf_s (path, MAX_PATH, "%s\\Cloud\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl+4, ilat, ilng);
+		snprintf (path, MAX_PATH, "%s\\Cloud\\%02d\\%06d\\%06d.dds", mgr->DataRootDir().c_str(), lvl+4, ilat, ilng);
 		LoadTextureFile(path, &pSysSrf);
 	}
 	if (!pSysSrf && cmgr->ZTreeManager(0)) { // try loading from compressed archive
@@ -71,7 +72,7 @@ void CloudTile::PreLoad()
 		else tex = nullptr;
 	}
 	
-	SAFE_RELEASE(pSysSrf);
+	SAFE_DELETE(pSysSrf); // Release
 }
 
 
@@ -101,7 +102,7 @@ void CloudTile::Render()
 {
 	Tile::Render();
 
-	LPDIRECT3DDEVICE9 pDev = mgr->Dev();
+	VkDev *pDev = mgr->Dev();
 	vPlanet* vPlanet = mgr->GetPlanet();
 	PlanetShader* pShader = mgr->GetShader();
 	ShaderParams* sp = vPlanet->GetTerrainParams();
@@ -135,7 +136,7 @@ void CloudTile::Render()
 
 		pDev->SetStreamSource(0, mesh->pVB, 0, sizeof(VERTEX_2TEX));
 		pDev->SetIndices(mesh->pIB);
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh->nv, 0, mesh->nf);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh->nf));
 	}
 }
 
@@ -276,7 +277,7 @@ void TileManager2<CloudTile>::InitHasIndividualFiles()
 	hasIndividualFiles = new bool[ntreeMgr]();
 	if (cprm.tileLoadFlags & 0x0001) {
 		char path[MAX_PATH], dummy[MAX_PATH];
-		sprintf_s(path, MAX_PATH, "%s\\Cloud", m_dataRootDir.c_str());
+		snprintf(path, MAX_PATH, "%s\\Cloud", m_dataRootDir.c_str());
 		hasIndividualFiles[0] = FileExists(path);
 	}
 }

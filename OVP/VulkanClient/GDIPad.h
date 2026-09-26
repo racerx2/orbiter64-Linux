@@ -10,6 +10,8 @@
 #include "OrbiterAPI.h"
 #include "D3D9Client.h"
 // d3d9.h/d3dx9.h left out: nothing Direct3D is used here
+#include <QPoint>
+#include <QString>
 
 
 // ======================================================================
@@ -272,6 +274,12 @@ private:
 	oapi::Font *cfont; // currently selected font (NULL if none)
 	oapi::Pen *cpen;   // currently selected pen (NULL if none)
 	oapi::Brush *cbrush; // currently selected brush (NULL if none)
+
+	// not upstream: DC state QPainter lacks (text colour apart from the pen, background colour, text alignment, current position)
+	DWORD textcol, bkcol;
+	UINT textalign;
+	QPoint cpos;
+	bool TextOut (int x, int y, const QString &str); // not upstream: TextOut with the DC's alignment, text colour and font escapement
 };
 
 #endif // !__GDIPAD_H

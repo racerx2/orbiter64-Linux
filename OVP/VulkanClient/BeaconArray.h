@@ -71,6 +71,7 @@ private:
 	DWORD nVert;					///< Number of beacons
 	DWORD bidx;						///< Update index
 	VkBuf *pVB;	///< Vertex buffer pointer
+	BAVERTEX *pVBSys;				///< not upstream: system copy that Lock/Unlock edit
 	SURFHANDLE pBright;				///< D3D9RwyLight.dds texture handle
 	OBJHANDLE hBase;
 	class vBase *vB;

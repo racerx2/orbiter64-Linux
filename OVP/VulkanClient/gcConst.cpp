@@ -17,8 +17,7 @@
 // =================================================================================================================================
 
 
-#include <d3d9.h>
-#include <d3dx9.h>
+#include "D3DXMath.h" // d3d9.h/d3dx9.h
 #include <set>
 #include "gcConst.h"
 #include "D3D9Surface.h"
@@ -31,7 +30,7 @@ extern class D3D9Client *g_client;
 // Custom SwapChain Interface
 // ===============================================================================================
 //
-HSWAP gcConst::RegisterSwap(HWND hWnd, HSWAP hData, int AA) 
+HSWAP gcConst::RegisterSwap(QWindow *hWnd, HSWAP hData, int AA) 
 {
 	return gcCore::RegisterSwap(hWnd, hData, AA);
 }
@@ -318,7 +317,7 @@ bool gcConst::RegisterGenericProc(__gcGenericProc proc, DWORD id, void* pParam)
 
 // ===============================================================================================
 //
-HBITMAP	gcConst::LoadBitmapFromFile(const char* fname)
+QImage *	gcConst::LoadBitmapFromFile(const char* fname)
 {
 	return g_client->gcReadImageFromFile(fname);
 }
@@ -326,7 +325,7 @@ HBITMAP	gcConst::LoadBitmapFromFile(const char* fname)
 
 // ===============================================================================================
 //
-HWND gcConst::GetRenderWindow()
+QWindow *gcConst::GetRenderWindow()
 {
 	return g_client->GetRenderWindow();
 }

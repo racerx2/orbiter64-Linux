@@ -6,7 +6,7 @@
 
 #include "D3D9Pad.h"
 #include "D3D9Surface.h"
-#include <d3dx9.h>
+// d3dx9.h left out: D3DXMath.h (via D3D9Pad.h)
 #include <sstream>
 
 
@@ -39,7 +39,7 @@ void D3D9Pad::SetColorMatrix(const FMATRIX4 *pMatrix)
 	Log("SetColorMatrix(0x%X)", DWORD(pMatrix));
 #endif
 	if (pMatrix) {
-		memcpy_s(&ColorMatrix, sizeof(FMATRIX4), pMatrix, sizeof(FMATRIX4));
+		memcpy(&ColorMatrix, pMatrix, sizeof(FMATRIX4)); // memcpy_s
 		SetEnable(SKP3E_CMATR);
 	}
 	else {
@@ -141,7 +141,7 @@ void D3D9Pad::SetBlendState(BlendState dwState)
 FMATRIX4 D3D9Pad::GetWorldTransform() const
 { 
 	FMATRIX4 fm;
-	memcpy_s(&fm, sizeof(FMATRIX4), &mW, sizeof(D3DXMATRIX));
+	memcpy(&fm, &mW, sizeof(D3DXMATRIX)); // memcpy_s
 	return fm;
 }
 
@@ -288,10 +288,8 @@ void D3D9Pad::StretchRegion(const skpRegion *rgn, const SURFHANDLE hSrc, const L
 //
 void D3D9Pad::Clear(DWORD color, bool bColor, bool bDepth)
 {
-	DWORD flags = 0;
-	if (bColor) flags |= D3DCLEAR_TARGET;
-	if (bDepth) flags |= D3DCLEAR_ZBUFFER;
-	pDev->Clear(0, NULL, flags, color, 1.0f, 0);
+	RECT sr; // D3D9 clears only the scissor rect while the scissor test is on
+	pDev->Clear(bColor, bDepth, false, color, 1.0f, 0, pDev->GetScissor(&sr) ? &sr : NULL); // D3DCLEAR_TARGET, D3DCLEAR_ZBUFFER
 }
 
 // ===============================================================================================

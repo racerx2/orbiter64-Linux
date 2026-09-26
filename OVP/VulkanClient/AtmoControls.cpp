@@ -9,16 +9,24 @@
 #include "resource.h"
 #include "D3D9Config.h"
 #include "AtmoControls.h"
-#include "Commctrl.h"
+// Commctrl.h left out: trackbars and tooltips are Qt widgets
 #include "VObject.h"
 #include "VPlanet.h"
 #include "Mesh.h"
 #include "Scene.h"
+#include "OrbiterResource.h"
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QKeyEvent>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <QTimer>
+#include <functional>
 #include <stdio.h>
 
 using namespace oapi;
 
-extern HINSTANCE g_hInst;
+extern void *g_hInst;
 extern D3D9Client *g_client;
 
 // ==============================================================
@@ -79,14 +87,33 @@ std::vector<sValue> Values;
 
 DWORD atmpage = 0;
 DWORD atmmode = 0;
-DWORD dwCmd = NULL;
-HWND hDlg = NULL;
+DWORD dwCmd = 0;
+QWidget *hDlg = NULL;
 vPlanet *vObj = NULL;
+
+
+// not upstream: DefDlgProc's WM_CLOSE (and Esc) → IDCANCEL to the dialog procedure, as an event filter
+class DlgEvents : public QObject
+{
+public:
+	DlgEvents(QWidget *hWnd, std::function<void()> cancel) : QObject(hWnd), onCancel(cancel) { hWnd->installEventFilter(this); }
+	bool eventFilter(QObject *o, QEvent *e) override
+	{
+		if (e->type() == QEvent::Close || (e->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Escape)) {
+			e->ignore();
+			onCancel();
+			return true;
+		}
+		return false;
+	}
+private:
+	std::function<void()> onCancel;
+};
 
 
 // ==============================================================
 
-void SetToolTip(int vid, PTSTR pszText)
+void SetToolTip(int vid, const char *pszText)
 {
 	if (!pszText) return;
 	for (auto& x : Values) if (x.sprm == vid) {
@@ -103,21 +130,14 @@ void InitToolTips()
 
 	for (auto& s : Slider)
 	{
-		if (!s.hWnd || !s.hwndTip) return;
+		if (!s.hWnd) return;
 
 		if (s.val && s.val->tooltip.size() > 2)
 		{
-			TOOLINFO toolInfo = { 0 };
-			toolInfo.cbSize = sizeof(toolInfo);
-			toolInfo.hwnd = hDlg;
-			toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-			toolInfo.uId = (UINT_PTR)s.hWnd;
-			toolInfo.lpszText = LPSTR(s.val->tooltip.c_str());
-			SendMessage(s.hwndTip, TTM_UPDATETIPTEXT, 0, (LPARAM)&toolInfo);
-			SendMessage(s.hwndTip, TTM_ACTIVATE, TRUE, 0);
+			s.hWnd->setToolTip(QString::fromStdString(s.val->tooltip)); // TTM_UPDATETIPTEXT, TTM_ACTIVATE
 		}
 		else {
-			SendMessage(s.hwndTip, TTM_ACTIVATE, FALSE, 0);
+			s.hWnd->setToolTip(QString()); // TTM_ACTIVATE FALSE
 		}
 	}
 }
@@ -226,7 +246,7 @@ bool IsActive()
 bool Visualize()
 {
 	if (!hDlg) return false;
-	return SendDlgItemMessage(hDlg, IDC_ATM_DISPLAY, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	return DlgItem<QAbstractButton>(hDlg, IDC_ATM_DISPLAY)->isChecked();
 }
 
 // ==============================================================
@@ -234,14 +254,14 @@ bool Visualize()
 void Release()
 {
 	if (dwCmd) oapiUnregisterCustomCmd(dwCmd);
-	dwCmd = NULL;
+	dwCmd = 0;
 }
 
 // ==============================================================
 
 void OpenDlgClbk(void *context)
 {
-	HWND l_hDlg = oapiOpenDialog(g_hInst, IDD_D3D9SCATTER, WndProc);
+	QWidget *l_hDlg = oapiOpenDialog(g_hInst, IDD_D3D9SCATTER, WndProc);
 
 	if (l_hDlg) hDlg = l_hDlg; // otherwise open already
 	else return;
@@ -253,32 +273,26 @@ void OpenDlgClbk(void *context)
 	if (vObj) param = vObj->GetAtmoParams(atmmode);
 	else      param = &defs;
 
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_ADDSTRING, 0, (LPARAM)"Auto");
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_ADDSTRING, 0, (LPARAM)"Surface");
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_ADDSTRING, 0, (LPARAM)"Low Orbit");
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_ADDSTRING, 0, (LPARAM)"High Orbit");
-	SendDlgItemMessageA(hDlg, IDC_ATM_MODE, CB_SETCURSEL, atmmode, 0);
+	DlgItem<QComboBox>(hDlg, IDC_ATM_MODE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_MODE), "Auto");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_MODE), "Surface");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_MODE), "Low Orbit");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_MODE), "High Orbit");
+	DlgItem<QComboBox>(hDlg, IDC_ATM_MODE)->setCurrentIndex(atmmode);
 
-	SendDlgItemMessageA(hDlg, IDC_ATM_PAGE, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessageA(hDlg, IDC_ATM_PAGE, CB_ADDSTRING, 0, (LPARAM)"Atmospheric Controls");
-	SendDlgItemMessageA(hDlg, IDC_ATM_PAGE, CB_ADDSTRING, 0, (LPARAM)"Water and Sun-glare");
-	SendDlgItemMessageA(hDlg, IDC_ATM_PAGE, CB_SETCURSEL, atmpage, 0);
+	DlgItem<QComboBox>(hDlg, IDC_ATM_PAGE)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_PAGE), "Atmospheric Controls");
+	oapiComboAddString(DlgItem<QComboBox>(hDlg, IDC_ATM_PAGE), "Water and Sun-glare");
+	DlgItem<QComboBox>(hDlg, IDC_ATM_PAGE)->setCurrentIndex(atmpage);
 
 	for (auto& s : Slider)
 	{
-		s.hWnd = GetDlgItem(hDlg, s.res);
-		s.hwndTip = CreateWindowEx(NULL, TOOLTIPS_CLASS, NULL, WS_POPUP | TTS_ALWAYSTIP | TTS_BALLOON, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hDlg, NULL, g_hInst, NULL);
-		TOOLINFO toolInfo = { 0 };
-		toolInfo.cbSize = sizeof(toolInfo);
-		toolInfo.hwnd = hDlg;
-		toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-		toolInfo.uId = (UINT_PTR)s.hWnd;	
-		toolInfo.lpszText = "ToolTip";
-		SendMessage(s.hwndTip, TTM_ADDTOOL, 0, (LPARAM)&toolInfo);
+		s.hWnd = oapiResDlgItem(hDlg, s.res);
+		// tooltip window left out: the slider shows its own tooltip (TTS_BALLOON style has no Qt counterpart)
+		s.hWnd->setToolTip("ToolTip"); // TTM_ADDTOOL
 	}
 
-	SetTimer(hDlg, 0, 1000, NULL);
+	hDlg->findChild<QTimer*>("WM_TIMER")->start(1000); // SetTimer: the dialog's timer, created in WndProc
 
 	atmpage = 0;
 	InitPage(atmpage);
@@ -296,26 +310,26 @@ void InitPage(int p)
 	}
 
 	for (auto& s : Slider) {
-		if (s.val) SetWindowTextA(GetDlgItem(hDlg, s.lbl), s.val->lbl.c_str());
-		else SetWindowTextA(GetDlgItem(hDlg, s.lbl), " ");
+		if (s.val) oapiSetDlgItemText(hDlg, s.lbl, s.val->lbl.c_str());
+		else oapiSetDlgItemText(hDlg, s.lbl, " ");
 	}
 
 	if (p == 0) {
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG1), "Twilight and Ambient settings");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG2), "Wavelenght and Scale height settings");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG3), "Terrain");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG4), "Rayleigh settings");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG5), "Mie settings");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG6), "Custom settings");
+		oapiSetDlgItemText(hDlg, IDC_ATG1, "Twilight and Ambient settings");
+		oapiSetDlgItemText(hDlg, IDC_ATG2, "Wavelenght and Scale height settings");
+		oapiSetDlgItemText(hDlg, IDC_ATG3, "Terrain");
+		oapiSetDlgItemText(hDlg, IDC_ATG4, "Rayleigh settings");
+		oapiSetDlgItemText(hDlg, IDC_ATG5, "Mie settings");
+		oapiSetDlgItemText(hDlg, IDC_ATG6, "Custom settings");
 	}
 
 	if (p == 1) {
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG1), " ");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG2), " ");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG3), " ");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG4), " ");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG5), "Water Rendering");
-		SetWindowTextA(GetDlgItem(hDlg, IDC_ATG6), " ");
+		oapiSetDlgItemText(hDlg, IDC_ATG1, " ");
+		oapiSetDlgItemText(hDlg, IDC_ATG2, " ");
+		oapiSetDlgItemText(hDlg, IDC_ATG3, " ");
+		oapiSetDlgItemText(hDlg, IDC_ATG4, " ");
+		oapiSetDlgItemText(hDlg, IDC_ATG5, "Water Rendering");
+		oapiSetDlgItemText(hDlg, IDC_ATG6, " ");
 	}
 
 	InitToolTips();
@@ -357,7 +371,7 @@ void SetSlider(sSlider& s)
 	if (!vObj) return;
 	if (!s.val) return;
 
-	auto pos = SendDlgItemMessage(hDlg, s.res, TBM_GETPOS, 0, 0);
+	auto pos = DlgItem<QSlider>(hDlg, s.res)->value();
 	auto v = s.val;
 	double x = (1000.0-double(pos))/1000.0;
 
@@ -396,6 +410,8 @@ void UpdateSlider(sSlider& q, bool bSetPos)
 	char buf[128];
 	if (!param) return;
 
+	QSignalBlocker block(DlgItem<QSlider>(hDlg, q.res)); // TBM_ messages don't send WM_VSCROLL
+
 	if (q.val)
 	{
 		auto v = q.val;
@@ -404,9 +420,9 @@ void UpdateSlider(sSlider& q, bool bSetPos)
 
 		if (bSetPos) {
 
-			SendDlgItemMessage(hDlg, q.res, TBM_SETRANGEMAX, 1, 1000);
-			SendDlgItemMessage(hDlg, q.res, TBM_SETRANGEMIN, 1, 0);
-			SendDlgItemMessage(hDlg, q.res, TBM_SETTICFREQ, 1, 0);
+			DlgItem<QSlider>(hDlg, q.res)->setMaximum(1000);
+			DlgItem<QSlider>(hDlg, q.res)->setMinimum(0);
+			DlgItem<QSlider>(hDlg, q.res)->setTickInterval(1);
 
 			double x = (val - v->min) / (v->max - v->min);
 			if (v->style & 8) x = sqrt(x);
@@ -414,18 +430,18 @@ void UpdateSlider(sSlider& q, bool bSetPos)
 			if (v->style & 32) x = pow(x, 0.25);
 			DWORD dpos = 1000 - DWORD(x * 1000.0);
 
-			SendDlgItemMessage(hDlg, q.res, TBM_SETPOS, 1, dpos);
+			DlgItem<QSlider>(hDlg, q.res)->setValue(dpos);
 		}
 
-		if (v->style & 1) sprintf_s(buf, 128, "%.1lf k", val);
-		else sprintf_s(buf, 128, "%.3lf", val);
+		if (v->style & 1) snprintf(buf, 128, "%.1lf k", val);
+		else snprintf(buf, 128, "%.3lf", val);
 	}
 	else {
-		strcpy_s(buf, 32, " ");
-		SendDlgItemMessage(hDlg, q.res, TBM_SETPOS, 1, 0);
+		snprintf(buf, 32, "%s", " ");
+		DlgItem<QSlider>(hDlg, q.res)->setValue(0);
 	}
 	
-	SetWindowTextA(GetDlgItem(hDlg, q.dsp), buf);
+	oapiSetDlgItemText(hDlg, q.dsp, buf);
 	return;
 }
 
@@ -448,7 +464,7 @@ void SetVisual(vObject *vo)
 
 	if (!hDlg || !dwCmd) return;
 	
-	OBJHANDLE hObj = vo->GetObjectA();
+	OBJHANDLE hObj = vo->GetObject();
 
 	if (oapiGetObjectType(hObj)!=OBJTP_PLANET) {
 		LogErr("Invalid Object Type in AtmoControls");
@@ -469,24 +485,27 @@ void SetVisual(vObject *vo)
 // ==============================================================
 // Dialog message handler
 
-INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void WndProc(QWidget *hWnd, void *context)
 {
 	static bool bOrbOld = false;
 
-	switch (uMsg) {
-
-	case WM_INITDIALOG:
+	// WM_INITDIALOG
 	{
 		vObject *vPl = g_client->GetScene()->GetCameraNearVisual();
 		SetVisual(vPl);
-		return true;
 	}
 
-	case WM_TIMER:
-	{
+	// not upstream: the core destroys the dialog at session end without IDCANCEL; a stale HWND was harmless, a QWidget* isn't
+	QObject::connect(hWnd, &QObject::destroyed, [hWnd]() { if (hDlg == hWnd) hDlg = NULL; });
+
+	// WM_TIMER
+	QTimer *timer = new QTimer(hWnd); // started by OpenDlgClbk (SetTimer), destroyed with the dialog
+	timer->setObjectName("WM_TIMER");
+	QObject::connect(timer, &QTimer::timeout, hWnd, []() {
+		if (!hDlg) return; // not upstream: the closed dialog lives until its deferred delete (DestroyWindow killed the timer)
 		if (vObj) {	
 			char title[256]; string file = "??";
-			sprintf_s(title, 256, "Atmospheric Controls [%s]", vObj->GetName());
+			snprintf(title, 256, "Atmospheric Controls [%s]", vObj->GetName());
 
 			auto cfg = Config->AtmoCfg.find(vObj->GetName());
 			if (cfg != Config->AtmoCfg.end()) file = cfg->second;
@@ -496,36 +515,35 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			double vd = 0.5f;
 			if (atmmode == 0) vd = param->cfg_alt < 0.9999f ? param->cfg_alt : 1.0 - param->cfg_halt;
 
-			if (vObj->GetAtmoMode() == 1) sprintf_s(title, 256, "Atmospheric Controls [%s][%s] [Surface] (%3.1f%%)", file.c_str(), vObj->GetName(), (1.0 - vd) * 100.0);
-			if (vObj->GetAtmoMode() == 2) sprintf_s(title, 256, "Atmospheric Controls [%s][%s] [LowOrbit] (%3.1f%%)", file.c_str(), vObj->GetName(), vd * 100.0);
-			if (vObj->GetAtmoMode() == 3) sprintf_s(title, 256, "Atmospheric Controls [%s][%s] [HighOrbit] (%3.1f%%)", file.c_str(), vObj->GetName(), (1.0 - vd) * 100.0);
+			if (vObj->GetAtmoMode() == 1) snprintf(title, 256, "Atmospheric Controls [%s][%s] [Surface] (%3.1f%%)", file.c_str(), vObj->GetName(), (1.0 - vd) * 100.0);
+			if (vObj->GetAtmoMode() == 2) snprintf(title, 256, "Atmospheric Controls [%s][%s] [LowOrbit] (%3.1f%%)", file.c_str(), vObj->GetName(), vd * 100.0);
+			if (vObj->GetAtmoMode() == 3) snprintf(title, 256, "Atmospheric Controls [%s][%s] [HighOrbit] (%3.1f%%)", file.c_str(), vObj->GetName(), (1.0 - vd) * 100.0);
 		
-			SetWindowTextA(hDlg, title);
+			oapiSetDlgText(hDlg, title);
 			UpdateSliders();
 		}
-		break;	
-	}
+	});
 
-	case WM_VSCROLL:
-	{
-		if (LOWORD(wParam) == TB_THUMBTRACK || LOWORD(wParam) == TB_ENDTRACK || LOWORD(wParam) == TB_THUMBPOSITION) {
-			for (auto& s : Slider) if (s.hWnd == HWND(lParam)) {
+	// WM_VSCROLL
+	for (auto& q : Slider) {
+		QSlider *tb = DlgItem<QSlider>(hWnd, q.res);
+		QObject::connect(tb, &QSlider::valueChanged, hWnd, [tb]() { // TB_THUMBTRACK, TB_ENDTRACK, TB_THUMBPOSITION
+			for (auto& s : Slider) if (s.hWnd == tb) {
 				SetSlider(s);
-				return false;
+				return;
 			}
-		}
-		return false;
+		});
 	}
 
-	case WM_COMMAND:
-
-		switch (LOWORD(wParam))
+	// WM_COMMAND
+	auto command = [hWnd](int id, int code, QWidget *hCtrl) {
+		switch (id)
 		{
 			case IDCANCEL:  
 			case IDOK:
 				oapiCloseDialog(hWnd);
 				hDlg = NULL;
-				return TRUE;
+				return;
 
 			case IDC_ATM_LOAD:
 				if (vObj) {
@@ -557,14 +575,14 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 
 			case IDC_ATM_MODE:
-				if (HIWORD(wParam)==CBN_SELCHANGE) {
-					atmmode = DWORD(SendDlgItemMessage(hWnd, IDC_ATM_MODE, CB_GETCURSEL, 0, 0));
+				if (code==RESN_SELCHANGE) {
+					atmmode = DWORD(DlgItem<QComboBox>(hWnd, IDC_ATM_MODE)->currentIndex());
 				}
 				break;
 
 			case IDC_ATM_PAGE:
-				if (HIWORD(wParam) == CBN_SELCHANGE) {
-					atmpage = DWORD(SendDlgItemMessage(hWnd, IDC_ATM_PAGE, CB_GETCURSEL, 0, 0));
+				if (code == RESN_SELCHANGE) {
+					atmpage = DWORD(DlgItem<QComboBox>(hWnd, IDC_ATM_PAGE)->currentIndex());
 					InitPage(atmpage);
 				}
 				break;
@@ -573,13 +591,13 @@ INT_PTR CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				//LogErr("LOWORD(%hu), HIWORD(0x%hX)",LOWORD(wParam),HIWORD(wParam));
 				break;
 		}
-		break;
-	}
+	};
+	oapiConnectDlgCommands(hWnd, command);
+	new DlgEvents(hWnd, [command]() { command(IDCANCEL, RESN_CLICKED, NULL); });
 
-	return oapiDefDialogProc(hWnd, uMsg, wParam, lParam);;
+	// oapiDefDialogProc left out: oapiOpenDialog wires the default dialog behaviour
 }
 
 } //namespace
-
 
 

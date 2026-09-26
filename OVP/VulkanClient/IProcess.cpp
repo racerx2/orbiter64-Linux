@@ -1,4 +1,5 @@
 
+
 // ===================================================
 // Copyright (C) 2021-2026 Jarmo Nikkanen
 // licensed under LGPL v2
@@ -9,14 +10,16 @@
 #include "D3D9Util.h"
 #include "D3D9Surface.h"
 #include <sstream>
+#include <fstream> // std::ifstream (MSVC had it through <sstream>)
 
 
 // ================================================================================================
 //
-ImageProcessing::ImageProcessing(LPDIRECT3DDEVICE9 pDev, const char *_file, const char *_psentry, const char *_ppf, const char *_vsentry)
+ImageProcessing::ImageProcessing(VkDev *pDev, const char *_file, const char *_psentry, const char *_ppf, const char *_vsentry)
 	: pDevice(pDev)
 	, pVSConst(NULL)
 	, pPSConst(NULL)
+	, pCB(NULL)
 	, pDepth(NULL)
 	, pDepthBak(NULL)
 	, pMesh(NULL)
@@ -28,22 +31,26 @@ ImageProcessing::ImageProcessing(LPDIRECT3DDEVICE9 pDev, const char *_file, cons
 	, iVP()
 	, mesh_tex_idx(-1)
 {
-	for (int i=0;i<ARRAYSIZE(pTextures);i++) pTextures[i].hTex = NULL;
+	for (int i=0;i<(int)std::size(pTextures);i++) pTextures[i].hTex = NULL;
 	for (int i=0;i<4;i++) pRtg[i] = pRtgBak[i] = NULL;
 
 	if (_vsentry) pVertex = CompileVertexShader(pDevice, _file, _vsentry, "IPIVS", NULL, &pVSConst);
-	else pVertex = CompileVertexShader(pDevice, "Modules/D3D9Client/IPI.hlsl", "VSMain", "IPIVS", NULL, &pVSConst);
+	else pVertex = CompileVertexShader(pDevice, "Modules/VulkanClient/IPI.glsl", "VSMain", "IPIVS", NULL, &pVSConst);
 
 	pPixel   = CompilePixelShader(pDevice, _file, _psentry, "IPIPS", _ppf, &pPSConst);
 	pOcta	 = new SMVERTEX[10];
+
+	pCB = new VkConstBuffer(pDevice); // not upstream: holds the blocks of both tables (constant registers in D3D9)
+	pCB->SetTable(pVSConst);
+	pCB->SetTable(pPSConst);
 
 	Shaders[string(_psentry)].pPixel = pPixel;
 	Shaders[string(_psentry)].pPSConst = pPSConst;
 
 	if (pVSConst) {
-		hVP = pVSConst->GetConstantByName(NULL, "mVP");
-		hPos = pVSConst->GetConstantByName(NULL, "vPos");
-		hSiz = pVSConst->GetConstantByName(NULL, "vTgtSize");
+		hVP = pVSConst->GetConstantByName("mVP");
+		hPos = pVSConst->GetConstantByName("vPos");
+		hSiz = pVSConst->GetConstantByName("vTgtSize");
 		SetTemplate();
 	}
 
@@ -68,10 +75,10 @@ ImageProcessing::ImageProcessing(LPDIRECT3DDEVICE9 pDev, const char *_file, cons
 		q += w*2.0;
 	}
 
-	strcpy_s(file, 256, _file);
-	strcpy_s(entry, 32, _psentry);
-	if (_ppf) strcpy_s(ppf, 256, _ppf);
-	else strcpy_s(ppf, 32, "");
+	snprintf(file, 256, "%s", _file);
+	snprintf(entry, 32, "%s", _psentry);
+	if (_ppf) snprintf(ppf, 256, "%s", _ppf);
+	else snprintf(ppf, 32, "%s", "");
 
 	// Create a database of defines ----------------------------------------------------------------
 	std::string line;
@@ -88,15 +95,21 @@ ImageProcessing::ImageProcessing(LPDIRECT3DDEVICE9 pDev, const char *_file, cons
 //
 ImageProcessing::~ImageProcessing()
 {
-	SAFE_RELEASE(pVSConst);
-	SAFE_RELEASE(pVertex);
+	if (pDevice->GetConstantSource() == pCB) pDevice->SetConstantSource(NULL, NULL); // not upstream: the device must not push a deleted buffer
+	VkDevice d = pDevice->dev;
+	SAFE_DELETE(pVSConst);
+	VkShaderEXT vs = pVertex;
+	pDevice->Defer([d, vs]() { if (vs) vkx.DestroyShaderEXT(d, vs, NULL); }); // SAFE_RELEASE(pVertex)
+	pVertex = VK_NULL_HANDLE;
 	SAFE_DELETEA(pOcta);
 
 	for (auto x : Shaders) {
-		SAFE_RELEASE(x.second.pPixel);
-		SAFE_RELEASE(x.second.pPSConst);
+		VkShaderEXT ps = x.second.pPixel;
+		pDevice->Defer([d, ps]() { if (ps) vkx.DestroyShaderEXT(d, ps, NULL); }); // SAFE_RELEASE(x.second.pPixel)
+		SAFE_DELETE(x.second.pPSConst);
 	}
 	Shaders.clear();
+	SAFE_DELETE(pCB);
 }
 
 
@@ -105,10 +118,11 @@ ImageProcessing::~ImageProcessing()
 bool ImageProcessing::CompileShader(const char *Entry)
 {
 	string name(Entry);
-	LPD3DXCONSTANTTABLE pPSC = NULL;
+	VkConstTable *pPSC = NULL;
 	Shaders[name].pPixel = CompilePixelShader(pDevice, file, Entry, "IPIPS2", ppf, &pPSC);
 	Shaders[name].pPSConst = pPSC;
-	return ((Shaders[name].pPixel != NULL) && (Shaders[name].pPSConst != NULL));
+	if (pPSC) pCB->SetTable(pPSC); // not upstream: the constant buffer takes the new shader's blocks
+	return ((Shaders[name].pPixel != VK_NULL_HANDLE) && (Shaders[name].pPSConst != NULL));
 }
 
 
@@ -123,7 +137,7 @@ bool ImageProcessing::Activate(const char *Entry)
 		LogErr("ImageProcessing::Activate() FAILED Entry=%s", Entry);
 		return false;
 	}
-	strcpy_s(entry, 31, Entry);
+	snprintf(entry, 31, "%s", Entry);
 	pPixel = Shaders[name].pPixel;
 	pPSConst = Shaders[name].pPSConst;
 	return true;
@@ -153,19 +167,19 @@ bool ImageProcessing::SetupViewPort()
 
 	// Check that the first render target is valid
 	//
-	if (pRtg[0]) pRtg[0]->GetDesc(&desc);
+	if (pRtg[0]) { desc.Width = pRtg[0]->w; desc.Height = pRtg[0]->h; } // GetDesc
 	else {
 		LogErr("ImageProcessing(%s): No render target is set", _PTR(this));
 		return false;
 	}
 
-	D3DSURFACE_DESC ds;
+	struct { UINT Width, Height; } ds; // D3DSURFACE_DESC
 
 	// Check that all additional render targets have the same size
 	//
 	for (int i=1;i<4;i++) {
 		if (pRtg[i]) {
-			pRtg[i]->GetDesc(&ds);
+			ds.Width = pRtg[i]->w; ds.Height = pRtg[i]->h; // GetDesc
 			if ((ds.Height!=desc.Height) || (ds.Width!=desc.Width)) {
 				LogErr("ImageProcessing(%s): All render targets must be same the size", _PTR(this));
 				return false;
@@ -185,10 +199,10 @@ bool ImageProcessing::SetupViewPort()
 	iVP.MinZ = 0.0f;
 	iVP.MaxZ = 1.0f;
 
-	HR(pDevice->SetViewport(&iVP));
-	HR(pVSConst->SetMatrix(pDevice, hVP, &mVP));
-	HR(pVSConst->SetVector(pDevice, hSiz, ptr(D3DXVECTOR4(float(desc.Width), float(desc.Height), 1.0f/float(desc.Width), 1.0f/float(desc.Height)))));
-	HR(pVSConst->SetVector(pDevice, hPos, &vTemplate));
+	pDevice->SetViewport((float)iVP.X, (float)iVP.Y, (float)iVP.Width, (float)iVP.Height, iVP.MinZ, iVP.MaxZ);
+	pCB->SetValue(hVP, &mVP, sizeof(D3DXMATRIX)); // pVSConst->SetMatrix
+	pCB->SetValue(hSiz, ptr(D3DXVECTOR4(float(desc.Width), float(desc.Height), 1.0f/float(desc.Width), 1.0f/float(desc.Height))), sizeof(D3DXVECTOR4)); // SetVector
+	pCB->SetValue(hPos, &vTemplate, sizeof(D3DXVECTOR4)); // SetVector
 	return true;
 }
 
@@ -210,12 +224,12 @@ void ImageProcessing::SetMesh(const MESHHANDLE hMesh, const char *tex, gcIPInter
 	mesh_cull = cull;
 
 	if (tex) {
-		D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, tex);
+		VkConstHandle hVar = pPSConst->GetConstantByName(tex);
 		if (!hVar) {
 			LogErr("IPInterface::SetSketchMesh() Invalid variable name [%s]", tex);
 			return;
 		}
-		mesh_tex_idx = pPSConst->GetSamplerIndex(hVar);
+		mesh_tex_idx = hVar->binding - VkDev::NUBOS; // GetSamplerIndex
 	}
 	else mesh_tex_idx = -1;
 }
@@ -247,24 +261,29 @@ bool ImageProcessing::Execute(DWORD blendop, bool bInScene, gcIPInterface::ipite
 
 	// Set device state -------------------------------------------------------
 	//
-	HR(pDevice->SetVertexShader(pVertex));
-	HR(pDevice->SetPixelShader(pPixel));
-	HR(pDevice->SetVertexDeclaration(pPosTexDecl));
+	pDevice->BindShaders(pVertex, pPixel); // SetVertexShader, SetPixelShader
+	smpSlots.clear(); // not upstream: the sampler bindings the pair reads
+	for (VkConstTable *t : { pPSConst, pVSConst })
+		for (auto &e : t->entries) {
+			if (!e.sampler) continue;
+			bool have = false;
+			for (auto &s : smpSlots) if (s.binding == e.binding) have = true;
+			if (!have) smpSlots.push_back({ e.binding, e.view });
+		}
+	pDevice->SetConstantSource(pCB, &smpSlots);
+	pDevice->SetVertexDecl(pPosTexDecl);
 
-	DWORD BakFill;
-	pDevice->GetRenderState(D3DRS_FILLMODE, &BakFill);
+	VkPolygonMode BakFill = pDevice->GetState().fill; // GetRenderState(D3DRS_FILLMODE)
 
-	HR(pDevice->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID));
-	HR(pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE));
-	HR(pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, (blendop!=0)));
-	HR(pDevice->SetRenderState(D3DRS_ALPHATESTENABLE, false));
-	HR(pDevice->SetRenderState(D3DRS_STENCILENABLE, false));
-	HR(pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF));
+	pDevice->SetFillMode(VK_POLYGON_MODE_FILL);
+	pDevice->SetCullMode(VK_CULL_MODE_NONE);
+	pDevice->SetBlend((blendop!=0));
+	// D3DRS_ALPHATESTENABLE false: alpha tests are shader discards
+	VkDev::State st = pDevice->GetState(); st.stencil = false; pDevice->SetState(st); // D3DRS_STENCILENABLE false
+	pDevice->SetColorWrite(0xF);
 
 	if (blendop == 1) {
-		HR(pDevice->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD));
-		HR(pDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA));
-		HR(pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA));
+		pDevice->SetBlendFunc(VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD); // D3DRS_BLENDOP, SRCBLEND, DESTBLEND
 	}
 
 	// Define vertices --------------------------------------------------------
@@ -281,83 +300,84 @@ bool ImageProcessing::Execute(DWORD blendop, bool bInScene, gcIPInterface::ipite
 	// Set render targets -----------------------------------------------------
 	//
 	for (int i=0;i<4;i++) {
-		pDevice->GetRenderTarget(i, &pRtgBak[i]);
-		pDevice->SetRenderTarget(i, pRtg[i]);
-		if (pRtg[i]) {
-			if (i == 1) { HR(pDevice->SetRenderState(D3DRS_COLORWRITEENABLE1, 0xF)); }
-			if (i == 2) { HR(pDevice->SetRenderState(D3DRS_COLORWRITEENABLE2, 0xF)); }
-			if (i == 3) { HR(pDevice->SetRenderState(D3DRS_COLORWRITEENABLE3, 0xF)); }
-		}
+		pRtgBak[i] = pDevice->GetRenderTargetN(i); // GetRenderTarget(i)
+		pDevice->SetRenderTargetN(i, pRtg[i]);
+		// D3DRS_COLORWRITEENABLE1-3 = 0xF for the extra targets: SetColorWrite(0xF) above covers every bound target
 	}
 
 	// Set Depth-Stencil surface ----------------------------------------------
 	//
+	pDepthBak = pDevice->GetDepthStencil(); // GetDepthStencilSurface (not upstream: saved in both cases)
 	if (pDepth) {	
-		HR(pDevice->SetRenderState(D3DRS_ZENABLE, true));
-		HR(pDevice->SetRenderState(D3DRS_ZWRITEENABLE, true));
+		pDevice->SetDepthTest(true);
+		pDevice->SetDepthWrite(true);
 
-		pDevice->GetDepthStencilSurface(&pDepthBak);
-		pDevice->SetDepthStencilSurface(pDepth);
+		pDevice->SetRenderTarget(pRtg[0], pDepth); // SetDepthStencilSurface
 	}
 	else {
-		HR(pDevice->SetRenderState(D3DRS_ZENABLE, false));
-		HR(pDevice->SetRenderState(D3DRS_ZWRITEENABLE, false));
+		pDevice->SetDepthTest(false);
+		pDevice->SetDepthWrite(false);
+		pDevice->SetRenderTarget(pRtg[0], NULL); // not upstream: no depth attachment while Z is off (Vulkan needs it as large as the target)
 	}
 
 	// Set textures and samplers -----------------------------------------------
 	//
-	for (int idx=0;idx<ARRAYSIZE(pTextures);idx++) {
+	VkSamplerDesc smp[std::size(pTextures)]; // not upstream: sampler state per stage, D3D9's default for stages not set here
+	for (auto &s : smp) s = { VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT, 0.0f, 0.0f, true };
+
+	for (int idx=0;idx<(int)std::size(pTextures);idx++) {
 
 		if (pTextures[idx].hTex==NULL) continue;
 
 		DWORD flags = pTextures[idx].flags;
+		VkSamplerDesc &sd = smp[idx]; // SetSamplerState(idx, ...)
 
-		if (flags&IPF_CLAMP_U)			pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-		else if (flags&IPF_MIRROR_U)	pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-		else							pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+		if (flags&IPF_CLAMP_U)			sd.u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		else if (flags&IPF_MIRROR_U)	sd.u = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		else							sd.u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-		if (flags&IPF_CLAMP_V)			pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-		else if (flags&IPF_MIRROR_V)	pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
-		else							pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+		if (flags&IPF_CLAMP_V)			sd.v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		else if (flags&IPF_MIRROR_V)	sd.v = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		else							sd.v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-		if (flags&IPF_CLAMP_W)			pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP);
-		else if (flags&IPF_MIRROR_W)	pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSW, D3DTADDRESS_MIRROR);
-		else							pDevice->SetSamplerState(idx, D3DSAMP_ADDRESSW, D3DTADDRESS_WRAP);
+		if (flags&IPF_CLAMP_W)			sd.w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		else if (flags&IPF_MIRROR_W)	sd.w = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		else							sd.w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-		DWORD filter = D3DTEXF_POINT;
+		VkFilter filter = VK_FILTER_NEAREST;
 
-		if (flags&IPF_LINEAR) filter = D3DTEXF_LINEAR;
-		if (flags&IPF_PYRAMIDAL) filter = D3DTEXF_PYRAMIDALQUAD;
-		if (flags&IPF_GAUSSIAN) filter = D3DTEXF_GAUSSIANQUAD;
+		if (flags&IPF_LINEAR) filter = VK_FILTER_LINEAR;
+		if (flags&IPF_PYRAMIDAL) filter = VK_FILTER_LINEAR; // D3DTEXF_PYRAMIDALQUAD: no Vulkan filter, linear
+		if (flags&IPF_GAUSSIAN) filter = VK_FILTER_LINEAR; // D3DTEXF_GAUSSIANQUAD: no Vulkan filter, linear
 
-		HR(pDevice->SetSamplerState(idx, D3DSAMP_MAGFILTER, filter));
-		HR(pDevice->SetSamplerState(idx, D3DSAMP_MINFILTER, filter));
-		HR(pDevice->SetSamplerState(idx, D3DSAMP_MIPFILTER, D3DTEXF_NONE));
+		sd.mag = filter;
+		sd.min = filter;
+		sd.noMip = true; // D3DSAMP_MIPFILTER D3DTEXF_NONE
 
-		HR(pDevice->SetTexture(idx, pTextures[idx].hTex));
+		pCB->SetTexture(idx + VkDev::NUBOS, pTextures[idx].hTex, sd); // SetTexture(idx, ...)
 	}
 
 	// Execute ----------------------------------------------------------------
 	//
-	if (!bInScene) HR(pDevice->BeginScene());
+	// BeginScene: nothing, the device's frame is always open (rendering starts at the first draw)
 
 
 	if (mode == gcIPInterface::ipitemplate::Rect)
 	{
-		HR(pDevice->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, 4, 2, &cIndex, D3DFMT_INDEX16, &Vertex, sizeof(SMVERTEX)));
+		pDevice->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 4, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 2), &cIndex, VK_INDEX_TYPE_UINT16, &Vertex, sizeof(SMVERTEX));
 	}
 
 
 	if (mode == gcIPInterface::ipitemplate::Octagon)
 	{
-		HR(pDevice->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 8, pOcta, sizeof(SMVERTEX)));
+		pDevice->DrawPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, 8), pOcta, sizeof(SMVERTEX));
 	}
 
 
 	if (mode == gcIPInterface::ipitemplate::Mesh)
 	{
 
-		HR(pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW));
+		pDevice->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
 		pMesh->Init();
 
@@ -365,42 +385,37 @@ bool ImageProcessing::Execute(DWORD blendop, bool bInScene, gcIPInterface::ipite
 		if (grp < 0) for (DWORD i=0;i<nGrp;i++) {
 			if (mesh_tex_idx >= 0) {
 				SURFHANDLE hTex = pMesh->GetTexture(i);
-				HR(pDevice->SetTexture(mesh_tex_idx, SURFACE(hTex)->GetTexture()));
+				pCB->SetTexture(mesh_tex_idx + VkDev::NUBOS, SURFACE(hTex)->GetTexture(), smp[mesh_tex_idx]); // SetTexture(mesh_tex_idx, ...)
 			}
 			pMesh->RenderGroup(i);
 		}
 		else {
 			if (mesh_tex_idx >= 0) {
 				SURFHANDLE hTex = pMesh->GetTexture(grp);
-				HR(pDevice->SetTexture(mesh_tex_idx, SURFACE(hTex)->GetTexture()));
+				pCB->SetTexture(mesh_tex_idx + VkDev::NUBOS, SURFACE(hTex)->GetTexture(), smp[mesh_tex_idx]); // SetTexture(mesh_tex_idx, ...)
 			}
 			pMesh->RenderGroup(grp);
 		}
 	}
 
-	if (!bInScene) HR(pDevice->EndScene());
+	if (!bInScene) pDevice->EndRendering(); // EndScene
 
 	// Disconnect render targets ----------------------------------------------
 	//
-	if (pDepth) {
-		pDevice->SetDepthStencilSurface(pDepthBak);
-	}
+	pDevice->SetRenderTarget(pRtg[0], pDepthBak); // SetDepthStencilSurface (not upstream: in both cases)
 
 	// Disconnect render targets ----------------------------------------------
 	//
 	for (int i=0;i<4;i++) {
-		HR(pDevice->SetRenderTarget(i, pRtgBak[i]));
-		SAFE_RELEASE(pRtgBak[i]);
+		pDevice->SetRenderTargetN(i, pRtgBak[i]);
+		pRtgBak[i] = NULL; // SAFE_RELEASE: GetRenderTargetN doesn't add a reference
 	}
 
 	// Disconnect textures -----------------------------------------------------
 	//
-	for (int idx=0;idx<ARRAYSIZE(pTextures);idx++) {
-		if (pTextures[idx].hTex==NULL) continue;
-		HR(pDevice->SetTexture(idx, NULL));
-	}
+	pCB->ClearTextures(); // SetTexture(idx, NULL) of the stages set above
 
-	HR(pDevice->SetRenderState(D3DRS_FILLMODE, BakFill));
+	pDevice->SetFillMode(BakFill);
 
 	return true;
 }
@@ -410,16 +425,14 @@ bool ImageProcessing::Execute(DWORD blendop, bool bInScene, gcIPInterface::ipite
 //
 void ImageProcessing::SetFloat(const char *var, const void *val, int bytes)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetFloat() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
 		return;
 	}
 
-	if (pPSConst->SetFloatArray(pDevice, hVar, (const FLOAT *)val, bytes>>2)!=S_OK) {
-		LogErr("IPInterface::SetFloat() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // SetFloatArray (bytes>>2 floats); its "Failed" log left out: SetValue has no error
 }
 
 
@@ -427,16 +440,14 @@ void ImageProcessing::SetFloat(const char *var, const void *val, int bytes)
 //
 void ImageProcessing::SetInt(const char *var, const int *val, int bytes)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetInt() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
 		return;
 	}
 
-	if (pPSConst->SetIntArray(pDevice, hVar, val, bytes>>2)!=S_OK) {
-		LogErr("IPInterface::SetInt() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // SetIntArray (bytes>>2 ints); its "Failed" log left out: SetValue has no error
 }
 
 
@@ -444,7 +455,7 @@ void ImageProcessing::SetInt(const char *var, const int *val, int bytes)
 //
 void ImageProcessing::SetBool(const char *var, const bool *val, int bytes)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetBool() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
@@ -454,9 +465,7 @@ void ImageProcessing::SetBool(const char *var, const bool *val, int bytes)
 	int *data = new int[bytes];
 	for (int i=0;i<bytes;i++) data[i] = val[i];
 
-	if (pPSConst->SetBoolArray(pDevice, hVar, (const BOOL *)data, bytes)!=S_OK) {
-		LogErr("IPInterface::SetBool() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, data, bytes * sizeof(int)); // SetBoolArray (32-bit BOOLs); its "Failed" log left out: SetValue has no error
 
 	delete []data;
 	data = NULL;
@@ -467,16 +476,14 @@ void ImageProcessing::SetBool(const char *var, const bool *val, int bytes)
 //
 void ImageProcessing::SetStruct(const char *var, const void *val, int bytes)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetStruct() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
 		return;
 	}
 
-	if (pPSConst->SetValue(pDevice, hVar, val, bytes)!=S_OK) {
-		LogErr("IPInterface::SetStruct() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // its "Failed" log left out: SetValue has no error
 }
 
 
@@ -507,11 +514,9 @@ void ImageProcessing::SetBool(const char *var, bool val)
 //
 void ImageProcessing::SetVSFloat(const char *var, const void *val, int bytes)
 {
-	D3DXHANDLE hVar = pVSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pVSConst->GetConstantByName(var);
 
-	if (pPSConst->SetFloatArray(pDevice, hVar, (const FLOAT *)val, bytes >> 2) != S_OK) {
-		LogErr("IPInterface::SetFloat() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // (upstream went through pPSConst here; the handle's block is what counts)
 }
 
 
@@ -519,11 +524,9 @@ void ImageProcessing::SetVSFloat(const char *var, const void *val, int bytes)
 //
 void ImageProcessing::SetVSInt(const char *var, const int *val, int bytes)
 {
-	D3DXHANDLE hVar = pVSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pVSConst->GetConstantByName(var);
 
-	if (pPSConst->SetIntArray(pDevice, hVar, val, bytes >> 2) != S_OK) {
-		LogErr("IPInterface::SetInt() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // (upstream went through pPSConst here; the handle's block is what counts)
 }
 
 
@@ -531,15 +534,13 @@ void ImageProcessing::SetVSInt(const char *var, const int *val, int bytes)
 //
 void ImageProcessing::SetVSBool(const char *var, const bool *val, int bytes)
 {
-	D3DXHANDLE hVar = pVSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pVSConst->GetConstantByName(var);
 
 	if (!hVar) return;
 	int *data = new int[bytes];
 	for (int i = 0; i<bytes; i++) data[i] = val[i];
 
-	if (pPSConst->SetBoolArray(pDevice, hVar, (const BOOL *)data, bytes) != S_OK) {
-		LogErr("IPInterface::SetBool() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, data, bytes * sizeof(int)); // (upstream went through pPSConst here; the handle's block is what counts)
 
 	delete[]data;
 }
@@ -549,11 +550,9 @@ void ImageProcessing::SetVSBool(const char *var, const bool *val, int bytes)
 //
 void ImageProcessing::SetVSStruct(const char *var, const void *val, int bytes)
 {
-	D3DXHANDLE hVar = pVSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pVSConst->GetConstantByName(var);
 	if (!hVar) return;
-	if (pPSConst->SetValue(pDevice, hVar, val, bytes) != S_OK) {
-		LogErr("IPInterface::SetStruct() Failed. Variable[%s], File[%s], Entrypoint[%s]", var, file, entry);
-	}
+	pCB->SetValue(hVar, val, bytes); // (upstream went through pPSConst here; the handle's block is what counts)
 }
 
 
@@ -585,14 +584,14 @@ void ImageProcessing::SetVSBool(const char *var, bool val)
 //
 void ImageProcessing::SetTexture(const char *var, SURFHANDLE hTex, DWORD flags)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetTexture() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
 		return;
 	}
 
-	DWORD idx = pPSConst->GetSamplerIndex(hVar);
+	DWORD idx = hVar->binding - VkDev::NUBOS; // GetSamplerIndex
 
 	if (!hTex) {
 		pTextures[idx].hTex = NULL;
@@ -607,16 +606,16 @@ void ImageProcessing::SetTexture(const char *var, SURFHANDLE hTex, DWORD flags)
 
 // ================================================================================================
 //
-void ImageProcessing::SetTextureNative(const char *var, LPDIRECT3DBASETEXTURE9 hTex, DWORD flags)
+void ImageProcessing::SetTextureNative(const char *var, VkTex *hTex, DWORD flags)
 {
-	D3DXHANDLE hVar = pPSConst->GetConstantByName(NULL, var);
+	VkConstHandle hVar = pPSConst->GetConstantByName(var);
 
 	if (!hVar) {
 		LogErr("IPInterface::SetTextureNative() Invalid variable name [%s]. File[%s], Entrypoint[%s]", var, file, entry);
 		return;
 	}
 
-	DWORD idx = pPSConst->GetSamplerIndex(hVar);
+	DWORD idx = hVar->binding - VkDev::NUBOS; // GetSamplerIndex
 
 	if (!hTex) {
 		pTextures[idx].hTex = NULL;
@@ -643,7 +642,7 @@ void ImageProcessing::SetOutput(int id, SURFHANDLE hTex)
 
 // ================================================================================================
 //
-void ImageProcessing::SetDepthStencil(LPDIRECT3DSURFACE9 hSrf)
+void ImageProcessing::SetDepthStencil(VkSurf *hSrf)
 {
 	pDepth = hSrf;
 }
@@ -651,7 +650,7 @@ void ImageProcessing::SetDepthStencil(LPDIRECT3DSURFACE9 hSrf)
 
 // ================================================================================================
 //
-void ImageProcessing::SetOutputNative(int id, LPDIRECT3DSURFACE9 hSrf)
+void ImageProcessing::SetOutputNative(int id, VkSurf *hSrf)
 {
 	if (id<0) id=0;
 	if (id>3) id=3;
@@ -664,7 +663,7 @@ void ImageProcessing::SetOutputNative(int id, LPDIRECT3DSURFACE9 hSrf)
 bool ImageProcessing::IsOK()
 {
 	for (auto x : Shaders) {
-		if (x.second.pPixel == NULL) return false;
+		if (x.second.pPixel == VK_NULL_HANDLE) return false;
 		if (x.second.pPSConst == NULL) return false;
 	}
 	return (pVertex && pVSConst && pDevice && hVP && hPos && hSiz);
@@ -807,4 +806,3 @@ int gcIPInterface::FindDefine(const char *key)
 {
 	return pIPI->FindDefine(key);
 }
-

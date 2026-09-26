@@ -77,7 +77,7 @@ set(SourceFiles
 	WindowMgr.cpp
 	ZTreeMgr.cpp
 	Tilemgr2_imp.hpp
-#	${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp # imgui_impl_dx9
+	${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp # imgui_impl_dx9
 	D3DXMath.cpp # not upstream: D3DX math types and functions
 	VkCore.cpp # not upstream: Vulkan device, buffers, textures
 	VkShader.cpp # not upstream: GLSL compiler, constant tables, effects
@@ -148,18 +148,18 @@ set(ShaderFiles
 	${ShaderDir}/BeaconArray.fx
 	${ShaderDir}/Common.glsl
 	${ShaderDir}/D3D9Client.fx
-	${ShaderDir}/EnvMapBlur.hlsl
-	${ShaderDir}/GDIOverlay.hlsl
+	${ShaderDir}/EnvMapBlur.glsl
+	${ShaderDir}/GDIOverlay.glsl
 	${ShaderDir}/HorizonHaze.fx
 	${ShaderDir}/IPI.glsl
-	${ShaderDir}/IrradianceInteg.hlsl
-	${ShaderDir}/LensFlare.hlsl
+	${ShaderDir}/IrradianceInteg.glsl
+	${ShaderDir}/LensFlare.glsl
 	${ShaderDir}/LightBlur.glsl
-    ${ShaderDir}/CelSphere.hlsl
+    ${ShaderDir}/CelSphere.glsl
     ${ShaderDir}/NewMesh.glsl
-    ${ShaderDir}/NewPlanet.hlsl
-    ${ShaderDir}/Scatter.hlsl
-    ${ShaderDir}/Glare.hlsl
+    ${ShaderDir}/NewPlanet.glsl
+    ${ShaderDir}/Scatter.glsl
+    ${ShaderDir}/Glare.glsl
 	${ShaderDir}/Mesh.fx
 	${ShaderDir}/Metalness.fx
 	${ShaderDir}/Particle.fx
@@ -174,12 +174,13 @@ set(ShaderFiles
 
 source_group(Shaders FILES ${ShaderFiles})
 
-# D3D9Client.rc left out: the dialogs are Qt widgets
+# D3D9Client.rc: the dialogs are built as Qt widgets from the compiled resource table (rc2cpp)
 add_library(D3D9Client MODULE
 	${SourceFiles}
 	${IncludeFiles}
 	${ShaderFiles}
 )
+orbiter_rc_resources(D3D9Client D3D9Client.rc)
 
 target_include_directories(D3D9Client PUBLIC
 	${ORBITER_SOURCE_SDK_INCLUDE_DIR}

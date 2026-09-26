@@ -113,7 +113,7 @@ void vObject::GlobalExit()
 {
 	_TRACE;
 	for (int i=0;i<3;i++) DELETE_SURFACE(blobtex[i]);
-	for (int i = 0; i < ARRAYSIZE(hStockMesh); i++) SAFE_DELETE(hStockMesh[i]);
+	for (int i = 0; i < int(std::size(hStockMesh)); i++) SAFE_DELETE(hStockMesh[i]);
 }
 
 
@@ -281,7 +281,7 @@ bool vObject::IsVisible()
 // ===========================================================================================
 // This routine will render beacons
 //
-void vObject::RenderSpot(LPDIRECT3DDEVICE9 dev, const VECTOR3 *ofs, float size, const VECTOR3 &col, bool lighting, int shape)
+void vObject::RenderSpot(VkDev *dev, const VECTOR3 *ofs, float size, const VECTOR3 &col, bool lighting, int shape)
 {
 	VECTOR3 pos(cpos);
 
@@ -307,7 +307,7 @@ void vObject::RenderSpot(LPDIRECT3DDEVICE9 dev, const VECTOR3 *ofs, float size, 
 // ===========================================================================================
 // This routine is for rendering celestial body dots
 //
-void vObject::RenderDot(LPDIRECT3DDEVICE9 dev)
+void vObject::RenderDot(VkDev *dev)
 {
 	if (hObj==NULL) return;
 
@@ -345,7 +345,7 @@ void vObject::RenderDot(LPDIRECT3DDEVICE9 dev)
 
 // ===========================================================================================
 //
-void vObject::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad* pSkp)
+void vObject::RenderVectors (VkDev *dev, D3D9Pad* pSkp)
 {
 	DWORD favmode = *(DWORD*)gc->GetConfigParam(CFGPRM_FRAMEAXISFLAG);
 
@@ -465,7 +465,7 @@ void vObject::RenderAxisLabel(D3D9Pad *pSkp, const D3DXCOLOR *clr, VECTOR3 vecto
 		int xc = (int)(scn->ViewW()*0.5*(1.0f + homog.x));
 		int yc = (int)(scn->ViewH()*0.5*(1.0f - homog.y));
 		pSkp->SetTextColor(D3DXCOLOR(clr->b, clr->g, clr->r, clr->a));
-		pSkp->Text(xc + 10, yc, label, lstrlen(label));
+		pSkp->Text(xc + 10, yc, label, strlen(label));
 	}
 }
 

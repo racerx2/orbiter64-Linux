@@ -73,7 +73,7 @@ void HazeManager::GlobalExit()
 
 // -----------------------------------------------------------------------
 
-void HazeManager::Render(LPDIRECT3DDEVICE9 pDev, D3DXMATRIX &wmat, bool dual)
+void HazeManager::Render(VkDev *pDev, D3DXMATRIX &wmat, bool dual)
 {
 	D3DXMATRIX imat, transm;
 
@@ -181,13 +181,13 @@ void HazeManager::Render(LPDIRECT3DDEVICE9 pDev, D3DXMATRIX &wmat, bool dual)
 	HR(FX->SetMatrix(eW, &transm));
 	HR(FX->SetTexture(eTex0, SURFACE(horizon)->GetTexture()));	
 
-	HR(pDev->SetVertexDeclaration(pHazeVertexDecl));
+	pDev->SetVertexDecl(pHazeVertexDecl);
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 	
-	pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLESTRIP, 0, 2*HORIZON_NSEG, 2*HORIZON_NSEG, Idx, D3DFMT_INDEX16, Vtx, sizeof(HVERTEX));
+	pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 2*HORIZON_NSEG, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 2*HORIZON_NSEG), Idx, VK_INDEX_TYPE_UINT16, Vtx, sizeof(HVERTEX));
 	
 	if (dual) {
 
@@ -201,9 +201,9 @@ void HazeManager::Render(LPDIRECT3DDEVICE9 pDev, D3DXMATRIX &wmat, bool dual)
 			Vtx[j].z = r2*SinP[i];
 			j++;
 		}
-		pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
-		pDev->DrawIndexedPrimitiveUP(D3DPT_TRIANGLESTRIP,0, 2*HORIZON_NSEG, 2*HORIZON_NSEG, Idx, D3DFMT_INDEX16, Vtx, sizeof(HVERTEX));
-		pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+		pDev->SetCullMode(VK_CULL_MODE_FRONT_BIT);
+		pDev->DrawIndexedPrimitiveUP(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 2*HORIZON_NSEG, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 2*HORIZON_NSEG), Idx, VK_INDEX_TYPE_UINT16, Vtx, sizeof(HVERTEX));
+		pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 	}
 
 	HR(FX->EndPass());
@@ -267,16 +267,16 @@ void HazeManager2::GlobalInit(D3D9Client *gclient)
 	CreateSkydomeBuffers(4);
 	CreateSkydomeBuffers(5);
 
-	pDome = new ShaderClass(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "HorizonVS", "HorizonPS", "Dome", NULL);
-	pRing = new ShaderClass(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "HorizonVS", "HorizonRingPS", "Ring", NULL);
+	pDome = new ShaderClass(pDev, "Modules/VulkanClient/NewPlanet.glsl", "HorizonVS", "HorizonPS", "Dome", NULL);
+	pRing = new ShaderClass(pDev, "Modules/VulkanClient/NewPlanet.glsl", "HorizonVS", "HorizonRingPS", "Ring", NULL);
 }
 
 // -----------------------------------------------------------------------
 
 void HazeManager2::GlobalExit()
 {
-	for (int i=0;i<6;i++) { SAFE_RELEASE(pSkyVB[i]); }
-	SAFE_RELEASE(pRingVB);
+	for (int i=0;i<6;i++) { SAFE_DELETE(pSkyVB[i]); }
+	SAFE_DELETE(pRingVB);
 	SAFE_DELETE(pDome);
 	SAFE_DELETE(pRing);
 }
@@ -336,7 +336,7 @@ void HazeManager2::RenderSky(VECTOR3 cpos, VECTOR3 cdir, double rad, double apr)
 	pDome->SetVSConstants("Const", vp->GetScatterConst(), sizeof(ConstParams));
 	pDome->UpdateTextures();
 
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	pDev->SetCullMode(VK_CULL_MODE_NONE);
 
 	for (int i=0;i<24;i++) {
 		double x = al;
@@ -351,7 +351,7 @@ void HazeManager2::RenderSky(VECTOR3 cpos, VECTOR3 cdir, double rad, double apr)
 		}
 	}
 
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
 	//vp->GetScatterConst()->mVP = vp->GetScene()->PopCameraFrustumLimits();
 }
@@ -366,7 +366,7 @@ void HazeManager2::RenderSkySegment(D3DXMATRIX &wmat, double rad, double dmin, d
 	float h2 = -float(rad * cos(dmax)); 
 
 	ShaderParams sprm;
-	memcpy_s(&sprm.mWorld, sizeof(sprm.mWorld), &wmat, sizeof(wmat));
+	memcpy(&sprm.mWorld, &wmat, sizeof(wmat));
 	sprm.vTexOff = FVECTOR4(r1, r2, h1, h2);
 	
 	int xres = xreslvl[index];
@@ -376,7 +376,7 @@ void HazeManager2::RenderSkySegment(D3DXMATRIX &wmat, double rad, double dmin, d
 
 	pDome->SetVSConstants("Prm", &sprm, sizeof(ShaderParams));
 	pDev->SetStreamSource(0, pSkyVB[index], 0, sizeof(D3DXVECTOR3));
-	pDev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, prims);	
+	pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, prims));	
 }
 
 
@@ -413,8 +413,8 @@ void HazeManager2::RenderRing(VECTOR3 cpos, VECTOR3 cdir, double rad, double hra
 	pRing->ClearTextures();
 	vp->InitEclipse(pRing);
 
-	memcpy_s(&sprm, sizeof(ShaderParams), vp->GetTerrainParams(), sizeof(ShaderParams));
-	memcpy_s(&sprm.mWorld, sizeof(sprm.mWorld), &mW, sizeof(mW));
+	memcpy(&sprm, vp->GetTerrainParams(), sizeof(ShaderParams));
+	memcpy(&sprm.mWorld, &mW, sizeof(mW));
 
 	sprm.vTexOff = FVECTOR4(r1, r2, h1, h2);
 	sprm.fAlpha = float(qw);
@@ -430,10 +430,10 @@ void HazeManager2::RenderRing(VECTOR3 cpos, VECTOR3 cdir, double rad, double hra
 
 	UINT nPrims = HORIZON2_NSEG * HORIZON2_NRING * 2 - 2;
 
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	pDev->SetCullMode(VK_CULL_MODE_NONE);
 	pDev->SetStreamSource(0, pRingVB, 0, sizeof(D3DXVECTOR3));
-	pDev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, nPrims);
-	pDev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	pDev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, nPrims));
+	pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
 	// Pop previous frustum configuration, must initialize mVP
 	vp->GetScatterConst()->mVP = vp->GetScene()->PopCameraFrustumLimits();
@@ -448,7 +448,6 @@ void HazeManager2::CreateRingBuffers()
 	int nvrt = HORIZON2_NSEG * 2 * HORIZON2_NRING + 2;
 
 	D3DXVECTOR3 *pVrt = new D3DXVECTOR3[nvrt];
-	D3DXVECTOR3 *pBuf = NULL;
 
 	float d = 1.0f/float(HORIZON2_NRING);
 	double phi = 0.0;
@@ -468,12 +467,9 @@ void HazeManager2::CreateRingBuffers()
 		y+=d;
 	}
 
-	HR(pDev->CreateVertexBuffer(v*sizeof(D3DXVECTOR3), 0, 0, D3DPOOL_DEFAULT, &pRingVB, NULL));
+	pRingVB = new VkBuf(pDev, v*sizeof(D3DXVECTOR3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DPOOL_DEFAULT
 
-	if (pRingVB->Lock(0, 0, (void **)&pBuf,0)==S_OK) {
-		memcpy(pBuf, pVrt, v*sizeof(D3DXVECTOR3));
-		pRingVB->Unlock();
-	}
+	pRingVB->Upload(pVrt, v*sizeof(D3DXVECTOR3)); // Lock, memcpy, Unlock
 
 	delete []pVrt;
 	pVrt = NULL;
@@ -488,7 +484,6 @@ void HazeManager2::CreateSkydomeBuffers(int index)
 	int yseg = yreslvl[index];
 
 	D3DXVECTOR3 *pVrt = new D3DXVECTOR3[xseg*yseg*2+2];
-	D3DXVECTOR3 *pBuf = NULL;
 
 	double sa = 0.0, ca = 1.0;
 	double db = 1.0/double(yseg);
@@ -505,12 +500,9 @@ void HazeManager2::CreateSkydomeBuffers(int index)
 		ds = -ds; dc = -dc;	sa += ds; ca -= dc;	b += db;
 	}
 
-	HR(pDev->CreateVertexBuffer(k*sizeof(D3DXVECTOR3), 0, 0, D3DPOOL_DEFAULT, &pSkyVB[index], NULL));
+	pSkyVB[index] = new VkBuf(pDev, k*sizeof(D3DXVECTOR3), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DPOOL_DEFAULT
 
-	if (pSkyVB[index]->Lock(0, 0, (void **)&pBuf,0)==S_OK) {
-		memcpy(pBuf, pVrt, k*sizeof(D3DXVECTOR3));
-		pSkyVB[index]->Unlock();
-	}
+	pSkyVB[index]->Upload(pVrt, k*sizeof(D3DXVECTOR3)); // Lock, memcpy, Unlock
 
 	delete []pVrt;
 	pVrt = NULL;
@@ -520,10 +512,10 @@ void HazeManager2::CreateSkydomeBuffers(int index)
 
 ShaderClass* HazeManager2::pDome;
 ShaderClass* HazeManager2::pRing;
-LPDIRECT3DDEVICE9 HazeManager2::pDev;
-LPDIRECT3DTEXTURE9 HazeManager2::pNoise;
-LPDIRECT3DVERTEXBUFFER9 HazeManager2::pSkyVB[6];
-LPDIRECT3DVERTEXBUFFER9 HazeManager2::pRingVB = NULL;
+VkDev *HazeManager2::pDev;
+VkTex *HazeManager2::pNoise;
+VkBuf *HazeManager2::pSkyVB[6];
+VkBuf *HazeManager2::pRingVB = NULL;
 int HazeManager2::xreslvl[6] = {9,6,5,4,3,2};
 int HazeManager2::yreslvl[6] = {11,8,6,5,5,4};
 

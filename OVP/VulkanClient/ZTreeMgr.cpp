@@ -15,6 +15,10 @@
 
 #include "ZTreeMgr.h"
 #include "OrbiterAPI.h"
+#include <cstdio>
+#include <cstring>
+
+#define MAKEFOURCC(a, b, c, d) ((DWORD)(BYTE)(a) | ((DWORD)(BYTE)(b) << 8) | ((DWORD)(BYTE)(c) << 16) | ((DWORD)(BYTE)(d) << 24)) // mmsyscom.h (windows.h left out)
 
 // =======================================================================
 // File header for compressed tree files
@@ -44,7 +48,7 @@ bool TreeFileHeader::fread (FILE *f)
 	if (::fread(&sz, sizeof(DWORD), 1, f) != 1 || sz != size) { return false; }
 	::fread(&flags, sizeof(DWORD), 1, f);
 	::fread(&dataOfs, sizeof(DWORD), 1, f);
-	::fread(&dataLength, sizeof(__int64), 1, f);
+	::fread(&dataLength, sizeof(int64_t), 1, f);
 	::fread(&nodeCount, sizeof(DWORD), 1, f);
 	::fread(&rootPos1, sizeof(DWORD), 1, f);
 	::fread(&rootPos2, sizeof(DWORD), 1, f);
@@ -103,9 +107,9 @@ ZTreeMgr *ZTreeMgr::CreateFromFile (const char *PlanetPath, Layer _layer)
 ZTreeMgr::ZTreeMgr (const char *PlanetPath, Layer _layer) :
 	layer(_layer), treef(NULL)
 {
-	int len = lstrlen(PlanetPath) + 1;
+	int len = strlen(PlanetPath) + 1;
 	path = new char[len];
-	strcpy_s(path, len, PlanetPath);
+	snprintf(path, len, "%s", PlanetPath);
 	OpenArchive();
 }
 
@@ -124,8 +128,8 @@ bool ZTreeMgr::OpenArchive ()
 {
 	const char *name[6] = { "Surf", "Mask", "Elev", "Elev_mod", "Label", "Cloud" };
 	char fname[MAX_PATH];
-	sprintf_s (fname, MAX_PATH, "%s\\Archive\\%s.tree", path, name[layer]);
-	if (fopen_s(&treef, fname, "rb")) {
+	snprintf (fname, MAX_PATH, "%s\\Archive\\%s.tree", path, name[layer]);
+	if (!(treef = fopen(oapiResolvePath(fname).c_str(), "rb"))) {
 		return false;
 	}
 	TreeFileHeader tfh;
@@ -140,7 +144,7 @@ bool ZTreeMgr::OpenArchive ()
 	for (int i = 0; i < 2; ++i) {
 		rootPos4[i] = tfh.rootPos4[i];
 	}
-	dofs = (__int64)tfh.dataOfs;
+	dofs = (int64_t)tfh.dataOfs;
 
 	if (!toc.fread(tfh.nodeCount, treef)) {
 		fclose(treef);
@@ -180,7 +184,7 @@ DWORD ZTreeMgr::ReadData (DWORD idx, BYTE **outp)
 		return 0;
 	}
 
-	if (_fseeki64(treef, toc[idx].pos+dofs, SEEK_SET)) {
+	if (fseeko(treef, toc[idx].pos+dofs, SEEK_SET)) {
 		return 0;
 	}
 

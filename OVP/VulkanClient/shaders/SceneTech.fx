@@ -8,12 +8,15 @@
 // D3D9Client generic scene rendering technique
 // ----------------------------------------------------------------------------
 
-uniform extern float4x4  gWVP;			    // Combined World, View and Projection matrix
-uniform extern float4x4  gVP;			    // Combined World, View and Projection matrix
-uniform extern float4    gColor;		    // Line Color
+layout(binding = 0, row_major, scalar) uniform FxParams	// the uniform extern parameters
+{
+mat4      gWVP;			    // Combined World, View and Projection matrix
+mat4      gVP;			    // Combined World, View and Projection matrix
+vec4      gColor;		    // Line Color
+};
 uniform extern texture   gTex0;			    // Diffuse texture
 
-sampler Tex0S : register (s0) = sampler_state
+sampler2D Tex0S = sampler_state	// register (s0) left out: VkEffect picks the binding, the client sets gTex0
 {
 	Texture = <gTex0>;
 	MinFilter = Anisotropic;
@@ -27,25 +30,36 @@ sampler Tex0S : register (s0) = sampler_state
 
 struct LineOutputVS
 {
-	float4 posH    : POSITION0;
+	vec4 posH;     // POSITION0
 };
 
 // ----------------------------------------------------------------------------
 // Line Tech Vertex/Pixel shader implementation
 // ----------------------------------------------------------------------------
 
-LineOutputVS LineTechVS(float3 posL : POSITION0)
+LineOutputVS LineTechVS(vec3 posL)	// posL : POSITION0
 {
 	// Zero output.
-	LineOutputVS outVS = (LineOutputVS)0;
-	outVS.posH = mul(float4(posL, 1.0f),gWVP);
+	LineOutputVS outVS = LineOutputVS(vec4(0));
+	outVS.posH = vec4(posL, 1.0f) * gWVP;
 	return outVS;
 }
 
-float4 LineTechPS() : COLOR
+#ifdef VS_LineTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 0) out LineOutputVS oVS;
+void main() { oVS = LineTechVS(iPosL VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 LineTechPS()
 {
 	return gColor;
 }
+
+#ifdef PS_LineTechPS
+layout(location = 0) out vec4 oColor;
+void main() { oColor = LineTechPS(); }
+#endif
 
 technique LineTech
 {
@@ -66,23 +80,36 @@ technique LineTech
 
 struct StarOutputVS
 {
-	float4 posH    : POSITION0;
-	float4 col     : COLOR0;
+	vec4 posH;     // POSITION0
+	vec4 col;      // COLOR0
 };
 
-StarOutputVS StarTechVS(float3 posL : POSITION0, float4 col : COLOR0)
+StarOutputVS StarTechVS(vec3 posL, vec4 col)	// posL : POSITION0, col : COLOR0
 {
 	// Zero output.
-	StarOutputVS outVS = (StarOutputVS)0;
-	outVS.posH = mul(float4(posL, 1.0f), gWVP);
+	StarOutputVS outVS = StarOutputVS(vec4(0), vec4(0));
+	outVS.posH = vec4(posL, 1.0f) * gWVP;
 	outVS.col  = col;
 	return outVS;
 }
 
-float4 StarTechPS(float4 col : COLOR0) : COLOR
+#ifdef VS_StarTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 3) in vec4 iCol;
+layout(location = 0) out StarOutputVS oVS;
+void main() { oVS = StarTechVS(iPosL, iCol VS_ARGS); gl_Position = oVS.posH; gl_PointSize = 1.0; } // D3DRS_POINTSIZE default
+#endif
+
+vec4 StarTechPS(vec4 col)	// col : COLOR0
 {
 	return col;
 }
+
+#ifdef PS_StarTechPS
+layout(location = 0) in StarOutputVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = StarTechPS(frg.col PS_ARGS); }
+#endif
 
 technique StarTech
 {
@@ -99,26 +126,39 @@ technique StarTech
 
 struct LabelVS
 {
-	float4 posH    : POSITION0;
-	float2 tex0	   : TEXCOORD0;
+	vec4 posH;     // POSITION0
+	vec2 tex0;     // TEXCOORD0
 };
 
-LabelVS LabelTechVS(float3 posL : POSITION0, float2 tex0 : TEXCOORD0)
+LabelVS LabelTechVS(vec3 posL, vec2 tex0)	// posL : POSITION0, tex0 : TEXCOORD0
 {
 	// Zero output.
-	LabelVS outVS = (LabelVS)0;
-	outVS.posH = mul(float4(posL, 1.0f), gWVP);
+	LabelVS outVS = LabelVS(vec4(0), vec2(0));
+	outVS.posH = vec4(posL, 1.0f) * gWVP;
 	outVS.tex0 = tex0;
 	return outVS;
 }
 
-float4 LabelTechPS(LabelVS frg) : COLOR
+#ifdef VS_LabelTechVS
+layout(location = 0) in vec3 iPosL;
+layout(location = 5) in vec2 iTex0;
+layout(location = 0) out LabelVS oVS;
+void main() { oVS = LabelTechVS(iPosL, iTex0 VS_ARGS); gl_Position = oVS.posH; }
+#endif
+
+vec4 LabelTechPS(LabelVS frg)
 {
-	float4 col;
-	col = tex2D(Tex0S, frg.tex0);
+	vec4 col;
+	col = texture(Tex0S, frg.tex0);
 	col.rgb = gColor.rgb;
 	return col;
 }
+
+#ifdef PS_LabelTechPS
+layout(location = 0) in LabelVS frg;
+layout(location = 0) out vec4 oColor;
+void main() { oColor = LabelTechPS(frg PS_ARGS); }
+#endif
 
 
 technique LabelTech
@@ -135,4 +175,3 @@ technique LabelTech
 		DestBlend = InvSrcAlpha;
 	}
 }
-

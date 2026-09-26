@@ -13,6 +13,7 @@
 #include <string>
 #include <assert.h>
 #include <mutex>
+#include <memory>
 #include "OrbiterAPI.h"
 #include "D3D9Util.h"   // d3dx9.h; VERTEX_2TEX (g++ resolves non-dependent names at the template definition)
 #include "D3D9Config.h" // Config, for the same reason
@@ -153,7 +154,10 @@ public:
 
 	void CleanUp()
 	{
+		pDev->WaitIdle();
 		mm.lock();
+		for (auto x : Pnd) Delete(x.first); // not upstream: entries still waiting for the GPU
+		Pnd.clear();
 #ifdef _DEBUG
 		for (auto x : Fre) {
 			size_t size = 0; DWORD ent = 0;
@@ -199,9 +203,17 @@ public:
 		mm.lock();
 		auto it = Rsv.find(p);			// Find the entry (log2 complexity)
 		assert(it != Rsv.end());
-		Fre[it->second].push_front(p);	// Add it in a fron of free entries
+		Pnd[p] = it->second;			// not upstream: back on the free list only when the GPU is done with the frames that may read it
 		Rsv.erase(it);					// Remove from used (reserved)
 		mm.unlock();
+		std::weak_ptr<bool> w = alive;
+		pDev->Defer([this, p, w]() {
+			if (w.expired()) return;
+			mm.lock();
+			auto q = Pnd.find(p);
+			if (q != Pnd.end()) { Fre[q->second].push_front(p); Pnd.erase(q); } // Add it in a fron of free entries
+			mm.unlock();
+		});
 	}
 
 	size_t UsedSize()
@@ -249,6 +261,8 @@ private:
 	std::string name;
 	std::map<DWORD, std::list<T>> Fre;
 	std::map<T, DWORD> Rsv;
+	std::map<T, DWORD> Pnd;			// not upstream: freed, the GPU may still read them
+	std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 	std::mutex mm;
 };
 

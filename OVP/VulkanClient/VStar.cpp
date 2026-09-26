@@ -46,7 +46,7 @@ bool vStar::Update (bool bMainScene)
 	return true;
 }
 
-bool vStar::Render(LPDIRECT3DDEVICE9 dev)
+bool vStar::Render(VkDev *dev)
 {
 	_TRACE;
 

@@ -26,7 +26,7 @@ const float invalid_val = -1e12;
 // ===========================================================================================
 //
 
-PlanetShader::PlanetShader(LPDIRECT3DDEVICE9 pDev, const char* file, const char* vs, const char* ps, const char* name, const char* options)
+PlanetShader::PlanetShader(VkDev *pDev, const char* file, const char* vs, const char* ps, const char* name, const char* options)
 	: ShaderClass(pDev, file, vs, ps, name, options)
 {
 	bLocals = false;
@@ -81,8 +81,8 @@ void vPlanet::GlobalInitAtmosphere(oapi::D3D9Client* gc)
 {
 	pDev = gc->GetDevice();
 
-	if (Config->bAtmoQuality) pIP = new ImageProcessing(pDev, "Modules/D3D9Client/Scatter.hlsl", "SunColor");
-	else pIP = new ImageProcessing(pDev, "Modules/D3D9Client/Scatter.hlsl", "SunColor", "_PERFORMANCE");
+	if (Config->bAtmoQuality) pIP = new ImageProcessing(pDev, "Modules/VulkanClient/Scatter.glsl", "SunColor");
+	else pIP = new ImageProcessing(pDev, "Modules/VulkanClient/Scatter.glsl", "SunColor", "_PERFORMANCE");
 
 	pIP->CompileShader("SkyView");
 	pIP->CompileShader("LandView");
@@ -124,13 +124,13 @@ void vPlanet::GlobalInitAtmosphere(oapi::D3D9Client* gc)
 	string flags = "";
 	if (!Config->bAtmoQuality) flags += "_PERFORMANCE ";
 
-	pRender[PLT_GIANT] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "GiantVS", "GiantPS", "Giant", flags.c_str());
-	pRender[PLT_G_CLOUDS] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "CloudVS", "GiantCloudPS", "GiantCloud", flags.c_str());
+	pRender[PLT_GIANT] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "GiantVS", "GiantPS", "Giant", flags.c_str());
+	pRender[PLT_G_CLOUDS] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "CloudVS", "GiantCloudPS", "GiantCloud", flags.c_str());
 
 	if (Config->CloudMicro) flags += "_CLOUDMICRO ";
 	if (Config->bCloudNormals) flags += "_CLOUDNORMALS ";
 
-	pRender[PLT_CLOUDS] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "CloudVS", "CloudPS", "Clouds", flags.c_str());
+	pRender[PLT_CLOUDS] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "CloudVS", "CloudPS", "Clouds", flags.c_str());
 
 
 
@@ -145,12 +145,12 @@ void vPlanet::GlobalInitAtmosphere(oapi::D3D9Client* gc)
 	if (Config->EnableMeshDbg) flags += "_DEVTOOLS ";
 	if (!Config->bAtmoQuality) flags += "_PERFORMANCE ";
 
-	pRender[PLT_MARS] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "TerrainVS", "TerrainPS", "Mars", (flags + blend).c_str());
+	pRender[PLT_MARS] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "TerrainVS", "TerrainPS", "Mars", (flags + blend).c_str());
 
 
 	flags += "_NO_ATMOSPHERE ";
 
-	pRender[PLT_MOON] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "TerrainVS", "TerrainPS", "Moon", (flags + blend).c_str());
+	pRender[PLT_MOON] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "TerrainVS", "TerrainPS", "Moon", (flags + blend).c_str());
 
 
 	flags = "";
@@ -165,7 +165,7 @@ void vPlanet::GlobalInitAtmosphere(oapi::D3D9Client* gc)
 	if (Config->EnableMeshDbg) flags += "_DEVTOOLS ";
 	if (!Config->bAtmoQuality) flags += "_PERFORMANCE ";
 
-	pRender[PLT_EARTH] = new PlanetShader(pDev, "Modules/D3D9Client/NewPlanet.hlsl", "TerrainVS", "TerrainPS", "Earth", (flags + blend).c_str());
+	pRender[PLT_EARTH] = new PlanetShader(pDev, "Modules/VulkanClient/NewPlanet.glsl", "TerrainVS", "TerrainPS", "Earth", (flags + blend).c_str());
 }
 
 
@@ -577,13 +577,14 @@ void vPlanet::UpdateScatter()
 
 	if (HasAtmosphere() && surfmgr2)
 	{
-		if (!pSunColor) D3DXCreateTexture(pDev, 4*Qc, Qc/2, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pSunColor);
-		if (!pRaySkyView) D3DXCreateTexture(pDev, Qc * 2, Qc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pRaySkyView);
-		if (!pMieSkyView) D3DXCreateTexture(pDev, Qc * 2, Qc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pMieSkyView);
-		if (!pLandViewRay) D3DXCreateTexture(pDev, Wc * Nc, Wc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pLandViewRay);
-		if (!pLandViewMie) D3DXCreateTexture(pDev, Wc * Nc, Wc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pLandViewMie);
-		if (!pLandViewAtn) D3DXCreateTexture(pDev, Wc * Nc, Wc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pLandViewAtn);
-		if (!pAmbientSky) D3DXCreateTexture(pDev, Qc, Qc, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &pAmbientSky);
+		const VkImageUsageFlags rtUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // D3DUSAGE_RENDERTARGET
+		if (!pSunColor) pSunColor = new VkTex(pDev, 4*Qc, Qc/2, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pRaySkyView) pRaySkyView = new VkTex(pDev, Qc * 2, Qc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pMieSkyView) pMieSkyView = new VkTex(pDev, Qc * 2, Qc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pLandViewRay) pLandViewRay = new VkTex(pDev, Wc * Nc, Wc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pLandViewMie) pLandViewMie = new VkTex(pDev, Wc * Nc, Wc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pLandViewAtn) pLandViewAtn = new VkTex(pDev, Wc * Nc, Wc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
+		if (!pAmbientSky) pAmbientSky = new VkTex(pDev, Qc, Qc, 1, VK_FORMAT_R16G16B16A16_SFLOAT, rtUsage);
 	}
 
 	VECTOR3 sundir, campos; OBJHANDLE hSun = oapiGetGbodyByIndex(0);
@@ -612,7 +613,7 @@ void vPlanet::UpdateScatter()
 	float hrz = sqrt(max(0.0, cr * cr - pr * pr));
 	float qw = float(pr / cr);
 
-	LPDIRECT3DSURFACE9 pTgt, pTgt2;
+	VkSurf *pTgt, *pTgt2;
 
 	// ---------------------------------------------------------------------
 	// Initialize camera centric tangent frame for normal mapped water
@@ -726,10 +727,10 @@ void vPlanet::UpdateScatter()
 	pIP->Activate("SunColor");
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
 
-	pSunColor->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pSunColor, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (SunColor)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 
 	//
@@ -743,19 +744,19 @@ void vPlanet::UpdateScatter()
 	pIP->SetStruct("Flo", &Flow, sizeof(sFlow));
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
 	pIP->SetTextureNative("tSun", pSunColor, IPF_CLAMP | IPF_LINEAR);
-	pRaySkyView->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pRaySkyView, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (SkyView)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 	// Mie calculations
 	Flow.bRay = false;
 	pIP->SetStruct("Flo", &Flow, sizeof(sFlow));
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
-	pMieSkyView->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pMieSkyView, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (SkyView)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 
 	//
@@ -766,10 +767,10 @@ void vPlanet::UpdateScatter()
 	pIP->SetTextureNative("tSkyRayColor", pRaySkyView, IPF_CLAMP | IPF_LINEAR);
 	pIP->SetTextureNative("tSkyMieColor", pMieSkyView, IPF_CLAMP | IPF_LINEAR);
 
-	pAmbientSky->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pAmbientSky, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (AmbientSky)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 
 	//
@@ -778,10 +779,10 @@ void vPlanet::UpdateScatter()
 	pIP->Activate("LandViewAtten");
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
 
-	pLandViewAtn->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pLandViewAtn, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (AmbientSky)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 
 	//
@@ -794,19 +795,19 @@ void vPlanet::UpdateScatter()
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
 	pIP->SetStruct("Flo", &Flow, sizeof(sFlow));
 	pIP->SetTextureNative("tSun", pSunColor, IPF_CLAMP | IPF_LINEAR);
-	pLandViewRay->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pLandViewRay, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (SkyView)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 
 	// Mie calculations
 	Flow.bRay = false;
 	pIP->SetStruct("Const", &cp, sizeof(ConstParams));
 	pIP->SetStruct("Flo", &Flow, sizeof(sFlow));
-	pLandViewMie->GetSurfaceLevel(0, &pTgt);
+	pTgt = new VkSurf(pLandViewMie, 0); // GetSurfaceLevel
 	pIP->SetOutputNative(0, pTgt);
 	if (!pIP->Execute(true)) LogErr("pIP Execute Failed (SkyView)");
-	SAFE_RELEASE(pTgt);
+	SAFE_DELETE(pTgt);
 }
 
 // ==============================================================
@@ -850,7 +851,7 @@ ConstParams* vPlanet::GetScatterConst()
 
 // ==============================================================
 
-LPDIRECT3DTEXTURE9 vPlanet::GetScatterTable(int i)
+VkTex *vPlanet::GetScatterTable(int i)
 {
 	switch (i)
 	{
@@ -986,10 +987,10 @@ bool vPlanet::LoadAtmoConfig()
 
 	auto it = Config->AtmoCfg.find(name);
 	if (it != Config->AtmoCfg.end()) {
-		sprintf_s(path, 256, "GC/%s", it->second.c_str());
+		snprintf(path, 256, "GC/%s", it->second.c_str());
 	}
 	else {
-		sprintf_s(path, "GC/%s.atm.cfg", name);
+		snprintf(path, sizeof(path), "GC/%s.atm.cfg", name);
 		Config->AtmoCfg[name] = string(name) + ".atm.cfg";
 	}
 	
@@ -999,8 +1000,8 @@ bool vPlanet::LoadAtmoConfig()
 
 	LogAlw("Loading Atmospheric Configuration file [%s] Handle=%s", path, _PTR(hFile));
 
-	if (oapiReadItem_string(hFile, (char*)"Shader", ShaderName) == false) strcpy_s(ShaderName, 32, "Auto");
-	if (oapiReadItem_string(hFile, (char*)"ConfigName", AtmoConfigName) == false) strcpy_s(AtmoConfigName, 32, "Custom");
+	if (oapiReadItem_string(hFile, (char*)"Shader", ShaderName) == false) snprintf(ShaderName, 32, "%s", "Auto");
+	if (oapiReadItem_string(hFile, (char*)"ConfigName", AtmoConfigName) == false) snprintf(AtmoConfigName, 32, "%s", "Custom");
 
 	LoadStruct(hFile, &SPrm, 0);
 	LoadStruct(hFile, &OPrm, 1);
@@ -1019,9 +1020,9 @@ bool vPlanet::LoadAtmoConfig()
 char* vPlanet::Label(const char* x)
 {
 	static char lbl[32];
-	if (iConfig == 0) sprintf_s(lbl, 32, "Srf_%s", x);
-	if (iConfig == 1) sprintf_s(lbl, 32, "Low_%s", x);
-	if (iConfig == 2) sprintf_s(lbl, 32, "Hig_%s", x);
+	if (iConfig == 0) snprintf(lbl, 32, "Srf_%s", x);
+	if (iConfig == 1) snprintf(lbl, 32, "Low_%s", x);
+	if (iConfig == 2) snprintf(lbl, 32, "Hig_%s", x);
 	return lbl;
 }
 
@@ -1123,10 +1124,10 @@ void vPlanet::SaveAtmoConfig()
 
 	auto it = Config->AtmoCfg.find(name);
 	if (it != Config->AtmoCfg.end()) {
-		sprintf_s(path, 256, "GC/%s", it->second.c_str());
+		snprintf(path, 256, "GC/%s", it->second.c_str());
 	}
 	else {
-		sprintf_s(path, "GC/%s.atm.cfg", name);
+		snprintf(path, sizeof(path), "GC/%s.atm.cfg", name);
 		Config->AtmoCfg[name] = string(name) + ".atm.cfg";
 	}
 

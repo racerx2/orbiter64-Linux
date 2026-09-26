@@ -68,7 +68,7 @@ void SurfaceManager::SetMicrotexture (const char *fname)
 
 // =======================================================================
 
-void SurfaceManager::Render(LPDIRECT3DDEVICE9 dev, D3DXMATRIX &wmat, double scale, int level, double viewap, bool bfog)
+void SurfaceManager::Render(VkDev *dev, D3DXMATRIX &wmat, double scale, int level, double viewap, bool bfog)
 {
 	if (ntex==0) LoadData();
 
@@ -97,11 +97,11 @@ void SurfaceManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXM
 	HR(FX->SetVector(eTexOff, ptr(D3DXVECTOR4(1.0f, 0.0f, 1.0f, 0.0f))));
 	HR(FX->SetFloat(eMix, 0.0f));
 
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
-	pDev->SetVertexDeclaration(pPatchVertexDecl);
+	VkDev *pDev = gc->GetDevice();
+	pDev->SetVertexDecl(pPatchVertexDecl);
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	for (int idx = 0; idx < npatch; idx++) {
@@ -122,7 +122,7 @@ void SurfaceManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXM
 			HR(FX->SetInt(eSpecularMode, 0));
 		}
 
-		LPDIRECT3DTEXTURE9 ltex = tile[idx].ltex;
+		VkTex *ltex = tile[idx].ltex;
 		if (ltex==NULL) ltex = gc->GetDefaultTexture()->GetTexture();
 
 		FX->SetTexture(eTex0, tile[idx].tex);
@@ -131,7 +131,7 @@ void SurfaceManager::RenderSimple(int level, int npatch, TILEDESC *tile, LPD3DXM
 
 		pDev->SetStreamSource(0, mesh.pVB, 0, sizeof(VERTEX_2TEX));
 		pDev->SetIndices(mesh.pIB);
-		pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh.nv, 0, mesh.nf);
+		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh.nf));
 	}
 
 	HR(FX->EndPass());
@@ -148,11 +148,11 @@ void SurfaceManager::InitRenderTile()
 	HR(FX->SetValue(eColor, ptr(D3DXCOLOR(cAmbient)), sizeof(D3DXCOLOR)));
 	HR(FX->SetFloat(eTime, float(fmod(oapiGetSimTime(),60.0))));
 
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
-	pDev->SetVertexDeclaration(pPatchVertexDecl);
+	VkDev *pDev = gc->GetDevice();
+	pDev->SetVertexDecl(pPatchVertexDecl);
 
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 }
 
@@ -166,9 +166,9 @@ void SurfaceManager::EndRenderTile()
 // =======================================================================
 
 void SurfaceManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int ilng, int nlng, double sdist,
-	TILEDESC *tile, const TEXCRDRANGE &range, LPDIRECT3DTEXTURE9 tex, LPDIRECT3DTEXTURE9 ltex, DWORD flag)
+	TILEDESC *tile, const TEXCRDRANGE &range, VkTex *tex, VkTex *ltex, DWORD flag)
 {
-	LPDIRECT3DDEVICE9 pDev = gc->GetDevice();
+	VkDev *pDev = gc->GetDevice();
 
 	VBMESH &mesh = PATCH_TPL[lvl][ilat]; // patch template
 	
@@ -221,6 +221,6 @@ void SurfaceManager::RenderTile (int lvl, int hemisp, int ilat, int nlat, int il
 
 	pDev->SetStreamSource(0, mesh.pVB, 0, sizeof(VERTEX_2TEX));
 	pDev->SetIndices(mesh.pIB);
-	pDev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, mesh.nv, 0, mesh.nf);
+	pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, mesh.nf));
 }
 

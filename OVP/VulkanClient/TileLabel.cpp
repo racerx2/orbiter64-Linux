@@ -10,6 +10,9 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <fstream>
+#include <cmath>
+#include <QString>
 
 TileLabel *TileLabel::Create (const SurfTile *stile)
 {
@@ -67,20 +70,21 @@ TileLabel::~TileLabel ()
 // ---------------------------------------------------------------------------
 
 static int _wbufferSize = 0;
-static std::unique_ptr<WCHAR> _wbuffer; // this should get destroyed @ shutdown
+static std::unique_ptr<wchar_t[]> _wbuffer; // this should get destroyed @ shutdown (wchar_t[]: upstream's unique_ptr<WCHAR> freed an array with delete)
 
 static LPWSTR GetWBuffer (const std::string &name, int *_len, int _stopLen = -1)
 {
 	LPWSTR dst = NULL;
-	int len = MultiByteToWideChar(CP_UTF8, 0, name.c_str(), _stopLen, NULL, 0);
+	std::wstring wname = QString::fromUtf8(name.c_str(), _stopLen).toStdWString(); // MultiByteToWideChar(CP_UTF8): wchar_t is UTF-32 here
+	int len = int(wname.size()) + (_stopLen < 0 ? 1 : 0); // a -1 length counts the terminating zero
 	if (len) {
 		// Grow buffer?
 		if (len > _wbufferSize) {
-			_wbuffer.reset(new WCHAR[len+16]);
+			_wbuffer.reset(new wchar_t[len+16]);
 			_wbufferSize = len+16;
 		}
 		dst = _wbuffer.get();
-		MultiByteToWideChar(CP_UTF8, 0, name.c_str(), _stopLen, dst, len);
+		memcpy(dst, wname.c_str(), len * sizeof(wchar_t));
 	}
 	*_len = len ? len - 1 : 0;
 	return dst;
@@ -88,26 +92,26 @@ static LPWSTR GetWBuffer (const std::string &name, int *_len, int _stopLen = -1)
 
 // ---------------------------------------------------------------------------
 
-static void appendName (LPSTR *buffer, int *len, const std::string &name)
+static void appendName (char **buffer, int *len, const std::string &name)
 {
 	size_t _len = name.size();
 	if (!_len) return;
 
 	// Create new name buffer
 	size_t size = *len + _len + (*len ? 2 : 1); // either '\n' + '\0' or just '\0'
-	LPSTR dst = new CHAR[size];
+	char *dst = new char[size];
 
 	// Previous content?
 	size_t offs = 0;
 	if (*len) {
-		strcpy_s(dst, size, *buffer);
+		snprintf(dst, size, "%s", *buffer);
 		dst[*len] = '\n';
 		offs = *len + 1;
 		delete[] *buffer;
 	}
 
 	// Copy new 'name'
-	strcpy_s(dst+ offs, size-offs, name.c_str());
+	snprintf(dst+ offs, size-offs, "%s", name.c_str());
 
 	*buffer = dst;
 	*len = int(size - 1); // length is WITHOUT terminating zero
@@ -168,10 +172,10 @@ bool TileLabel::Read ()
 	//}
 
 	if (tile->smgr->DoLoadIndividualFiles(4)) { // try loading from individual tile file
-		sprintf_s(path, MAX_PATH, "%s\\Label\\%02d\\%06d\\%06d.lab", tile->mgr->CbodyName(), lvl+4, ilat, ilng);
+		snprintf(path, MAX_PATH, "%s\\Label\\%02d\\%06d\\%06d.lab", tile->mgr->CbodyName(), lvl+4, ilat, ilng);
 		tile->mgr->GetClient()->TexturePath(path, texpath);
 
-		std::ifstream ifs(texpath);
+		std::ifstream ifs(oapiResolvePath(texpath));
 		while (ifs >> typestr >> lat >> lng >> altstr >> std::ws) {
 			std::getline(ifs, name, '\n');
 			TLABEL *item = new TLABEL;
@@ -227,7 +231,7 @@ bool TileLabel::ExtractAncestorData (const SurfTile *atile)
 				}
 				renderlabel[nrenderlabel++] = alabel[i];
 				if (!alabel[i]->pos.x && !alabel[i]->pos.y && !alabel[i]->pos.z) {
-					if (_isnan(alabel[i]->alt))
+					if (std::isnan(alabel[i]->alt))
 						alabel[i]->alt = Elevation(lat, lng, latmin, latmax, lngmin, lngmax, 1.0);
 					double rad = tile->mgr->CbodySize() + alabel[i]->alt;
 					oapiEquToLocal(tile->mgr->Cbody(), lng, lat, rad, &alabel[i]->pos);
@@ -439,11 +443,11 @@ int TileLabel::LimitAndRotateLongLabelList(TLABEL *l, DWORD H, int *y)
 				//std::rotate(v.rbegin(), v.rbegin() + 1, v.rend()); // rot right
 				// re-join
 				std::string label = join(v);
-				strcpy_s(l->label, l->len + 1, label.c_str());
+				snprintf(l->label, l->len + 1, "%s", label.c_str());
 
 				// Calculate/Update "render stop" length
 				int n = 0;
-				for (CHAR *c = l->label; *c; ++c) {
+				for (char *c = l->label; *c; ++c) {
 					if (*c == '\n' && ++n == 4) { // render 4 lines
 						l->stopLen = int(c - l->label);
 						break;

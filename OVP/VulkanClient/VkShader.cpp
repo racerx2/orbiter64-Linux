@@ -558,6 +558,7 @@ bool VkEffect::Parse (const char *_file, const VkMacros &_macros)
 			}
 			s.desc.aniso = aniso ? std::max (1.0f, maxAniso) : 0.0f;
 			if (s.binding >= VkDev::MAXBINDINGS) { LogErr("VkEffect %s: more than %d samplers", _file, VkDev::MAXBINDINGS - VkDev::NUBOS); return false; }
+			s.state = s.desc;
 			samp.push_back (s);
 			edits.push_back ({ k, semi + 1, "layout(binding = " + std::to_string (s.binding) + ") uniform " + type + " " + name + ";" + Newlines (code, k, semi + 1) });
 			i = semi + 1;
@@ -817,6 +818,25 @@ int VkEffect::SetValue (VkFxHandle h, const void *data, UINT bytes)
 	return h ? 0 : -1;
 }
 
+int VkEffect::GetSamplerState (VkFxHandle h, VkSamplerDesc *desc)
+{
+	VkConstHandle e = (VkConstHandle)h;
+	if (!e || !e->sampler || e->binding < 0 || !desc) return -1;
+	for (auto &s : samp) if (s.binding == e->binding) { *desc = s.desc; return 0; }
+	return -1;
+}
+int VkEffect::SetSamplerState (VkFxHandle h, const VkSamplerDesc *desc)
+{
+	VkConstHandle e = (VkConstHandle)h;
+	if (!e || !e->sampler || e->binding < 0) return -1;
+	for (auto &s : samp) if (s.binding == e->binding) {
+		s.desc = desc ? *desc : s.state;
+		VkTex *t = cb.GetTexture (s.binding);
+		if (t) cb.SetTexture (s.binding, t, s.desc); // the bound texture takes the new state at the next draw
+		return 0;
+	}
+	return -1;
+}
 int VkEffect::SetTexture (VkFxHandle h, VkTex *t)
 {
 	VkConstHandle e = (VkConstHandle)h;

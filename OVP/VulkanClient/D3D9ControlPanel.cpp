@@ -13,26 +13,28 @@
 #include "D3D9Surface.h"
 #include "D3D9Catalog.h"
 #include "Mesh.h"
-#include "psapi.h"
+// psapi.h left out: the memory counters come from /proc/self/statm
 #include "DebugControls.h"
 #include <sstream>
 #include <string>
+#include <stdarg.h>
+#include <unistd.h>
 
 using namespace oapi;
+using std::min;
+using std::max;
 
 
-DWORD TextureSizeInBytes(LPDIRECT3DTEXTURE9 pTex)
+DWORD TextureSizeInBytes(VkTex *pTex)
 {
-	D3DSURFACE_DESC desc;	
-	pTex->GetLevelDesc(0, &desc);
-	DWORD lev = pTex->GetLevelCount();
-	DWORD size = desc.Height*desc.Width;
-	if (desc.Format==D3DFMT_DXT1) size=size>>1;
-	if (desc.Format==D3DFMT_A8R8G8B8) size=size<<2;
-	if (desc.Format==D3DFMT_X8R8G8B8) size=size<<2;
-	if (desc.Format==D3DFMT_R5G6B5) size=size<<1;
-	if (desc.Format==D3DFMT_A4R4G4B4) size=size<<1;
-	if (desc.Format==D3DFMT_R8G8B8) size=size*3;
+	// GetLevelDesc(0): the texture's size and format
+	DWORD lev = pTex->levels;
+	DWORD size = pTex->h*pTex->w;
+	if (pTex->fmt==VK_FORMAT_BC1_RGBA_UNORM_BLOCK || pTex->fmt==VK_FORMAT_BC1_RGB_UNORM_BLOCK) size=size>>1;
+	if (pTex->fmt==VK_FORMAT_B8G8R8A8_UNORM) size=size<<2; // A8R8G8B8 and X8R8G8B8 (the view swizzle tells them apart)
+	if (pTex->fmt==VK_FORMAT_R5G6B5_UNORM_PACK16) size=size<<1;
+	if (pTex->fmt==VK_FORMAT_A4R4G4B4_UNORM_PACK16) size=size<<1;
+	if (pTex->fmt==VK_FORMAT_B8G8R8_UNORM) size=size*3;
 
 	if (lev) size += (size>>2) + (size>>4) + (size>>8);
 	return size;
@@ -45,11 +47,11 @@ void D3D9Client::Label(const char *format, ...)
 	va_list args;
 	va_start(args, format);
 			
-	_vsnprintf_s(buffer, 255, 255, format, args);
+	vsnprintf(buffer, 255, format, args);
 
 	va_end(args);
 
-	int len = lstrlen(buffer);
+	int len = (int)strlen(buffer);
 	pItemsSkp->Text(20, LabelPos, buffer, len);
 	LabelPos += 22;
 }
@@ -76,7 +78,7 @@ void D3D9Client::DrawTimeBar(double t, double s, double f, DWORD color, const ch
 		return;
 	}
 
-	sprintf_s(legend, 256, "%.64s, %0.2fms (%.2f%%)", label, (t/f)*0.001, t*0.0001);
+	snprintf(legend, 256, "%.64s, %0.2fms (%.2f%%)", label, (t/f)*0.001, t*0.0001);
 
 	D3D9PadBrush brush(color);
 	int y = viewH - 20;
@@ -96,11 +98,26 @@ void D3D9Client::RenderControlPanel()
 	static const char *OnOff[]={"Off","On"};
 	static const char *SkpU[]={"Auto","GDI"};
 
-	LPDIRECT3DDEVICE9 dev = pDevice;
+	VkDev *dev = pDevice;
 
-	PROCESS_MEMORY_COUNTERS_EX memstats;
-	memstats.cb = sizeof(PROCESS_MEMORY_COUNTERS_EX);
-	GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&memstats, sizeof(memstats));
+	// GetProcessMemoryInfo: PrivateUsage = private data and stack pages, field 6 of /proc/self/statm
+	unsigned long PrivateUsage = 0;
+	FILE *statm = fopen("/proc/self/statm", "r");
+	if (statm) {
+		unsigned long f[6];
+		if (fscanf(statm, "%lu %lu %lu %lu %lu %lu", f, f+1, f+2, f+3, f+4, f+5) == 6) PrivateUsage = f[5] * sysconf(_SC_PAGESIZE);
+		fclose(statm);
+	}
+
+	// GetAvailableTextureMem: the unused budget of the device-local heaps (VMA)
+	VmaBudget budget[VK_MAX_MEMORY_HEAPS];
+	const VkPhysicalDeviceMemoryProperties *memprops;
+	vmaGetHeapBudgets(dev->vma, budget);
+	vmaGetMemoryProperties(dev->vma, &memprops);
+	VkDeviceSize AvailableTextureMem = 0;
+	for (UINT i = 0; i < memprops->memoryHeapCount; i++)
+		if ((memprops->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && budget[i].budget > budget[i].usage)
+			AvailableTextureMem += budget[i].budget - budget[i].usage;
 
 
 	
@@ -136,7 +153,7 @@ void D3D9Client::RenderControlPanel()
 
 	for (auto pSurf : SurfaceCatalog)
 	{
-		if (pSurf->desc.Pool==D3DPOOL_DEFAULT) {
+		if (!pSurf->desc.SysMem) { // D3DPOOL_DEFAULT
 			if (pSurf->IsRenderTarget()) {	
 				if (pSurf->IsTexture()) {
 					rttex_count++;
@@ -158,8 +175,8 @@ void D3D9Client::RenderControlPanel()
 		}
 	}
 
-	Label("Application Size.....: %lu MB", memstats.PrivateUsage >> 20);
-	Label("Available video mem..: %u MB", dev->GetAvailableTextureMem()>>20);
+	Label("Application Size.....: %lu MB", PrivateUsage >> 20);
+	Label("Available video mem..: %u MB", DWORD(AvailableTextureMem>>20));
 	Label("Surface Handles......: %lu", nSurf);
 	Label("SystemMem Surfaces...: %u (%u MB)", sysme_count, sysme_size>>20);
 	Label("Dynamic Textures.....: %u (%u MB)", dyntx_count, dyntx_size>>20);
@@ -186,8 +203,8 @@ void D3D9Client::RenderControlPanel()
 		if (TileBuf.count(RENDERPASS_ENVCAM)) tiles << "Env[" << TileBuf[RENDERPASS_ENVCAM] << "] ";
 	}
 
-	Label("Tile Texture Cache...: Used[%u] Free[%u] Capacity (%u MB)", g_pTexmgr_tt->UsedCount(), g_pTexmgr_tt->FreeCount(), tt_c >> 20);
-	Label("Tile Vertex Cache....: Used[%u] Free[%u] Capacity (%u MB)", g_pVtxmgr_vb->UsedCount(), g_pVtxmgr_vb->FreeCount(), tv_c >> 20);
+	Label("Tile Texture Cache...: Used[%u] Free[%u] Capacity (%zu MB)", g_pTexmgr_tt->UsedCount(), g_pTexmgr_tt->FreeCount(), tt_c >> 20);
+	Label("Tile Vertex Cache....: Used[%u] Free[%u] Capacity (%zu MB)", g_pVtxmgr_vb->UsedCount(), g_pVtxmgr_vb->FreeCount(), tv_c >> 20);
 	Label("Tiles Allocated......: %u", D3D9Stats.TilesAllocated);
 	Label("Tiles Renderred......: %s", tiles.str().c_str());
 	
@@ -210,7 +227,7 @@ void D3D9Client::RenderControlPanel()
 	static double LockPeak = 0.0;
 
 	LabelPos += 22;
-	Label("Mesh Vtx Allocated...: %u (%u MB)", tot_verts, (tot_verts*sizeof(NMVERTEX))>>20); 
+	Label("Mesh Vtx Allocated...: %u (%zu MB)", tot_verts, (tot_verts*sizeof(NMVERTEX))>>20); 
 	Label("Groups Allocated.....: %u", tot_group);
 	Label("Group Tarnsforms.....: %u", tot_trans); 
 	Label("Mesh vertices render.: %u", verts);
@@ -344,7 +361,7 @@ void D3D9Client::RenderControlPanel()
 
 
 
-bool D3D9Client::ControlPanelMsg(WPARAM wParam)
+bool D3D9Client::ControlPanelMsg(int wParam)
 {
 	return false;
 }

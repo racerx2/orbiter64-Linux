@@ -7,7 +7,7 @@
 // ==============================================================
 
 
-#define STRICT 1
+// STRICT left out: Win32 build switch
 #define ORBITER_MODULE
 
 #include <set> // ...for Brush-, Pen- and Font-accounting
@@ -39,10 +39,30 @@
 #include "gcCore.h"
 #include "gcConst.h"
 #include <unordered_map>
-#include <d3d9on12.h>
+// d3d9on12.h left out: D3D9on12 is a Windows Direct3D 12 layer
 #include "imgui.h"
-#include "imgui_impl_dx9.h"
-#include "imgui_impl_win32.h"
+#include "imgui_impl_vulkan.h" // imgui_impl_dx9.h
+// imgui_impl_win32.h left out: the core's imgui_impl_qt is the platform backend
+#include "OrbiterResource.h"
+#include "VkTexFile.h"
+#include <QVulkanInstance>
+#include <QVersionNumber>
+#include <QWindow>
+#include <QWidget>
+#include <QScreen>
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QWheelEvent>
+#include <QPainter>
+#include <QImage>
+#include <QFont>
+#include <QFontMetrics>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <sys/stat.h>
+#include <thread>
+#include <chrono>
+#include <mutex>
 
 #if defined(_MSC_VER) && (_MSC_VER <= 1700 ) // Microsoft Visual Studio Version 2012 and lower
 #define round(v) floor(v+0.5)
@@ -65,27 +85,27 @@ struct D3D9Client::GenericProcData {
 
 using namespace oapi;
 
-HINSTANCE g_hInst = 0;
+void *g_hInst = 0;
 D3D9Client *g_client = 0;
 class gcConst* g_pConst = 0;
-IDirect3D9* g_pD3DObject = 0;  // Made valid when VideoTab is created
+QVulkanInstance* g_pD3DObject = 0;  // Made valid when VideoTab is created
 Memgr<float>* g_pMemgr_f = nullptr;
 Memgr<INT16>* g_pMemgr_i = nullptr;
 Memgr<UINT8>* g_pMemgr_u = nullptr;
 Memgr<WORD>* g_pMemgr_w = nullptr;
 Memgr<VERTEX_2TEX>* g_pMemgr_vtx = nullptr;
-Texmgr<LPDIRECT3DTEXTURE9>* g_pTexmgr_tt = nullptr;
-Vtxmgr<LPDIRECT3DVERTEXBUFFER9>* g_pVtxmgr_vb = nullptr;
-Idxmgr<LPDIRECT3DINDEXBUFFER9>* g_pIdxmgr_ib = nullptr;
+Texmgr<VkTex*>* g_pTexmgr_tt = nullptr;
+Vtxmgr<VkBuf*>* g_pVtxmgr_vb = nullptr;
+Idxmgr<VkBuf*>* g_pIdxmgr_ib = nullptr;
 
-typedef IDirect3D9* (__stdcall* __Direct3DCreate9On12)(UINT SDKVersion, D3D9ON12_ARGS* pOverrideList, UINT NumOverrideEntries);
+// __Direct3DCreate9On12 left out: D3D9on12 is a Windows Direct3D 12 layer
 
 set<D3D9Mesh*> MeshCatalog;
 set<SurfNative*> SurfaceCatalog;
 unordered_map<string, SURFHANDLE> SharedTextures;
 unordered_map<string, SURFHANDLE> ClonedTextures;
 unordered_map<MESHHANDLE, class SketchMesh*> MeshMap;
-unordered_map<std::string, LPDIRECT3DTEXTURE9> MicroTextures;
+unordered_map<std::string, VkTex*> MicroTextures;
 
 DWORD uCurrentMesh = 0;
 vObject *pCurrentVisual = 0;
@@ -106,8 +126,107 @@ std::set<Brush *> g_brushes;
 
 extern list<gcGUIApp *> g_gcGUIAppList;
 
-extern "C" {
-	_declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+// NvOptimusEnablement export left out: a Windows Optimus driver hint (the GPU is the Vulkan adapter picked in the video tab)
+
+// not upstream: the framework's ID3DXFont pLargeFont (record/replay/frozen labels), a Sketchpad font here
+static oapi::Font *pLargeFont = NULL;
+
+// not upstream: the CPU copy behind the GDI overlay DC (the D3D9 surface kept it)
+static QImage GDIImage;
+
+// not upstream: ImGui descriptor sets of this frame's surfaces (D3D9 passed the texture pointer), and a guard for their release
+static std::vector<VkDescriptorSet> ImDescSets;
+static DWORD ImGuiGeneration = 0;
+
+// not upstream: CreateFont for the client's own GDI fonts (a positive height is the cell height, as in GDI)
+static QFont *CreateGDIFont(int height, int weight, const char *face)
+{
+	QFont *hF = new QFont(QString::fromLatin1(face));
+	hF->setStyleHint(QFont::TypeWriter); // FF_MODERN when the face is missing
+	hF->setWeight(QFont::Weight(weight));
+	hF->setPixelSize(height);
+	int cell = QFontMetrics(*hF).height();
+	if (cell > height) hF->setPixelSize(std::max(1, height * height / cell));
+	return hF;
+}
+
+// not upstream: GDI TextOut with TA_LEFT|TA_TOP (QPainter puts text on the baseline)
+static void TextOut(QPainter *hDC, int x, int y, const char *str, int len)
+{
+	hDC->drawText(x, y + hDC->fontMetrics().ascent(), QString::fromLatin1(str, len));
+}
+
+// not upstream: IDirect3DSurface9::GetDC for the client's own surfaces, a QPainter on a CPU copy of the image
+static QPainter *SurfaceDC(VkDev *pDev, VkSurf *pSrf, QImage &img)
+{
+	VkPixels px, lv, cv;
+	if (!pSrf || !VkReadPixels(pDev, pSrf->tex, px, pSrf->level + 1)) return NULL;
+	lv.w = pSrf->w; lv.h = pSrf->h; lv.levels = 1; lv.layers = 1; lv.fmt = px.fmt; lv.swz = SWZ_NONE;
+	lv.data.assign(1, px.Level(pSrf->level, pSrf->layer));
+	if (!VkConvertPixels(lv, cv, VK_FORMAT_B8G8R8A8_UNORM, SWZ_NONE, lv.w, lv.h, 1)) return NULL;
+	img = QImage(lv.w, lv.h, QImage::Format_RGB32); // X8R8G8B8
+	for (UINT y = 0; y < lv.h; y++) {
+		QRgb *p = (QRgb *)img.scanLine(y);
+		memcpy(p, &cv.Level(0)[(size_t)y * lv.w * 4], (size_t)lv.w * 4);
+		for (UINT x = 0; x < lv.w; x++) p[x] |= 0xFF000000;
+	}
+	return new QPainter(&img);
+}
+
+// not upstream: IDirect3DSurface9::ReleaseDC for SurfaceDC, ends the painter and uploads the copy
+static void SurfaceReleaseDC(VkSurf *pSrf, QPainter *hDC, QImage &img)
+{
+	if (!hDC) return;
+	hDC->end();
+	delete hDC;
+	VkPixels px;
+	px.w = img.width(); px.h = img.height(); px.levels = 1; px.layers = 1;
+	px.fmt = VK_FORMAT_B8G8R8A8_UNORM;
+	px.data.assign(1, std::vector<BYTE>((size_t)px.w * px.h * 4));
+	for (UINT y = 0; y < px.h; y++) memcpy(&px.data[0][(size_t)y * px.w * 4], img.constScanLine(y), (size_t)px.w * 4);
+	if (pSrf) VkLoadTextureLevel(pSrf->tex, pSrf->level, pSrf->layer, px);
+	img = QImage();
+}
+
+// not upstream: D3DXLoadSurfaceFrom* into a destination rectangle (D3DX_FILTER_LINEAR), through a blit
+static bool LoadSurfaceRect(VkDev *pDev, VkSurf *pDst, const RECT *pRect, const VkPixels &px)
+{
+	VkPixels cv;
+	if (!VkConvertPixels(px, cv, VK_FORMAT_B8G8R8A8_UNORM, SWZ_NONE, 0, 0, 1)) return false;
+	VkTex *pImg = VkCreateTexture(pDev, cv, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	if (!pImg) return false;
+	{
+		VkSurf src(pImg);
+		pDev->StretchRect(&src, NULL, pDst, pRect, VK_FILTER_LINEAR);
+	}
+	delete pImg; // freed once the frame is done
+	return true;
+}
+
+// not upstream: IDirect3DDevice9::GetAvailableTextureMem, the free device-local memory in VMA's heap budgets
+static VkDeviceSize GetAvailableTextureMem(VkDev *pDev)
+{
+	const VkPhysicalDeviceMemoryProperties *mp;
+	VmaBudget budget[VK_MAX_MEMORY_HEAPS];
+	vmaGetMemoryProperties(pDev->vma, &mp);
+	vmaGetHeapBudgets(pDev->vma, budget);
+	VkDeviceSize avail = 0;
+	for (UINT i = 0; i < mp->memoryHeapCount; i++)
+		if ((mp->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && budget[i].budget > budget[i].usage) avail += budget[i].budget - budget[i].usage;
+	return avail;
+}
+
+// not upstream: the large font's ID3DXFont::DrawText (DT_CENTER | DT_TOP), through a Sketchpad on the backbuffer
+static void DrawLargeText(const char *str, int len, const RECT *r, DWORD color)
+{
+	oapi::Sketchpad *pSkp = g_client->clbkGetSketchpad(NULL); // RENDERTGT_MAINWINDOW (oapiGetSketchpad refuses NULL)
+	if (!pSkp) return;
+	pSkp->SetFont(pLargeFont);
+	pSkp->SetTextColor(RGB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF)); // D3DCOLOR to COLORREF
+	pSkp->SetBackgroundMode(oapi::Sketchpad::BK_TRANSPARENT);
+	pSkp->SetTextAlign(oapi::Sketchpad::CENTER, oapi::Sketchpad::TOP);
+	pSkp->Text((r->left + r->right) / 2, r->top, str, len);
+	g_client->clbkReleaseSketchpad(pSkp);
 }
 
 // ==============================================================
@@ -117,11 +236,11 @@ extern "C" {
 // ==============================================================
 // Initialise module
 
-DLLCLBK void InitModule(HINSTANCE hDLL)
+DLLCLBK void InitModule(void *hDLL)
 {
 
 #ifdef _DEBUG
-	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+	// _CrtSetDbgFlag left out: MSVC debug heap (the ORBITER_SANITIZER build checks leaks)
 	// _CrtSetBreakAlloc(8351);
 
 	assert(sizeof(FVECTOR4) == 16);
@@ -152,7 +271,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 	assert(dut.a == dut.w);
 #endif
 
-	D3D9InitLog("Modules/D3D9Client/D3D9ClientLog.html");
+	D3D9InitLog("Modules/VulkanClient/D3D9ClientLog.html");
 
 	g_pMemgr_f = new Memgr<float>("float");
 	g_pMemgr_i = new Memgr<INT16>("UINT16");
@@ -160,10 +279,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 	g_pMemgr_w = new Memgr<WORD>("WORD");
 	g_pMemgr_vtx = new Memgr<VERTEX_2TEX>("VERTEX_2TEX");
 
-	if (!D3DXCheckVersion(D3D_SDK_VERSION, D3DX_SDK_VERSION)) {
-		MissingRuntimeError();
-		return;
-	}
+	// D3DXCheckVersion left out: no D3DX runtime to check (the Vulkan version is checked when the device is made)
 
 #ifdef _NVAPI_H
 	if (NvAPI_Initialize()==NVAPI_OK) {
@@ -178,12 +294,10 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 	Config = new D3D9Config();
 
 	if (Config->ShaderCacheUse) {
-		DWORD fa = GetFileAttributesA("Cache");
-		if (fa == INVALID_FILE_ATTRIBUTES) CreateDirectoryA("Cache", NULL);
-		fa = GetFileAttributesA("Cache/D3D9Client");
-		if (fa == INVALID_FILE_ATTRIBUTES) CreateDirectoryA("Cache/D3D9Client", NULL);
-		fa = GetFileAttributesA("Cache/D3D9Client/Shaders");
-		if (fa == INVALID_FILE_ATTRIBUTES) CreateDirectoryA("Cache/D3D9Client/Shaders", NULL);
+		struct stat fa; // GetFileAttributesA, CreateDirectoryA
+		if (stat("Cache", &fa) != 0) mkdir("Cache", 0755);
+		if (stat("Cache/VulkanClient", &fa) != 0) mkdir("Cache/VulkanClient", 0755);
+		if (stat("Cache/VulkanClient/Shaders", &fa) != 0) mkdir("Cache/VulkanClient/Shaders", 0755);
 	}
 
 	g_pConst = new gcConst();
@@ -208,7 +322,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 // ==============================================================
 // Clean up module
 
-DLLCLBK void ExitModule(HINSTANCE hDLL)
+DLLCLBK void ExitModule(void *hDLL)
 {
 	LogAlw("--------------ExitModule------------");
 
@@ -255,7 +369,7 @@ DLLCLBK gcConst * gcGetCoreAPI()
 // D3D9Client class implementation
 // ==============================================================
 
-D3D9Client::D3D9Client (HINSTANCE hInstance) :
+D3D9Client::D3D9Client (void *hInstance) :
 	GraphicsClient(hInstance),
 	vtab(NULL),
 	scenarioName("(none selected)"),
@@ -268,7 +382,7 @@ D3D9Client::D3D9Client (HINSTANCE hInstance) :
 	pItemsSkp   (NULL),
 	hLblFont1   (NULL),
 	hLblFont2   (NULL),
-	hMainThread (NULL),
+	hMainThread (),
 	pCaps       (NULL),
 	pWM			(NULL),
 	pBltSkp		(NULL),
@@ -307,7 +421,7 @@ D3D9Client::~D3D9Client()
 {
 	LogAlw("D3D9Client destructor called");
 	SAFE_DELETE(vtab);
-	SAFE_RELEASE(g_pD3DObject);
+	SAFE_DELETE(g_pD3DObject); // Release: the QVulkanInstance destroys the VkInstance
 }
 
 
@@ -344,27 +458,18 @@ bool D3D9Client::clbkInitialise()
 	LogAlw("================ clbkInitialise ===============");
 	LogAlw("Orbiter Version = %d",oapiGetOrbiterVersion());
 
-	D3D9ON12_ARGS args = {};
-	args.Enable9On12 = Config->Enable9On12 != 0;
+	// D3D9ON12_ARGS and Direct3DCreate9On12 left out: D3D9on12 is a Windows layer, the native interface is the only one
+	g_pD3DObject = new QVulkanInstance(); // Direct3DCreate9(D3D_SDK_VERSION)
+	g_pD3DObject->setApiVersion(QVersionNumber(1, 4));
+#ifdef _DEBUG
+	g_pD3DObject->setLayers(QByteArrayList() << "VK_LAYER_KHRONOS_validation"); // not upstream: Vulkan validation in debug builds
+#endif
+	if (!g_pD3DObject->create()) SAFE_DELETE(g_pD3DObject);
+	oapiWriteLog("[D3D9] Native Interface");
 
-	HMODULE hDXMod = GetModuleHandle("D3D9.dll");
-	__Direct3DCreate9On12 pDirect3DCreate9On12 = nullptr;
-
-	if (hDXMod) pDirect3DCreate9On12 = (__Direct3DCreate9On12)GetProcAddress(hDXMod, "Direct3DCreate9On12");
-
-	if (OapiExtension::RunsUnderWINE() || pDirect3DCreate9On12 == nullptr) {
-		g_pD3DObject = Direct3DCreate9(D3D_SDK_VERSION);
-		oapiWriteLog("[D3D9] Native Interface");
-	}
+	if (g_pD3DObject) oapiWriteLog("[D3D9] Vulkan Instance Created...");
 	else {
-		g_pD3DObject = pDirect3DCreate9On12(D3D_SDK_VERSION, &args, 1);
-		if (Config->Enable9On12) oapiWriteLog("[D3D9] DX9 emulation via DX12");
-		else oapiWriteLog("[D3D9] Native Interface");
-	}
-
-	if (g_pD3DObject) oapiWriteLog("[D3D9] DirectX9 Created...");
-	else {
-		oapiWriteLog("[D3D9][ERROR] Failed to create DirectX9");
+		oapiWriteLog("[D3D9][ERROR] Failed to create a Vulkan 1.4 instance");
 		FailedDeviceError();
 		return false;
 	}
@@ -375,14 +480,16 @@ bool D3D9Client::clbkInitialise()
 	//Create the Launchpad video tab interface
 	oapiWriteLog("[D3D9] Initialize VideoTab...");
 	vtab = new VideoTab(this, ModuleInstance(), OrbiterInstance(), LaunchpadVideoTab());
-	return vtab->Initialise();
+	bool bInit = vtab->Initialise();
+	if (LaunchpadVideoTab()) LaunchpadVideoWndProc(LaunchpadVideoTab()); // not upstream: the core's call came from GraphicsClient::clbkInitialise, before vtab existed
+	return bInit;
 }
 
 
 // ==============================================================
 // This is called when a simulation session will begin
 //
-HWND D3D9Client::clbkCreateRenderWindow()
+QWindow *D3D9Client::clbkCreateRenderWindow()
 {
 	_TRACE;
 
@@ -415,7 +522,7 @@ HWND D3D9Client::clbkCreateRenderWindow()
 	pBltGrpTgt		 = NULL;	// Let's set this NULL here, constructor is called only once. Not when exiting and restarting a simulation.
 	pNoiseTex		 = NULL;
 	surfBltTgt		 = NULL;	// This variable is not used, set it to NULL anyway
-	hMainThread		 = GetCurrentThread();
+	hMainThread		 = std::this_thread::get_id(); // GetCurrentThread
 
 	D3DXMatrixIdentity(&ident);
 
@@ -425,31 +532,25 @@ HWND D3D9Client::clbkCreateRenderWindow()
 	SurfaceCatalog.clear();
 
 	hRenderWnd = GraphicsClient::clbkCreateRenderWindow();
+	hRenderWnd->setVulkanInstance(g_pD3DObject); // not upstream: the core's window has a Vulkan surface type, the client brings the instance
 
 	LogAlw("Window Handle = %s",_PTR(hRenderWnd));
-	SetWindowText(hRenderWnd, "[D3D9Client]");
+	hRenderWnd->setTitle("[VulkanClient]"); // SetWindowText
 
 	LogOk("Starting to initialize device and 3D environment...");
 
 	pFramework = new CD3DFramework9();
 
-	WriteLog("[DirectX 9 Initialized]");
+	WriteLog("[Vulkan Initialized]");
 
-	HRESULT hr = pFramework->Initialize(hRenderWnd, GetVideoData());
+	int hr = pFramework->Initialize(hRenderWnd, GetVideoData());
 
-	if (hr!=S_OK) {
+	if (hr!=0) {
 		LogErr("ERROR: Failed to initialize 3D Framework");
 		return NULL;
 	}
 
-	RECT rect;
-	GetClientRect(hRenderWnd, &rect);
-	HDC hWnd = GetDC(hRenderWnd);
-	HBRUSH hBr = CreateSolidBrush(RGB(0,0,0));
-	FillRect(hWnd, &rect, hBr);
-	DeleteObject(hBr);
-	ReleaseDC(hRenderWnd, hWnd);
-	ValidateRect(hRenderWnd, NULL);	// avoids white flash after splash screen
+	// black GDI fill and ValidateRect left out: a Vulkan surface shows nothing before its first present (no white flash)
 
 	pCaps = pFramework->GetCaps();
 
@@ -464,16 +565,18 @@ HWND D3D9Client::clbkCreateRenderWindow()
 	bVertexTex  = (pFramework->HasVertexTextureSup() == TRUE);
 	bVSync		= (pFramework->GetVSync() == TRUE);
 
-	char fld[] = "D3D9Client";
+	char fld[] = "VulkanClient";
 
-	g_pTexmgr_tt = new Texmgr<LPDIRECT3DTEXTURE9>(pDevice, "TileTextures");
-	g_pVtxmgr_vb = new Vtxmgr<LPDIRECT3DVERTEXBUFFER9>(pDevice, "TileVertex");
-	g_pIdxmgr_ib = new Idxmgr<LPDIRECT3DINDEXBUFFER9>(pDevice, "TileIndices");
+	g_pTexmgr_tt = new Texmgr<VkTex*>(pDevice, "TileTextures");
+	g_pVtxmgr_vb = new Vtxmgr<VkBuf*>(pDevice, "TileVertex");
+	g_pIdxmgr_ib = new Idxmgr<VkBuf*>(pDevice, "TileIndices");
 
-	HR(D3DXCreateTextureFromFileA(pDevice, "Textures/D3D9Noise.dds", &pNoiseTex));
+	pNoiseTex = VkCreateTextureFromFile(pDevice, oapiResolvePath("Textures/D3D9Noise.dds").c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT); // D3DXCreateTextureFromFileA
+	HR(pNoiseTex ? 0 : -1);
 
-	HR(pDevice->GetRenderTarget(0, &pBackBuffer));
-	HR(pDevice->GetDepthStencilSurface(&pDepthStencil));
+	pDevice->SetRenderTarget(pFramework->GetBackBuffer(), SURFACE(pFramework->GetBackBufferHandle())->GetDepthStencil()); // not upstream: a D3D9 device starts out with these set
+	pBackBuffer = pDevice->GetRenderTarget(); // GetRenderTarget(0, ...)
+	pDepthStencil = pDevice->GetDepthStencil(); // GetDepthStencilSurface
 
 	LogAlw("Render Target = %s", _PTR(pBackBuffer));
 	LogAlw("DepthStencil = %s", _PTR(pDepthStencil));
@@ -489,6 +592,7 @@ HWND D3D9Client::clbkCreateRenderWindow()
 
 	deffont = (oapi::Font*) new D3D9PadFont(20, true, "fixed");
 	defpen  = (oapi::Pen*)  new D3D9PadPen(1, 1, 0x00FF00);
+	pLargeFont = (oapi::Font*) new D3D9PadFont(30, (char*)"Arial", 22, 700); // not upstream: the framework's D3DXCreateFontIndirect (Arial 30x22 bold)
 
 	pDefaultTex = SURFACE(clbkLoadTexture("Null.dds"));
 	if (pDefaultTex==NULL) LogErr("Null.dds not found");
@@ -496,12 +600,12 @@ HWND D3D9Client::clbkCreateRenderWindow()
 	int x=0;
 	if (viewW>1282) x=4;
 
-	hLblFont1 = CreateFont(24+x, 0, 0, 0, 700, false, false, 0, 0, 3, 2, 1, 49, "Courier New");
-	hLblFont2 = CreateFont(18+x, 0, 0, 0, 700, false, false, 0, 0, 3, 2, 1, 49, "Courier New");
+	hLblFont1 = CreateGDIFont(24+x, 700, "Courier New"); // CreateFont(24+x, 0, 0, 0, 700, false, false, 0, 0, 3, 2, 1, 49, "Courier New")
+	hLblFont2 = CreateGDIFont(18+x, 700, "Courier New"); // CreateFont(18+x, ...)
 
 	SplashScreen();  // Warning SurfNative is not yet fully initialized here
 
-	ShowWindow(hRenderWnd, SW_SHOW);
+	hRenderWnd->show(); // ShowWindow(SW_SHOW)
 
 	OutputLoadStatus("Building Shader Programs...",0);
 
@@ -564,18 +668,13 @@ HWND D3D9Client::clbkCreateRenderWindow()
 #endif
 
 	// Create status queries -----------------------------------------
-	//
-	if (pDevice->CreateQuery(D3DQUERYTYPE_OCCLUSION, NULL) == S_OK) LogAlw("D3DQUERYTYPE_OCCLUSION is supported by device");
-	else LogAlw("D3DQUERYTYPE_OCCLUSION not supported by device");
+	// (the Vulkan query types that stand for them)
+	LogAlw("D3DQUERYTYPE_OCCLUSION is supported by device"); // VK_QUERY_TYPE_OCCLUSION is core Vulkan
 
-	if (pDevice->CreateQuery(D3DQUERYTYPE_PIPELINETIMINGS, NULL)==S_OK) LogAlw("D3DQUERYTYPE_PIPELINETIMINGS is supported by device");
+	if (pDevice->props.limits.timestampComputeAndGraphics) LogAlw("D3DQUERYTYPE_PIPELINETIMINGS is supported by device"); // timestamp queries
 	else LogAlw("D3DQUERYTYPE_PIPELINETIMINGS not supported by device");
 
-	if (pDevice->CreateQuery(D3DQUERYTYPE_BANDWIDTHTIMINGS, NULL) == S_OK) LogAlw("D3DQUERYTYPE_BANDWIDTHTIMINGS is supported by device");
-	else LogAlw("D3DQUERYTYPE_BANDWIDTHTIMINGS not supported by device");
-
-	if (pDevice->CreateQuery(D3DQUERYTYPE_PIXELTIMINGS, NULL) == S_OK) LogAlw("D3DQUERYTYPE_PIXELTIMINGS is supported by device");
-	else LogAlw("D3DQUERYTYPE_PIXELTIMINGS not supported by device");
+	// D3DQUERYTYPE_BANDWIDTHTIMINGS and D3DQUERYTYPE_PIXELTIMINGS left out: Vulkan has no such query types
 
 	return hRenderWnd;
 }
@@ -910,18 +1009,19 @@ void D3D9Client::clbkDestroyRenderWindow (bool fastclose)
 
 	SAFE_DELETE(defpen);
 	SAFE_DELETE(deffont);
+	SAFE_DELETE(pLargeFont); // not upstream: see clbkCreateRenderWindow
 
-	DeleteObject(hLblFont1);
-	DeleteObject(hLblFont2);
+	SAFE_DELETE(hLblFont1); // DeleteObject
+	SAFE_DELETE(hLblFont2);
 
 	D3D9Pad::GlobalExit();
 	D3D9Text::GlobalExit();
 	D3D9Effect::GlobalExit();
 
-	SAFE_RELEASE(pSplashScreen);	// Splash screen related
-	SAFE_RELEASE(pTextScreen);		// Splash screen related
+	SAFE_DELETE(pSplashScreen);	// Splash screen related
+	SAFE_DELETE(pTextScreen);		// Splash screen related
 	DELETE_SURFACE(pDefaultTex);
-	SAFE_RELEASE(pNoiseTex);
+	SAFE_DELETE(pNoiseTex);
 
 	SURFHANDLE hBackBuffer = GetBackBufferHandle();
 
@@ -931,7 +1031,7 @@ void D3D9Client::clbkDestroyRenderWindow (bool fastclose)
 
 	// Clear microtextures --------------------------------------------------------------------------------------
 	//
-	for (auto& it : MicroTextures) SAFE_RELEASE(it.second);
+	for (auto& it : MicroTextures) SAFE_DELETE(it.second);
 	MicroTextures.clear();
 
 
@@ -1045,8 +1145,8 @@ void D3D9Client::clbkDebugString(const char* str)
 void D3D9Client::PushSketchpad(SURFHANDLE surf, D3D9Pad *pSkp) const
 {
 	if (surf) {
-		LPDIRECT3DSURFACE9 pTgt = SURFACE(surf)->GetSurface();
-		LPDIRECT3DSURFACE9 pDep = SURFACE(surf)->GetDepthStencil();
+		VkSurf *pTgt = SURFACE(surf)->GetSurface();
+		VkSurf *pDep = SURFACE(surf)->GetDepthStencil();
 		PushRenderTarget(pTgt, pDep, RENDERPASS_SKETCHPAD);
 		RenderStack.front().pSkp = pSkp;
 	}
@@ -1055,7 +1155,7 @@ void D3D9Client::PushSketchpad(SURFHANDLE surf, D3D9Pad *pSkp) const
 
 // ==============================================================
 
-void D3D9Client::PushRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 pDepthStencil, int code) const
+void D3D9Client::PushRenderTarget(VkSurf *pColor, VkSurf *pDepthStencil, int code) const
 {
 	static const char *labels[] = { "NULL", "MAIN", "ENV", "CUSTOMCAM", "SHADOWMAP", "PICK", "SKETCHPAD", "OVERLAY" };
 
@@ -1066,15 +1166,12 @@ void D3D9Client::PushRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 
 	data.code = code;
 
 	if (pColor) {
-		D3DSURFACE_DESC desc;
-		pColor->GetDesc(&desc);
-		D3DVIEWPORT9 vp = { 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
-		pDevice->SetViewport(&vp);
+		pDevice->SetViewport(0.0f, 0.0f, (float)pColor->w, (float)pColor->h, 0.0f, 1.0f); // GetDesc, D3DVIEWPORT9
 	}
 
 	// If pDepthStencil is NULL set NULL
-	if (pDevice->SetDepthStencilSurface(pDepthStencil) != S_OK) assert(false);
-	if (pColor) if (pDevice->SetRenderTarget(0, pColor) != S_OK) assert(false);
+	// SetDepthStencilSurface + SetRenderTarget(0, pColor) in one call (no failure result); a NULL pColor keeps the current one
+	pDevice->SetRenderTarget(pColor ? pColor : pDevice->GetRenderTarget(), pDepthStencil);
 
 	RenderStack.push_front(data);
 	LogDbg("Plum", "PUSH:RenderStack[%lu]={%s, %s} %s", RenderStack.size(), _PTR(data.pColor), _PTR(data.pDepthStencil), labels[data.code]);
@@ -1082,15 +1179,12 @@ void D3D9Client::PushRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 
 
 // ==============================================================
 
-void D3D9Client::AlterRenderTarget(LPDIRECT3DSURFACE9 pColor, LPDIRECT3DSURFACE9 pDepthStencil)
+void D3D9Client::AlterRenderTarget(VkSurf *pColor, VkSurf *pDepthStencil)
 {
-	D3DSURFACE_DESC desc;
-	pColor->GetDesc(&desc);
-	D3DVIEWPORT9 vp = { 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
+	// GetDesc and D3DVIEWPORT9 left out: the VkSurf carries its size
 
-	pDevice->SetViewport(&vp);
-	pDevice->SetRenderTarget(0, pColor);
-	pDevice->SetDepthStencilSurface(pDepthStencil);
+	pDevice->SetViewport(0.0f, 0.0f, (float)pColor->w, (float)pColor->h, 0.0f, 1.0f);
+	pDevice->SetRenderTarget(pColor, pDepthStencil); // SetRenderTarget(0, pColor), SetDepthStencilSurface
 }
 
 // ==============================================================
@@ -1111,13 +1205,10 @@ void D3D9Client::PopRenderTargets() const
 	RenderTgtData data = RenderStack.front();
 
 	if (data.pColor) {
-		D3DSURFACE_DESC desc;
-		data.pColor->GetDesc(&desc);
-		D3DVIEWPORT9 vp = { 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
+		// GetDesc and D3DVIEWPORT9 left out: the VkSurf carries its size
 
-		pDevice->SetViewport(&vp);
-		pDevice->SetRenderTarget(0, data.pColor);
-		pDevice->SetDepthStencilSurface(data.pDepthStencil);
+		pDevice->SetViewport(0.0f, 0.0f, (float)data.pColor->w, (float)data.pColor->h, 0.0f, 1.0f);
+		pDevice->SetRenderTarget(data.pColor, data.pDepthStencil); // SetRenderTarget(0, ...), SetDepthStencilSurface
 	}
 
 	LogDbg("Plum", "POP:RenderStack[%lu]={%s, %s, %s} %s", RenderStack.size(), _PTR(data.pColor), _PTR(data.pDepthStencil), _PTR(data.pSkp), labels[data.code]);
@@ -1129,17 +1220,14 @@ void D3D9Client::HackFriendlyHack()
 {
 	// Try to make the application more hackable by setting the D3D Device in 'more' expected state.
 
-	D3DSURFACE_DESC desc;
-	GetBackBuffer()->GetDesc(&desc);
-	D3DVIEWPORT9 vp = { 0, 0, desc.Width, desc.Height, 0.0f, 1.0f };
-	pDevice->SetViewport(&vp);
-	pDevice->SetRenderTarget(0, GetBackBuffer());
-	pDevice->SetDepthStencilSurface(GetDepthStencil());
+	// GetDesc and D3DVIEWPORT9 left out: the VkSurf carries its size
+	pDevice->SetViewport(0.0f, 0.0f, (float)GetBackBuffer()->w, (float)GetBackBuffer()->h, 0.0f, 1.0f);
+	pDevice->SetRenderTarget(GetBackBuffer(), GetDepthStencil()); // SetRenderTarget(0, ...), SetDepthStencilSurface
 }
 
 // ==============================================================
 
-LPDIRECT3DSURFACE9 D3D9Client::GetTopDepthStencil()
+VkSurf *D3D9Client::GetTopDepthStencil()
 {
 	if (RenderStack.empty()) return NULL;
 	return RenderStack.front().pDepthStencil;
@@ -1147,7 +1235,7 @@ LPDIRECT3DSURFACE9 D3D9Client::GetTopDepthStencil()
 
 // ==============================================================
 
-LPDIRECT3DSURFACE9 D3D9Client::GetTopRenderTarget()
+VkSurf *D3D9Client::GetTopRenderTarget()
 {
 	if (RenderStack.empty()) return NULL;
 	return RenderStack.front().pColor;
@@ -1191,13 +1279,9 @@ void D3D9Client::clbkRenderScene()
 
 	scene_time = D3D9GetTime();
 
-	if (pDevice->TestCooperativeLevel()!=S_OK) {
-		bFailed=true;
-		MessageBoxA(pFramework->GetRenderWindow(),"Connection to Direct3DDevice is lost\nExit the simulation with Ctrl+Q and restart.\n\nAlt-Tabing not supported in a true fullscreen mode.\nDialog windows won't work with multi-sampling in a true fullscreen mode.","D3D9Client: Lost Device",0);
-		return;
-	}
+	// TestCooperativeLevel and the lost device message left out: Vulkan has no lost device state to restore
 
-	UINT mem = pDevice->GetAvailableTextureMem()>>20;
+	UINT mem = UINT(GetAvailableTextureMem(pDevice)>>20);
 	if (mem<32) TileBuffer::HoldThread(true);
 
 	scene->RenderMainScene();		// Render the main scene
@@ -1207,22 +1291,22 @@ void D3D9Client::clbkRenderScene()
 	if (hVes && Config->LabelDisplayFlags)
 	{
 		char Label[7] = "";
-		if (Config->LabelDisplayFlags & D3D9Config::LABEL_DISPLAY_RECORD && hVes->Recording()) strcpy_s(Label, 7, "Record");
-		if (Config->LabelDisplayFlags & D3D9Config::LABEL_DISPLAY_REPLAY && hVes->Playback()) strcpy_s(Label, 7, "Replay");
+		if (Config->LabelDisplayFlags & D3D9Config::LABEL_DISPLAY_RECORD && hVes->Recording()) snprintf(Label, 7, "%s", "Record");
+		if (Config->LabelDisplayFlags & D3D9Config::LABEL_DISPLAY_REPLAY && hVes->Playback()) snprintf(Label, 7, "%s", "Replay");
 
 		if (Label[0]!=0) {
-			pDevice->BeginScene();
+			// BeginScene: nothing to begin, rendering starts at the first draw
 			RECT rect2 = _RECT(0, viewH - 60, viewW, viewH - 20);
-			pFramework->GetLargeFont()->DrawTextA(0, Label, 6, &rect2, DT_CENTER | DT_TOP, D3DCOLOR_XRGB(0, 0, 0));
+			DrawLargeText(Label, 6, &rect2, D3DCOLOR_XRGB(0, 0, 0)); // GetLargeFont()->DrawTextA(DT_CENTER | DT_TOP)
 			rect2.left-=4; rect2.top-=4;
-			pFramework->GetLargeFont()->DrawTextA(0, Label, 6, &rect2, DT_CENTER | DT_TOP, D3DCOLOR_XRGB(255, 255, 255));
-			pDevice->EndScene();
+			DrawLargeText(Label, 6, &rect2, D3DCOLOR_XRGB(255, 255, 255));
+			pDevice->EndRendering(); // EndScene
 		}
 	}
 
 	if (bFreeze) {
 		RECT rect2 = _RECT(0, viewH - 60, viewW, viewH - 20);
-		pFramework->GetLargeFont()->DrawTextA(0, "Frozen", 6, &rect2, DT_CENTER | DT_TOP, D3DCOLOR_XRGB(0, 255, 255));
+		DrawLargeText("Frozen", 6, &rect2, D3DCOLOR_XRGB(0, 255, 255)); // GetLargeFont()->DrawTextA(DT_CENTER | DT_TOP)
 	}
 
 	D3D9SetTime(D3D9Stats.Timer.Scene, scene_time);
@@ -1251,10 +1335,10 @@ void D3D9Client::PresentScene()
 
 	if (bFullscreen == false) {
 		RenderWithPopupWindows();
-		pDevice->Present(0, 0, 0, 0);
+		pFramework->Present(); // Present(0, 0, 0, 0)
 	}
 	else {
-		if (!RenderWithPopupWindows()) pDevice->Present(0, 0, 0, 0);
+		if (!RenderWithPopupWindows()) pFramework->Present();
 	}
 
 	D3D9SetTime(D3D9Stats.Timer.Display, time);
@@ -1272,8 +1356,8 @@ bool D3D9Client::clbkDisplayFrame()
 
 	if (!bRunning && pDevice) {
 		RECT txt = _RECT( loadd_x, loadd_y, loadd_x+loadd_w, loadd_y+loadd_h );
-		pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, D3DTEXF_POINT);
-		pDevice->StretchRect(pTextScreen, NULL, pBackBuffer, &txt, D3DTEXF_POINT);
+		pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, VK_FILTER_NEAREST); // D3DTEXF_POINT
+		pDevice->StretchRect(pTextScreen, NULL, pBackBuffer, &txt, VK_FILTER_NEAREST);
 	}
 
 	if (Config->PresentLocation == 0) PresentScene();
@@ -1286,7 +1370,7 @@ bool D3D9Client::clbkDisplayFrame()
 		if (frmt>0) frame_timer++;
 		else        frame_timer--;
 		if (frame_timer>40) frame_timer=40;
-		Sleep(frame_timer);
+		std::this_thread::sleep_for(std::chrono::milliseconds(frame_timer)); // Sleep
 	}
 
 	return true;
@@ -1297,23 +1381,23 @@ bool D3D9Client::clbkDisplayFrame()
 void D3D9Client::clbkPreOpenPopup ()
 {
 	_TRACE;
-	GetDevice()->SetDialogBoxMode(true);
+	// SetDialogBoxMode(true) left out: Qt dialogs are windows of their own, not drawn through the swapchain
 }
 
 // =======================================================================
 
 static DWORD g_lastPopupWindowCount = 0;
-static void FixOutOfScreenPositions (const HWND *hWnd, DWORD count)
+static void FixOutOfScreenPositions (QWidget *const *hWnd, DWORD count)
 {
 	// Only check if a popup window is *added*
 	if (count > g_lastPopupWindowCount)
 	{
 		for (DWORD i=0; i<count; ++i)
 		{
-			RECT rect;
-			GetWindowRect(hWnd[i], &rect);
+			QRect g = hWnd[i]->frameGeometry(); // GetWindowRect
+			RECT rect = { g.left(), g.top(), g.left() + g.width(), g.top() + g.height() };
 
-			int x = -1, y, w, h; // x != -1 indicates "position change needed"
+			int x = -1, y; // x != -1 indicates "position change needed"
 			if (rect.left < 0) {
 				x = 0;
 				y = rect.top;
@@ -1324,13 +1408,11 @@ static void FixOutOfScreenPositions (const HWND *hWnd, DWORD count)
 			}
 
 			// For the rest we need monitor information...
-			HMONITOR monitor = MonitorFromWindow(hWnd[i], MONITOR_DEFAULTTONEAREST);
-			MONITORINFO info;
-			info.cbSize = sizeof(MONITORINFO);
-			GetMonitorInfo(monitor, &info);
+			QScreen *monitor = hWnd[i]->screen(); // MonitorFromWindow(MONITOR_DEFAULTTONEAREST)
+			QRect rcMonitor = monitor ? monitor->geometry() : QRect(); // GetMonitorInfo
 
-			int monitorWidth = info.rcMonitor.right - info.rcMonitor.left; // info.rcWork....
-			int monitorHeight = info.rcMonitor.bottom - info.rcMonitor.top;
+			int monitorWidth = rcMonitor.width(); // info.rcWork....
+			int monitorHeight = rcMonitor.height();
 
 			if (rect.right > monitorWidth) {
 				x = monitorWidth - (rect.right - rect.left);
@@ -1342,9 +1424,7 @@ static void FixOutOfScreenPositions (const HWND *hWnd, DWORD count)
 			}
 
 			if (x != -1) {
-				w = rect.right - rect.left,
-				h = rect.bottom - rect.top;
-				MoveWindow(hWnd[i], x, y, w, h, FALSE);
+				hWnd[i]->move(x, y); // MoveWindow(x, y, w, h) with the window's own size w, h
 			}
 		}
 
@@ -1358,21 +1438,20 @@ bool D3D9Client::RenderWithPopupWindows()
 {
 	_TRACE;
 
-	const HWND *hPopupWnd;
+	QWidget *const *hPopupWnd;
 	DWORD count = GetPopupList(&hPopupWnd);
 
-	if (bFullscreen) {
-		if (count) GetDevice()->SetDialogBoxMode(true);
-		else       GetDevice()->SetDialogBoxMode(false);
-	}
+	// SetDialogBoxMode left out: see clbkPreOpenPopup
 
 	FixOutOfScreenPositions(hPopupWnd, count);
 
 	if (!bFullscreen) {
 		for (DWORD i=0;i<count;i++) {
-			DWORD val = GetWindowLongA(hPopupWnd[i], GWL_STYLE);
-			if ((val&WS_SYSMENU)==0) {
-				SetWindowLongA(hPopupWnd[i], GWL_STYLE, val|WS_SYSMENU);
+			Qt::WindowFlags val = hPopupWnd[i]->windowFlags(); // GetWindowLongA(GWL_STYLE)
+			if ((val & Qt::CustomizeWindowHint) && (val&Qt::WindowSystemMenuHint)==0) { // WS_SYSMENU: only customized flags go without it
+				bool bVis = hPopupWnd[i]->isVisible();
+				hPopupWnd[i]->setWindowFlags(val|Qt::WindowSystemMenuHint); // SetWindowLongA
+				if (bVis) hPopupWnd[i]->show(); // Qt hides a window whose flags change
 			}
 		}
 	}
@@ -1706,16 +1785,17 @@ void D3D9Client::PickTerrain(DWORD uMsg, int xpos, int ypos)
 // ==============================================================
 // Message handler for render window
 
-LRESULT D3D9Client::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool D3D9Client::RenderWndProc (QWindow *hWnd, QEvent *event)
 {
 	static bool bTrackMouse = false;
 	static short xpos=0, ypos=0;
 
 	D3D9Pick pick;
 
-	if (hRenderWnd!=hWnd && uMsg!= WM_NCDESTROY) {
-		LogErr("Invalid Window !! RenderWndProc() called after calling clbkDestroyRenderWindow() uMsg=0x%X", uMsg);
-		return 0;
+	if (hRenderWnd!=hWnd) {
+		if (!event->isInputEvent()) return false; // WM_NCDESTROY exception: Qt's teardown events (hide, surface, delete) go on
+		LogErr("Invalid Window !! RenderWndProc() called after calling clbkDestroyRenderWindow() event=0x%X", (UINT)event->type());
+		return true;
 	}
 
 	if (bRunning && DebugControls::IsActive()) {
@@ -1725,52 +1805,60 @@ LRESULT D3D9Client::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 		// Obsolete: since moving env/cam stuff in pre-scene
 	}
 
-	if (pWM) if (pWM->MainWindowProc(hWnd, uMsg, wParam, lParam)) return 0;
+	if (pWM) if (pWM->MainWindowProc(hWnd, event)) return true;
 
+	qreal dpr = hWnd->devicePixelRatio(); // not upstream: the LPARAM positions are client coordinates in device pixels
+	QMouseEvent *me = dynamic_cast<QMouseEvent*>(event); // mouse button and move events
+	Qt::MouseButton button = me ? me->button() : Qt::NoButton;
+	bool bDown = (event->type() != QEvent::MouseButtonRelease); // no CS_DBLCLKS: a double click is another button down
 
-	switch (uMsg)
+	switch (event->type())
 	{
-		case WM_MOUSELEAVE:
+		case QEvent::Leave: // WM_MOUSELEAVE (Qt reports it without TrackMouseEvent)
 		{
-			if (bTrackMouse && bRunning) GraphicsClient::RenderWndProc (hWnd, WM_LBUTTONUP, 0, 0);
-			return 0;
+			QMouseEvent up(QEvent::MouseButtonRelease, QPointF(0, 0), QPointF(0, 0), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+			if (bTrackMouse && bRunning) GraphicsClient::RenderWndProc (hWnd, &up); // WM_LBUTTONUP, 0, 0
+			return true;
 		}
 
-		case WM_MBUTTONDOWN:
+		case QEvent::MouseButtonPress: // WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN
+		case QEvent::MouseButtonDblClick:
+		case QEvent::MouseButtonRelease: // WM_LBUTTONUP, WM_RBUTTONUP
+		{
+		if (button == Qt::MiddleButton) // WM_MBUTTONDOWN
 		{
 			break;
 		}
 
-		case WM_RBUTTONUP:
-		case WM_RBUTTONDOWN:
+		if (button == Qt::RightButton) // WM_RBUTTONUP, WM_RBUTTONDOWN
 		{
-			int xp = GET_X_LPARAM(lParam);
-			int yp = GET_Y_LPARAM(lParam);
-			PickTerrain(uMsg, xp, yp);
+			int xp = int(me->position().x() * dpr); // GET_X_LPARAM
+			int yp = int(me->position().y() * dpr); // GET_Y_LPARAM
+			PickTerrain(bDown ? WM_RBUTTONDOWN : WM_RBUTTONUP, xp, yp);
 			break;
 		}
 
 
-		case WM_LBUTTONDOWN:
+		if (button == Qt::LeftButton && bDown) // WM_LBUTTONDOWN
 		{
+			UINT uMsg = WM_LBUTTONDOWN;
 			bTrackMouse = true;
-			xpos = GET_X_LPARAM(lParam);
-			ypos = GET_Y_LPARAM(lParam);
+			xpos = int(me->position().x() * dpr); // GET_X_LPARAM
+			ypos = int(me->position().y() * dpr); // GET_Y_LPARAM
 
 			GetScene()->vPickRay = GetScene()->GetPickingRay(xpos, ypos);
 
-			TRACKMOUSEEVENT te; te.cbSize = sizeof(TRACKMOUSEEVENT); te.dwFlags = TME_LEAVE; te.hwndTrack = hRenderWnd;
-			TrackMouseEvent(&te);
+			// TrackMouseEvent(TME_LEAVE) left out: Qt sends QEvent::Leave without asking
 
-			bool bShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-			bool bCtrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+			bool bShift = (me->modifiers() & Qt::ShiftModifier) != 0; // GetAsyncKeyState(VK_SHIFT)
+			bool bCtrl = (me->modifiers() & Qt::ControlModifier) != 0; // GetAsyncKeyState(VK_CONTROL)
 			bool bPckVsl = IsGenericProcEnabled(GENERICPROC_PICK_VESSEL);
 
 			if (DebugControls::IsActive() || bPckVsl || (bShift && bCtrl)) {
 				pick = GetScene()->PickScene(xpos, ypos);
 				if (bPckVsl) {
 					gcCore::PickData out;
-					out.hVessel = pick.vObj->GetObjectA();
+					out.hVessel = pick.vObj ? pick.vObj->GetObject() : NULL; // GetObjectA; upstream dereferenced a NULL vObj when nothing was picked
 					out.mesh = MESHHANDLE(pick.pMesh);
 					out.group = pick.group;
 					out.pos = _FV(pick.pos);
@@ -1824,10 +1912,11 @@ LRESULT D3D9Client::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 			break;
 		}
 
-		case WM_LBUTTONUP:
+		if (button == Qt::LeftButton && !bDown) // WM_LBUTTONUP
 		{
-			int xp = GET_X_LPARAM(lParam);
-			int yp = GET_Y_LPARAM(lParam);
+			UINT uMsg = WM_LBUTTONUP;
+			int xp = int(me->position().x() * dpr); // GET_X_LPARAM
+			int yp = int(me->position().y() * dpr); // GET_Y_LPARAM
 
 			PickTerrain(uMsg, xp, yp);
 
@@ -1840,11 +1929,15 @@ LRESULT D3D9Client::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 			bTrackMouse = false;
 			break;
 		}
+		break;
+		}
 
-		case WM_KEYDOWN:
+		case QEvent::KeyPress: // WM_KEYDOWN
 		{
-			bool bShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000)!=0;
-			bool bCtrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000)!=0;
+			QKeyEvent *ke = static_cast<QKeyEvent*>(event);
+			bool bShift = (ke->modifiers() & Qt::ShiftModifier)!=0; // GetAsyncKeyState(VK_SHIFT)
+			bool bCtrl  = (ke->modifiers() & Qt::ControlModifier)!=0; // GetAsyncKeyState(VK_CONTROL)
+			int wParam = ke->key(); // virtual key: Qt::Key_A..Key_Z are 'A'..'Z'
 			if (wParam == 'C' && bShift && bCtrl) bControlPanel = !bControlPanel;
 			if (wParam == 'N' && bShift && bCtrl) Config->bCloudNormals = !Config->bCloudNormals;
 			if (wParam == 'F' && bShift && bCtrl) {
@@ -1856,82 +1949,74 @@ LRESULT D3D9Client::RenderWndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 			break;
 		}
 
-		case WM_MOUSEWHEEL:
+		case QEvent::Wheel: // WM_MOUSEWHEEL
 		{
 			if (DebugControls::IsActive()) {
-				short d = GET_WHEEL_DELTA_WPARAM(wParam);
+				short d = short(static_cast<QWheelEvent*>(event)->angleDelta().y()); // GET_WHEEL_DELTA_WPARAM
 				if (d<-1) d=-1;
 				if (d>1) d=1;
 				double speed = *(double *)GetConfigParam(CFGPRM_GETCAMERASPEED);
 				speed *= (DebugControls::GetVisualSize()/100.0);
-				if (scene->CameraPan(_V(0,0,double(d))*2.0, speed)) return 0;
+				if (scene->CameraPan(_V(0,0,double(d))*2.0, speed)) return true;
 			}
 
-			PickTerrain(uMsg, xpos, ypos);
+			PickTerrain(WM_MOUSEWHEEL, xpos, ypos);
 			break;
 		}
 
-		case WM_MOUSEMOVE:
+		case QEvent::MouseMove: // WM_MOUSEMOVE
+		{
+			int mx = int(me->position().x() * dpr); // GET_X_LPARAM
+			int my = int(me->position().y() * dpr); // GET_Y_LPARAM
 
 			if (DebugControls::IsActive())
 			{
 
-				double x = double(GET_X_LPARAM(lParam) - xpos);
-				double y = double(GET_Y_LPARAM(lParam) - ypos);
-				xpos = GET_X_LPARAM(lParam);
-				ypos = GET_Y_LPARAM(lParam);
+				double x = double(mx - xpos);
+				double y = double(my - ypos);
+				xpos = mx;
+				ypos = my;
 
 				if (bTrackMouse) {
 					double speed = *(double *)GetConfigParam(CFGPRM_GETCAMERASPEED);
 					speed *= (DebugControls::GetVisualSize() / 100.0);
-					if (scene->CameraPan(_V(-x, y, 0)*0.05, speed)) return 0;
+					if (scene->CameraPan(_V(-x, y, 0)*0.05, speed)) return true;
 				}
 			}
 
-			xpos = GET_X_LPARAM(lParam);
-			ypos = GET_Y_LPARAM(lParam);
+			xpos = mx;
+			ypos = my;
 
-			PickTerrain(uMsg, xpos, ypos);
+			PickTerrain(WM_MOUSEMOVE, xpos, ypos);
 
 			break;
+		}
 
-		case WM_MOVE:
+		case QEvent::Move: // WM_MOVE
 			// If in windowed mode, move the Framework's window
 			break;
 
-		case WM_SYSCOMMAND:
-			switch (wParam) {
-				case SC_KEYMENU:
-					// trap Alt system keys
-					return 1;
-				case SC_MOVE:
-				case SC_SIZE:
-				case SC_MAXIMIZE:
-				case SC_MONITORPOWER:
-					// Prevent moving/sizing and power loss in fullscreen mode
-					if (bFullscreen) return 1;
-					break;
-			}
-			break;
+		// WM_SYSCOMMAND left out: a Qt window has no system menu, Alt menu key or SC_MOVE/SC_SIZE/SC_MONITORPOWER commands to trap
 
-		case WM_SYSKEYUP:
-			if (bFullscreen) return 0;  // trap Alt-key
+		// WM_SYSKEYUP left out: Alt opens no menu on a Qt window (swallowing the key-up would also hide it from the keyboard device)
+
+		default:
 			break;
 	}
 
-	if (!bRunning && uMsg>=0x0200 && uMsg<=0x020E) return 0;
-	return GraphicsClient::RenderWndProc (hWnd, uMsg, wParam, lParam);
+	// WM_MOUSEFIRST..WM_MOUSELAST (0x0200..0x020E): mouse moves, buttons and wheel
+	if (!bRunning && (me || event->type() == QEvent::Wheel)) return true;
+	return GraphicsClient::RenderWndProc (hWnd, event);
 }
 
 
 // ==============================================================
 // Message handler for Launchpad "video" tab
 
-INT_PTR D3D9Client::LaunchpadVideoWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void D3D9Client::LaunchpadVideoWndProc(QWidget *hWnd)
 {
 	_TRACE;
-	if (vtab) return vtab->WndProc(hWnd, uMsg, wParam, lParam);
-	else return false;
+	if (vtab) vtab->WndProc(hWnd); // connects the video tab's controls (called once, not per message)
 }
 
 // =======================================================================
@@ -2012,56 +2097,36 @@ bool D3D9Client::clbkSaveSurfaceToImage(SURFHANDLE surf, const char *fname, Imag
 
 	if (surf==NULL) surf = pFramework->GetBackBufferHandle();
 
-	LPDIRECT3DSURFACE9 pRTG = NULL;
-	LPDIRECT3DSURFACE9 pSystem = NULL;
-	LPDIRECT3DSURFACE9 pSurf = SURFACE(surf)->GetSurface();
+	// pRTG and pSystem left out: VkReadPixels reads any image back (GetRenderTargetData into system memory)
+	VkSurf *pSurf = SURFACE(surf)->GetSurface();
 
 	if (pSurf==NULL) return false;
 
 	bool bRet = false;
-	const D3DSURFACE_DESC *desc = SURFACE(surf)->GetDesc();
-	D3DLOCKED_RECT pRect;
+	const SurfDesc *desc = SURFACE(surf)->GetDesc();
+	VkPixels px, lv, pRect; // D3DLOCKED_RECT: B8G8R8A8 rows
 
 	if (fmt == ImageFileFormat::IMAGE_DDS) {
 		char path[MAX_PATH];
-		sprintf_s(path, "%s.dds", fname);
-		return NatSaveSurface(path, pSurf);
+		snprintf(path, sizeof(path), "%s.dds", fname);
+		return NatSaveSurface(path, pSurf->tex);
 	}
 
-	if (desc->Pool != D3DPOOL_SYSTEMMEM)
+	// StretchRect to an X8R8G8B8 target, GetRenderTargetData and LockRect: read back and convert (the D3DPOOL_SYSTEMMEM branch is the same)
+	if (VkReadPixels(pDevice, pSurf->tex, px, pSurf->level + 1))
 	{
-		HR(pDevice->CreateRenderTarget(desc->Width, desc->Height, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE, 0, false, &pRTG, NULL));
-		HR(pDevice->CreateOffscreenPlainSurface(desc->Width, desc->Height, D3DFMT_X8R8G8B8, D3DPOOL_SYSTEMMEM, &pSystem, NULL));
-		HR(pDevice->StretchRect(pSurf, NULL, pRTG, NULL, D3DTEXF_NONE));
-		HR(pDevice->GetRenderTargetData(pRTG, pSystem));
-
-		if (pSystem->LockRect(&pRect, NULL, 0)==S_OK)
+		lv.w = pSurf->w; lv.h = pSurf->h; lv.levels = 1; lv.layers = 1; lv.fmt = px.fmt; lv.swz = desc->Swizzle;
+		lv.data.assign(1, px.Level(pSurf->level, pSurf->layer));
+		if (VkConvertPixels(lv, pRect, VK_FORMAT_B8G8R8A8_UNORM, SWZ_NONE, lv.w, lv.h, 1))
 		{
 			if (fname == NULL) {
 				// copy device-dependent bitmap to clipboard
-				bRet = SaveSurfaceToClipboard(desc);
+				bRet = SaveSurfaceToClipboard(pRect.w, pRect.h, pRect.Level(0).data(), pRect.w * 4);
 			} else {
 				// save as file
-				bRet = SaveSurfaceToFile(desc, pRect, fname, fmt, quality);
+				bRet = SaveSurfaceToFile(pRect.w, pRect.h, pRect.Level(0).data(), pRect.w * 4, fname, fmt, quality);
 			}
-			pSystem->UnlockRect();
 		}
-
-		pRTG->Release();
-		pSystem->Release();
-		return bRet;
-	}
-
-	if (pSurf->LockRect(&pRect, NULL, D3DLOCK_READONLY)==S_OK)
-	{
-		if (fname == NULL) {
-			// copy device-dependent bitmap to clipboard
-			bRet = SaveSurfaceToClipboard(desc);
-		} else {
-			// save as file
-			bRet = SaveSurfaceToFile(desc, pRect, fname, fmt, quality);
-		}
-		pSystem->UnlockRect();
 	}
 
 	return bRet;
@@ -2069,29 +2134,29 @@ bool D3D9Client::clbkSaveSurfaceToImage(SURFHANDLE surf, const char *fname, Imag
 
 // ==============================================================
 
-bool oapi::D3D9Client::SaveSurfaceToFile (const D3DSURFACE_DESC* desc, D3DLOCKED_RECT& pRect,
+bool oapi::D3D9Client::SaveSurfaceToFile (UINT w, UINT h, const BYTE *pBits, UINT pitch,
                                           const char* fname, oapi::ImageFileFormat fmt, float quality)
 {
 	bool bRet = false;
 	ImageData ID;
 
 	ID.bpp = 24;
-	ID.height = desc->Height;
-	ID.width = desc->Width;
+	ID.height = h;
+	ID.width = w;
 	ID.stride = ((ID.width * ID.bpp + 31) & ~31) >> 3;
 	ID.bufsize = ID.stride * ID.height;
 
 	BYTE* tgt = ID.data = new BYTE[ID.bufsize];
-	BYTE* src = (BYTE*)pRect.pBits;
+	const BYTE* src = pBits;
 
-	for (DWORD k = 0; k<desc->Height; k++) {
-		for (DWORD i = 0; i<desc->Width; i++) {
+	for (DWORD k = 0; k<h; k++) {
+		for (DWORD i = 0; i<w; i++) {
 			tgt[0 + i * 3] = src[0 + i * 4];
 			tgt[1 + i * 3] = src[1 + i * 4];
 			tgt[2 + i * 3] = src[2 + i * 4];
 		}
 		tgt += ID.stride;
-		src += pRect.Pitch;
+		src += pitch;
 	}
 
 	bRet = WriteImageDataToFile(ID, fname, fmt, quality);
@@ -2104,20 +2169,15 @@ bool oapi::D3D9Client::SaveSurfaceToFile (const D3DSURFACE_DESC* desc, D3DLOCKED
 
 // ==============================================================
 
-bool oapi::D3D9Client::SaveSurfaceToClipboard (const D3DSURFACE_DESC* desc)
+bool oapi::D3D9Client::SaveSurfaceToClipboard (UINT w, UINT h, const BYTE *pBits, UINT pitch)
 {
-	if (OpenClipboard(hRenderWnd))
+	QClipboard *cb = QGuiApplication::clipboard(); // OpenClipboard(hRenderWnd)
+	if (cb)
 	{
-		HDC hDC = GetDC(hRenderWnd);
-		HDC hdcmem = CreateCompatibleDC(hDC);
-		HBITMAP hBm = CreateCompatibleBitmap(hDC, desc->Width, desc->Height);
+		// window DC BitBlt: the surface rows read back (the window shows the presented backbuffer)
+		QImage hBm = QImage(pBits, w, h, pitch, QImage::Format_ARGB32).convertToFormat(QImage::Format_RGB32);
 
-		SelectObject(hdcmem, hBm);
-		BitBlt(hdcmem, 0, 0, desc->Width, desc->Height, hDC, 0, 0, SRCCOPY);
-
-		EmptyClipboard();
-		SetClipboardData(CF_BITMAP, hBm);
-		CloseClipboard();
+		cb->setImage(hBm); // EmptyClipboard, SetClipboardData(CF_BITMAP), CloseClipboard
 		return true;
 	}
 	return false;
@@ -2207,10 +2267,10 @@ SURFHANDLE D3D9Client::clbkLoadSurface (const char *fname, DWORD attrib, bool bP
 
 // ==============================================================
 
-HBITMAP D3D9Client::gcReadImageFromFile(const char *_path)
+QImage *D3D9Client::gcReadImageFromFile(const char *_path)
 {
 	char path[MAX_PATH];
-	sprintf_s(path, sizeof(path), "%s\\%s", OapiExtension::GetTextureDir(), _path);
+	snprintf(path, sizeof(path), "%s/%s", OapiExtension::GetTextureDir(), _path);
 	return ReadImageFromFile(path);
 }
 
@@ -2259,7 +2319,7 @@ SURFHANDLE D3D9Client::clbkCreateSurface(DWORD w, DWORD h, SURFHANDLE hTemplate)
 
 // =======================================================================
 
-SURFHANDLE D3D9Client::clbkCreateSurface(HBITMAP hBmp)
+SURFHANDLE D3D9Client::clbkCreateSurface(QImage *hBmp)
 {
 	_TRACE;
 	if (ChkDev(__FUNCTION__)) return NULL;
@@ -2386,7 +2446,7 @@ int D3D9Client::clbkEndBltGroup()
 bool D3D9Client::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD flag) const
 {
 	_TRACE;
-	const D3DSURFACE_DESC* sd = SURFACE(src)->GetDesc();
+	const SurfDesc* sd = SURFACE(src)->GetDesc();
 	return clbkScaleBlt(tgt, tgtx, tgty, sd->Width, sd->Height, src, 0, 0, sd->Width, sd->Height, flag);
 }
 
@@ -2424,10 +2484,10 @@ bool D3D9Client::clbkScaleBlt (SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgt
 		HALT();
 	}
 
-	POINT tp = { (long)tgtx, (long)tgty };
+	POINT tp = { (LONG)tgtx, (LONG)tgty };
 
-	const D3DSURFACE_DESC* td = SURFACE(tgt)->GetDesc();
-	const D3DSURFACE_DESC* sd = SURFACE(src)->GetDesc();
+	const SurfDesc* td = SURFACE(tgt)->GetDesc();
+	const SurfDesc* sd = SURFACE(src)->GetDesc();
 
 
 	// Check failure and abort conditions, Match with know DX7 behavior ---------------------
@@ -2452,71 +2512,55 @@ bool D3D9Client::clbkScaleBlt (SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgt
 	bool bCL = (srcw != tgtw) || (srch != tgth);		// Scaling In Use
 	bool bSC = SURFACE(src)->IsCompressed();			// Compressed source
 
-	LPDIRECT3DSURFACE9 pss = SURFACE(src)->GetSurface();
-	LPDIRECT3DSURFACE9 pts = SURFACE(tgt)->GetSurface();
+	VkSurf *pss = SURFACE(src)->GetSurface();
+	VkSurf *pts = SURFACE(tgt)->GetSurface();
 
+	bool bSF = (sd->Format == td->Format) && (sd->Swizzle == td->Swizzle); // not upstream: a D3DFORMAT is the Vulkan format and the view swizzle
 
-
-	if ((sd->Format == td->Format) && !bCK && !bSC)
+	if (bSF && !bCK && !bSC)
 	{
 
 		// Most common case: Target is a render-target and source is in a video memory
-		//
-		if ((td->Usage & D3DUSAGE_RENDERTARGET) && (sd->Pool == D3DPOOL_DEFAULT))
+		// (StretchRect has no failure result: the "Failed 1/2" error paths are left out)
+		if (td->RenderTarget && !sd->SysMem)
 		{
 			if (src != tgt)
 			{
-				if (S_OK == pDevice->StretchRect(pss, &rs, pts, &rt, D3DTEXF_POINT)) return true;
-
-				LogErr("oapiBlt() StretchRect() Failed 1");
-				BltError(src, tgt, &rs, &rt);
-				return false;
+				pDevice->StretchRect(pss, &rs, pts, &rt, VK_FILTER_NEAREST); // D3DTEXF_POINT
+				return true;
 			}
 			else
 			{
 				// Source and Target are the same surface, reroute through temp.
 				//
-				LPDIRECT3DSURFACE9 tmp = SURFACE(src)->GetTempSurface();
+				VkSurf *tmp = SURFACE(src)->GetTempSurface();
 
-				if (S_OK == pDevice->StretchRect(pss, &rs, tmp, &rs, D3DTEXF_POINT))
-				{
-					if (S_OK == pDevice->StretchRect(tmp, &rs, pts, &rt, D3DTEXF_POINT)) return true;
-				}
-
-				LogErr("oapiBlt() StretchRect() Failed 2");
-				BltError(src, tgt, &rs, &rt);
-				return false;
+				pDevice->StretchRect(pss, &rs, tmp, &rs, VK_FILTER_NEAREST);
+				pDevice->StretchRect(tmp, &rs, pts, &rt, VK_FILTER_NEAREST);
+				return true;
 			}
 		}
 	}
 
-	if ((sd->Format == td->Format) && !bCK && !bSC && !bCL)
+	if (bSF && !bCK && !bSC && !bCL)
 	{
 
 		// Texture Update: Source is in system memory and target is a texture
-		// 
-		if (sd->Pool == D3DPOOL_SYSTEMMEM)
+		// (CopySurface has no failure result: the error paths are left out)
+		if (sd->SysMem)
 		{
-			if (S_OK == pDevice->UpdateSurface(pss, &rs, pts, &tp))	return true;
-
-			LogErr("oapiBlt() UpdateSurface() Failed");
-			BltError(src, tgt, &rs, &rt);
-			return false;
+			pDevice->CopySurface(pss, &rs, pts, &tp); // UpdateSurface
+			return true;
 		}
 
 
 		// Screen Capture: Target is in system memory and source is a render taeget
 		// 
-		if ((td->Pool == D3DPOOL_SYSTEMMEM) && (sd->Usage & D3DUSAGE_RENDERTARGET))
+		if (td->SysMem && sd->RenderTarget)
 		{
-			if (S_OK == pDevice->GetRenderTargetData(pss, pts)) {
-				SURFACE(tgt)->Flags |= OAPISURFACE_CAPTURE;
-				return true;
-			}
-		
-			LogErr("oapiBlt() GetRenderTargetData() Failed");
-			BltError(src, tgt, &rs, &rt);
-			return false;
+			pDevice->CopySurface(pss, NULL, pts, NULL); // GetRenderTargetData
+			SURFACE(tgt)->Flags |= OAPISURFACE_CAPTURE;
+			return true;
 		}
 	}
 
@@ -2526,7 +2570,7 @@ bool D3D9Client::clbkScaleBlt (SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgt
 	//
 	if (src != tgt)
 	{
-		if ((td->Usage & D3DUSAGE_RENDERTARGET) && (SURFACE(src)->GetType() == D3DRTYPE_TEXTURE) && (sd->Pool == D3DPOOL_DEFAULT))
+		if (td->RenderTarget && (SURFACE(src)->GetType() == NATTYPE_TEXTURE) && !sd->SysMem)
 		{
 			Sketchpad* pSkp = clbkGetSketchpad_const(tgt);
 
@@ -2553,27 +2597,18 @@ bool D3D9Client::clbkScaleBlt (SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgt
 
 // =======================================================================
 
-bool D3D9Client::clbkCopyBitmap(SURFHANDLE pdds, HBITMAP hbm, int x, int y, int dx, int dy)
+bool D3D9Client::clbkCopyBitmap(SURFHANDLE pdds, QImage *hbm, int x, int y, int dx, int dy)
 {
-	HDC                     hdcImage;
-	HDC                     hdc;
-	BITMAP                  bm;
+	QPainter *              hdc;
 
 	if (hbm == NULL || pdds == NULL) return false;
 
-	// Select bitmap into a memoryDC so we can use it.
-	//
-	hdcImage = CreateCompatibleDC(NULL);
-
-	if (!hdcImage) OutputDebugString("createcompatible dc failed\n");
-
-	SelectObject(hdcImage, hbm);
+	// memory DC (CreateCompatibleDC, SelectObject) left out: QPainter draws from the QImage directly
 
 	// Get size of the bitmap
 	//
-	GetObject(hbm, sizeof(bm), &bm);
-	dx = dx == 0 ? bm.bmWidth : dx;     // Use the passed size, unless zero
-	dy = dy == 0 ? bm.bmHeight : dy;
+	dx = dx == 0 ? hbm->width() : dx;     // Use the passed size, unless zero
+	dy = dy == 0 ? hbm->height() : dy;
 
 
 	// Get size of surface.
@@ -2581,54 +2616,34 @@ bool D3D9Client::clbkCopyBitmap(SURFHANDLE pdds, HBITMAP hbm, int x, int y, int 
 	DWORD surfW = SURFACE(pdds)->GetWidth();
 	DWORD surfH = SURFACE(pdds)->GetHeight();
 
-	RECT r = { 0, 0, (long)surfW, (long)surfH };
-	POINT tp = { 0, 0 };
-
 	if (SURFACE(pdds)->IsGDISurface())
 	{
-		if (hdc = clbkGetSurfaceDC(pdds)) {
-			StretchBlt(hdc, 0, 0, surfW, surfH, hdcImage, x, y,	dx, dy, SRCCOPY);
+		if ((hdc = clbkGetSurfaceDC(pdds))) {
+			hdc->save();
+			hdc->setCompositionMode(QPainter::CompositionMode_Source); // SRCCOPY
+			hdc->drawImage(QRect(0, 0, surfW, surfH), *hbm, QRect(x, y, dx, dy)); // StretchBlt
+			hdc->restore();
 			clbkReleaseSurfaceDC(pdds, hdc);
 		}
-		DeleteDC(hdcImage);
 		SURFACE(pdds)->SetName("clbkCopyBitmap");
 		return true;
 	}
 	else 
 	{
-		LPDIRECT3DTEXTURE9 pTemp = NULL;
-		LPDIRECT3DSURFACE9 pSrf = NULL;
-
-		if (SURFACE(pdds)->IsRenderTarget()) pTemp = SURFACE(pdds)->GetGDICache(0);
-		else								 pTemp = SURFACE(pdds)->GetGDICache(OAPISURFACE_SYSMEM);
-
-		if (S_OK == pTemp->GetSurfaceLevel(0, &pSrf))
+		// GetGDICache and the StretchRect/UpdateSurface copy back left out: GetDC paints on a copy of any surface and uploads it on release
+		if ((hdc = clbkGetSurfaceDC(pdds)))
 		{
-			if (S_OK == pSrf->GetDC(&hdc))
-			{
-				StretchBlt(hdc, 0, 0, surfW, surfH, hdcImage, x, y, dx, dy, SRCCOPY);
+			hdc->save();
+			hdc->setCompositionMode(QPainter::CompositionMode_Source); // SRCCOPY
+			hdc->drawImage(QRect(0, 0, surfW, surfH), *hbm, QRect(x, y, dx, dy)); // StretchBlt
+			hdc->restore();
 
-				pSrf->ReleaseDC(hdc);
+			clbkReleaseSurfaceDC(pdds, hdc);
 
-				if (SURFACE(pdds)->IsRenderTarget()) {
-					HR(pDevice->StretchRect(pSrf, &r, SURFACE(pdds)->GetSurface(), &r, D3DTEXF_LINEAR));
-				}
-				else {
-					HR(pDevice->UpdateSurface(pSrf, &r, SURFACE(pdds)->GetSurface(), &tp));
-				}
-
-				DeleteDC(hdcImage);
-				pSrf->Release();
-				SURFACE(pdds)->SetName("clbkCopyBitmap");
-				return true;
-			}
-			else {
-				pSrf->Release();
-				assert(false);
-			}		
+			SURFACE(pdds)->SetName("clbkCopyBitmap");
+			return true;
 		}
 	}
-	DeleteDC(hdcImage);
 	return false;
 }
 
@@ -2674,36 +2689,34 @@ void D3D9Client::BltError(SURFHANDLE src, SURFHANDLE tgt, const LPRECT s, const 
 // GDI functions
 // =======================================================================
 
-HDC D3D9Client::clbkGetSurfaceDC(SURFHANDLE surf)
+QPainter *D3D9Client::clbkGetSurfaceDC(SURFHANDLE surf)
 {
 	_TRACE;
 	if (ChkDev(__FUNCTION__)) return NULL;
 
 	if (surf == NULL) {
 		if (Config->GDIOverlay) {
-			LPDIRECT3DSURFACE9 pGDI = GetScene()->GetBuffer(GBUF_GDI);
-			HDC hDC;
-			if (pGDI) if (pGDI->GetDC(&hDC) == S_OK) {
+			VkSurf *pGDI = GetScene()->GetBuffer(GBUF_GDI);
+			QPainter *hDC;
+			if (pGDI) if ((hDC = SurfaceDC(pDevice, pGDI, GDIImage))) { // GetDC
 				if (bGDIClear) {
 					bGDIClear = false;
 					DWORD color = 0xF08040; // BGR "Color Key" value for transparency
-					HBRUSH hBrush = CreateSolidBrush((COLORREF)color);
 					RECT r = _RECT( 0, 0, viewW, viewH );
-					FillRect(hDC, &r, hBrush);
-					DeleteObject(hBrush);
+					hDC->fillRect(r.left, r.top, r.right - r.left, r.bottom - r.top, QColor(GetRValue(color), GetGValue(color), GetBValue(color))); // CreateSolidBrush, FillRect
 				}
 				return hDC;
 			}
 		}
 		return NULL;
 	}
-	HDC hDC = SURFACE(surf)->GetDC();
+	QPainter *hDC = SURFACE(surf)->GetDC();
 	return hDC;
 }
 
 // =======================================================================
 
-void D3D9Client::clbkReleaseSurfaceDC(SURFHANDLE surf, HDC hDC)
+void D3D9Client::clbkReleaseSurfaceDC(SURFHANDLE surf, QPainter *hDC)
 {
 	_TRACE;
 	if (ChkDev(__FUNCTION__)) return;
@@ -2711,8 +2724,8 @@ void D3D9Client::clbkReleaseSurfaceDC(SURFHANDLE surf, HDC hDC)
 	if (hDC == NULL) { LogErr("D3D9Client::clbkReleaseSurfaceDC() Input hDC is NULL"); return; }
 	if (surf == NULL) {
 		if (Config->GDIOverlay) {
-			LPDIRECT3DSURFACE9 pGDI = GetScene()->GetBuffer(GBUF_GDI);
-			if (pGDI) pGDI->ReleaseDC(hDC);
+			VkSurf *pGDI = GetScene()->GetBuffer(GBUF_GDI);
+			if (pGDI) SurfaceReleaseDC(pGDI, hDC, GDIImage); // ReleaseDC
 		}
 		return;
 	}
@@ -2729,17 +2742,26 @@ bool D3D9Client::clbkFilterElevation(OBJHANDLE hPlanet, int ilat, int ilng, int 
 void D3D9Client::clbkImGuiNewFrame()
 {
 	_TRACE;
-	ImGui_ImplDX9_NewFrame();
+	ImGui_ImplVulkan_NewFrame(); // ImGui_ImplDX9_NewFrame
 }
 void D3D9Client::clbkImGuiRenderDrawData()
 {
 	_TRACE;
 
-	if (pDevice->BeginScene() >= 0)
+	// BeginScene: nothing to begin; ImGui's pipeline draws on the backbuffer without a depth buffer
 	{
+		VkSurf *pRT = pDevice->GetRenderTarget(), *pDS = pDevice->GetDepthStencil(); // not upstream: kept as the DX9 backend's state block did
 		ImGui::Render();
-		ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-		pDevice->EndScene();
+		for (auto &surf : ImTextures) pDevice->PrepareSample(SURFACE(surf)->GetTexture()); // not upstream: sampled layout before the pass
+		pDevice->SetRenderTarget(pBackBuffer, NULL);
+		pDevice->BeginRendering();
+		{
+			std::lock_guard<std::mutex> lock(pDevice->QueueLock()); // not upstream: the backend's texture uploads submit to the device queue
+			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pDevice->Cmd()); // ImGui_ImplDX9_RenderDrawData
+		}
+		pDevice->EndRendering(); // EndScene
+		pDevice->SetState(pDevice->GetState()); // not upstream: ImGui's pipeline replaced the shader objects and dynamic state
+		pDevice->SetRenderTarget(pRT, pDS);
 	}
 
 	// Update and Render additional Platform Windows
@@ -2755,11 +2777,34 @@ void D3D9Client::clbkImGuiRenderDrawData()
 		clbkReleaseSurface(surf);
 	}
 	ImTextures.clear();
+
+	// not upstream: the frame's descriptor sets go once the GPU is done with the frame (unless the backend is shut down by then)
+	for (VkDescriptorSet ds : ImDescSets) {
+		DWORD gen = ImGuiGeneration;
+		pDevice->Defer([ds, gen]() { if (gen == ImGuiGeneration) ImGui_ImplVulkan_RemoveTexture(ds); });
+	}
+	ImDescSets.clear();
 }
 void D3D9Client::clbkImGuiInit()
 {
 	_TRACE;
-	ImGui_ImplDX9_Init(pDevice);
+	// ImGui_ImplDX9_Init(pDevice): the Vulkan backend takes the device objects and the backbuffer format (dynamic rendering)
+	ImGui_ImplVulkan_InitInfo info = {};
+	info.ApiVersion = VK_API_VERSION_1_4;
+	info.Instance = pDevice->instance;
+	info.PhysicalDevice = pDevice->phys;
+	info.Device = pDevice->dev;
+	info.QueueFamily = pDevice->queueFamily;
+	info.Queue = pDevice->queue;
+	info.DescriptorPoolSize = 1024; // sets for the font atlas and clbkImGuiSurfaceTexture
+	info.MinImageCount = 2;
+	info.ImageCount = VkDev::NFRAMES + 1; // vertex buffers are rewritten only after the frames in flight are done
+	info.UseDynamicRendering = true;
+	info.PipelineInfoMain.MSAASamples = pBackBuffer->tex->samples;
+	info.PipelineInfoMain.PipelineRenderingCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+	info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &pBackBuffer->tex->fmt;
+	ImGui_ImplVulkan_Init(&info);
 }
 void D3D9Client::clbkImGuiShutdown()
 {
@@ -2769,14 +2814,22 @@ void D3D9Client::clbkImGuiShutdown()
 		clbkReleaseSurface(surf);
 	}
 	ImTextures.clear();
-	ImGui_ImplDX9_Shutdown();
+	ImDescSets.clear(); // not upstream: freed with the backend's pool
+	ImGuiGeneration++;
+	pDevice->Flush(); // not upstream: the recorded ImGui draws run before the backend frees its pipeline and buffers
+	ImGui_ImplVulkan_Shutdown(); // ImGui_ImplDX9_Shutdown
 }
 uint64_t D3D9Client::clbkImGuiSurfaceTexture(SURFHANDLE surf)
 {
 	ImTextures.push_back(surf);
 	clbkIncrSurfaceRef(surf);
-	LPDIRECT3DTEXTURE9 pTxt = SURFACE(surf)->GetTexture();
-	return (uint64_t)pTxt;
+	VkTex *pTxt = SURFACE(surf)->GetTexture();
+	if (!pTxt) return 0; // not upstream: no descriptor set without a texture (upstream passed the NULL pointer on)
+	VkSamplerDesc sd = { VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 0.0f, 0.0f, true }; // the DX9 backend's sampler states
+	VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(pDevice->Sampler(sd), pTxt->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	ImDescSets.push_back(ds);
+	return (uint64_t)ds; // ImTextureID: the descriptor set (the D3D9 texture pointer upstream)
 }
 // =======================================================================
 
@@ -2795,7 +2848,7 @@ lpSurfNative D3D9Client::GetDefaultTexture() const
 
 // =======================================================================
 
-HWND D3D9Client::GetWindow()
+QWindow *D3D9Client::GetWindow()
 {
 	return pFramework->GetRenderWindow();
 }
@@ -2893,7 +2946,7 @@ void D3D9Client::WriteLog(const char *msg) const
 {
 	_TRACE;
 	char cbuf[256];
-	sprintf_s(cbuf, 256, "D3D9: %s", msg);
+	snprintf(cbuf, 256, "D3D9: %s", msg);
 	oapiWriteLog(cbuf);
 }
 
@@ -2904,58 +2957,48 @@ bool D3D9Client::OutputLoadStatus(const char *txt, int line)
 
 	if (bRunning) return false;
 
-	if (line == 1) strcpy_s(pLoadItem, 127, txt); else
-	if (line == 0) strcpy_s(pLoadLabel, 127, txt), pLoadItem[0] = '\0'; // New top line => clear 2nd line
+	if (line == 1) snprintf(pLoadItem, 127, "%s", txt); else
+	if (line == 0) snprintf(pLoadLabel, 127, "%s", txt), pLoadItem[0] = '\0'; // New top line => clear 2nd line
 
 	if (pTextScreen) {
 
-		if (pDevice->TestCooperativeLevel()!=S_OK) {
-			LogErr("TestCooperativeLevel() Failed");
-			return false;
-		}
+		// TestCooperativeLevel left out: Vulkan has no lost device state to test
 
 		RECT txt = _RECT( loadd_x, loadd_y, loadd_x+loadd_w, loadd_y+loadd_h );
 
-		pDevice->StretchRect(pSplashScreen, &txt, pTextScreen, NULL, D3DTEXF_POINT);
+		pDevice->StretchRect(pSplashScreen, &txt, pTextScreen, NULL, VK_FILTER_NEAREST); // D3DTEXF_POINT
 
-		HDC hDC;
-		HR(pTextScreen->GetDC(&hDC));
+		QImage img;
+		QPainter *hDC = SurfaceDC(pDevice, pTextScreen, img); // GetDC
+		if (!hDC) { LogErr("GetDC() Failed"); return false; }
 
-		HFONT hO = (HFONT)SelectObject(hDC, hLblFont1);
-		SetTextColor(hDC, pSplashTextColor);
-		SetBkMode(hDC,TRANSPARENT);
-		SetTextAlign(hDC, TA_LEFT|TA_TOP);
+		hDC->setFont(*hLblFont1); // SelectObject
+		hDC->setPen(QColor(GetRValue(pSplashTextColor), GetGValue(pSplashTextColor), GetBValue(pSplashTextColor))); // SetTextColor
+		// SetBkMode(TRANSPARENT) and SetTextAlign(TA_LEFT|TA_TOP): QPainter text has no background, TextOut takes the top edge
 
-		TextOut(hDC, 2, 2, pLoadLabel, lstrlen(pLoadLabel));
+		TextOut(hDC, 2, 2, pLoadLabel, strlen(pLoadLabel));
 
-		SelectObject(hDC, hLblFont2);
-		TextOut(hDC, 2, 36, pLoadItem, lstrlen(pLoadItem));
+		hDC->setFont(*hLblFont2); // SelectObject
+		TextOut(hDC, 2, 36, pLoadItem, strlen(pLoadItem));
 
-		HPEN pen = CreatePen(PS_SOLID,1,pSplashTextColor);
-		HPEN po = (HPEN)SelectObject(hDC, pen);
+		QPen pen(QColor(GetRValue(pSplashTextColor), GetGValue(pSplashTextColor), GetBValue(pSplashTextColor)), 1); // CreatePen(PS_SOLID,1,pSplashTextColor)
+		hDC->setPen(pen); // SelectObject
 
-		MoveToEx(hDC, 0, 32, NULL);
-		LineTo(hDC, loadd_w, 32);
+		hDC->drawLine(0, 32, loadd_w - 1, 32); // MoveToEx, LineTo (GDI leaves out the end point)
 
-		SelectObject(hDC, po);
-		SelectObject(hDC, hO);
-		DeleteObject(pen);
+		// SelectObject(po, hO) and DeleteObject(pen) left out: the painter holds its pen and font by value
 
-		HR(pTextScreen->ReleaseDC(hDC));
-		HR(pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, D3DTEXF_POINT));
-		HR(pDevice->StretchRect(pTextScreen, NULL, pBackBuffer, &txt, D3DTEXF_POINT));
+		SurfaceReleaseDC(pTextScreen, hDC, img); // ReleaseDC
+		pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, VK_FILTER_NEAREST);
+		pDevice->StretchRect(pTextScreen, NULL, pBackBuffer, &txt, VK_FILTER_NEAREST);
 
-		IDirect3DSwapChain9 *pSwap;
-
-		if (pDevice->GetSwapChain(0, &pSwap)==S_OK) {
-			pSwap->Present(0, 0, 0, 0, D3DPRESENT_DONOTWAIT);
-			pSwap->Release();
+		// GetSwapChain(0), Present(D3DPRESENT_DONOTWAIT)
+		if (pFramework->Present() == 0) {
 			return true;
 		}
 
 		// Prevent "Not Responding" during loading
-		MSG msg;
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) DispatchMessage(&msg);
+		QCoreApplication::processEvents(); // PeekMessage, DispatchMessage
 	}
 	return false;
 }
@@ -2975,22 +3018,23 @@ void D3D9Client::SplashScreen()
 	loadd_w = viewW/3;
 	loadd_h = 80;
 
-	RECT rS;
-
-	GetWindowRect(hRenderWnd, &rS);
+	QRect g = hRenderWnd->frameGeometry(); // GetWindowRect
+	RECT rS = { g.left(), g.top(), g.left() + g.width(), g.top() + g.height() };
 
 	LogAlw("Splash Window Size = [%u, %u]", rS.right - rS.left, rS.bottom - rS.top);
 	LogAlw("Splash Window LeftTop = [%d, %d]", rS.left, rS.top);
 
-	HR(pDevice->TestCooperativeLevel());
-	HR(pDevice->Clear(0, NULL, D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER|D3DCLEAR_STENCIL, 0x0, 1.0f, 0L));
-	HR(pDevice->CreateOffscreenPlainSurface(loadd_w, loadd_h, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pTextScreen, NULL));
-	HR(pDevice->CreateOffscreenPlainSurface(viewW, viewH, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &pSplashScreen, NULL));
+	// TestCooperativeLevel left out: Vulkan has no lost device state to test
+	pDevice->Clear(true, true, true, 0x0, 1.0f, 0L); // D3DCLEAR_TARGET|D3DCLEAR_ZBUFFER|D3DCLEAR_STENCIL
+	const VkImageUsageFlags u = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // offscreen plain: blits, GetDC
+	pTextScreen = new VkSurf(pDevice, loadd_w, loadd_h, VK_FORMAT_B8G8R8A8_UNORM, u); // CreateOffscreenPlainSurface(D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT)
+	pSplashScreen = new VkSurf(pDevice, viewW, viewH, VK_FORMAT_B8G8R8A8_UNORM, u);
 
 
 	if(pCustomSplashScreen != NULL) {
-		D3DXIMAGE_INFO info;
-		HR(D3DXGetImageInfoFromFile(pCustomSplashScreen, &info));
+		VkImageInfo info = {}; // D3DXIMAGE_INFO
+		std::string file = oapiResolvePath(pCustomSplashScreen);
+		HR(VkGetImageInfoFromFile(file.c_str(), &info) ? 0 : -1); // D3DXGetImageInfoFromFile
 
 		double imageW = info.Width;
 		double imageH = info.Height;
@@ -3006,15 +3050,14 @@ void D3D9Client::SplashScreen()
 			static_cast<LONG>( round(_w + _l) ),
 			static_cast<LONG>( round(_h + _t) )
 		};
-		HR(pDevice->ColorFill(pSplashScreen, NULL, D3DCOLOR_XRGB(0, 0, 0)));
-		HR(D3DXLoadSurfaceFromFile(pSplashScreen, NULL, &imgRect, pCustomSplashScreen, NULL, D3DX_FILTER_LINEAR, 0, NULL));
+		pDevice->ColorFill(pSplashScreen, NULL, D3DCOLOR_XRGB(0, 0, 0));
+		VkPixels px;
+		HR(VkLoadPixels(file.c_str(), px) && LoadSurfaceRect(pDevice, pSplashScreen, &imgRect, px) ? 0 : -1); // D3DXLoadSurfaceFromFile(D3DX_FILTER_LINEAR)
 	} else {
-		D3DXIMAGE_INFO Info;
-		HMODULE hOrbiter =  GetModuleHandleA("orbiter.exe");
-		HRSRC hRes = FindResourceA(hOrbiter, MAKEINTRESOURCEA(292), "IMAGE");
-		HGLOBAL hImage = LoadResource(hOrbiter, hRes);
-		LPVOID pData = LockResource(hImage);
-		DWORD size = SizeofResource(hOrbiter, hRes);
+		VkPixels Info; // D3DXIMAGE_INFO: the decoded image
+		const RESDATA *hRes = oapiFindResData(OrbiterInstance(), "IMAGE", 292); // GetModuleHandleA("orbiter.exe"), FindResourceA
+		const void *pData = hRes ? hRes->data : NULL; // LoadResource, LockResource
+		DWORD size = hRes ? hRes->size : 0; // SizeofResource
 
 		// Splash screen image is 1920 x 1200 pixel
 		double scale = min(viewW / 1920.0, viewH / 1200.0);
@@ -3028,29 +3071,20 @@ void D3D9Client::SplashScreen()
 			static_cast<LONG>( round(_w + _l) ),
 			static_cast<LONG>( round(_h + _t) )
 		};
-		HR(pDevice->ColorFill(pSplashScreen, NULL, D3DCOLOR_XRGB(0, 0, 0)));
-		HR(D3DXLoadSurfaceFromFileInMemory(pSplashScreen, NULL, &imgRect, pData, size, NULL, D3DX_FILTER_LINEAR, 0, &Info));
+		pDevice->ColorFill(pSplashScreen, NULL, D3DCOLOR_XRGB(0, 0, 0));
+		HR(pData && VkLoadPixelsFromMemory((const BYTE *)pData, size, Info) && LoadSurfaceRect(pDevice, pSplashScreen, &imgRect, Info) ? 0 : -1); // D3DXLoadSurfaceFromFileInMemory(D3DX_FILTER_LINEAR)
 	}
 
-	HDC hDC;
-	HR(pSplashScreen->GetDC(&hDC));
+	QImage img;
+	QPainter *hDC = SurfaceDC(pDevice, pSplashScreen, img); // GetDC
+	if (!hDC) { LogErr("GetDC() Failed"); return; }
 
-	LOGFONTA fnt; memset((void *)&fnt, 0, sizeof(LOGFONT));
+	// LOGFONTA: 18, weight 700, ANSI_CHARSET, ANTIALIASED_QUALITY, DEFAULT_PITCH, "Courier New"
+	QFont *hF = CreateGDIFont(18, 700, "Courier New"); // CreateFontIndirect
 
-	fnt.lfHeight		 = 18;
-	fnt.lfWeight		 = 700;
-	fnt.lfCharSet		 = ANSI_CHARSET;
-	fnt.lfOutPrecision	 = OUT_DEFAULT_PRECIS;
-	fnt.lfClipPrecision	 = CLIP_DEFAULT_PRECIS;
-	fnt.lfQuality		 = ANTIALIASED_QUALITY;
-	fnt.lfPitchAndFamily = DEFAULT_PITCH;
-	strcpy_s(fnt.lfFaceName, "Courier New");
-
-	HFONT hF = CreateFontIndirect(&fnt);
-
-	HFONT hO = (HFONT)SelectObject(hDC, hF);
-	SetTextColor(hDC, pSplashTextColor);
-	SetBkMode(hDC,TRANSPARENT);
+	hDC->setFont(*hF); // SelectObject
+	hDC->setPen(QColor(GetRValue(pSplashTextColor), GetGValue(pSplashTextColor), GetBValue(pSplashTextColor))); // SetTextColor
+	// SetBkMode(TRANSPARENT): QPainter text has no background
 
 	const char *months[]={"???","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","???"};
 
@@ -3060,16 +3094,16 @@ void D3D9Client::SplashScreen()
 	if (m>12) m=0;
 
 	char dataA[256];
-	strcpy(dataA, "D3D9Client");
-	if (Config->Enable9On12) strcat_s(dataA, 256, " via D3D9on12 emulator");
+	strcpy(dataA, "VulkanClient");
+	// " via D3D9on12 emulator" left out: no D3D9on12 on Linux
 
 #ifdef _DEBUG
-	strcat_s(dataA, 256, " (Debug Build)");
+	strcat(dataA, " (Debug Build)");
 #else
-	strcat_s(dataA, 256, " (Release Build)");
+	strcat(dataA, " (Release Build)");
 #endif
 
-	char dataB[128]; sprintf_s(dataB,128,"Build %s %lu 20%lu [%u]", months[m], d, y, oapiGetOrbiterVersion());
+	char dataB[128]; snprintf(dataB,128,"Build %s %u 20%u [%u]", months[m], d, y, oapiGetOrbiterVersion());
 	//char dataE[] = { "Note: Cubic Interpolation is use... Consider using linear for better elevation matching" };
 	//char dataF[] = { "Note: Terrain flattening offline due to cubic interpolation" };
 
@@ -3077,31 +3111,31 @@ void D3D9Client::SplashScreen()
 	int yc = viewH*545/800;
 
 	TextOut(hDC, xc, yc + 0*20, "ORBITER Space Flight Simulator",30);
-	TextOut(hDC, xc, yc + 1*20, dataB, lstrlen(dataB));
-	TextOut(hDC, xc, yc + 2*20, dataA, lstrlen(dataA));
+	TextOut(hDC, xc, yc + 1*20, dataB, strlen(dataB));
+	TextOut(hDC, xc, yc + 2*20, dataA, strlen(dataA));
 
 	DWORD VPOS = viewH - 50;
 	DWORD LSPACE = 20;
 
-	SelectObject(hDC, hO);
-	DeleteObject(hF);
+	// SelectObject(hDC, hO) left out: the painter holds its font by value
+	delete hF; // DeleteObject
 
-	HR(pSplashScreen->ReleaseDC(hDC));
+	SurfaceReleaseDC(pSplashScreen, hDC, img); // ReleaseDC
 
 
 	RECT src = _RECT( loadd_x, loadd_y, loadd_x+loadd_w, loadd_y+loadd_h );
-	pDevice->StretchRect(pSplashScreen, &src, pTextScreen, NULL, D3DTEXF_POINT);
-	pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, D3DTEXF_POINT);
-	pDevice->Present(0, 0, 0, 0);
+	pDevice->StretchRect(pSplashScreen, &src, pTextScreen, NULL, VK_FILTER_NEAREST); // D3DTEXF_POINT
+	pDevice->StretchRect(pSplashScreen, NULL, pBackBuffer, NULL, VK_FILTER_NEAREST);
+	pFramework->Present(); // Present(0, 0, 0, 0)
 }
 
 // =======================================================================
 
-HRESULT D3D9Client::BeginScene()
+int D3D9Client::BeginScene()
 {
 	bRendering = false;
-	HRESULT hr = pDevice->BeginScene();
-	if (hr == S_OK) bRendering = true;
+	int hr = 0; // pDevice->BeginScene(): nothing to begin, rendering starts at the first draw
+	if (hr == 0) bRendering = true;
 	return hr;
 }
 
@@ -3109,7 +3143,7 @@ HRESULT D3D9Client::BeginScene()
 
 void D3D9Client::EndScene()
 {
-	pDevice->EndScene();
+	pDevice->EndRendering(); // EndScene
 	bRendering = false;
 }
 
@@ -3127,7 +3161,7 @@ oapi::Sketchpad *D3D9Client::clbkGetSketchpad_const(SURFHANDLE surf) const
 {
 	if (ChkDev(__FUNCTION__)) return NULL;
 
-	if (GetCurrentThread() != hMainThread) {
+	if (std::this_thread::get_id() != hMainThread) { // GetCurrentThread (a pseudo handle upstream, so the check never fired)
 		LogErr("Sketchpad called from a worker thread !");
 		HALT();
 	}
@@ -3161,7 +3195,7 @@ oapi::Sketchpad *D3D9Client::clbkGetSketchpad_const(SURFHANDLE surf) const
 		return pPad;
 	}
 	else {
-		HDC hDC = SURFACE(surf)->GetDC();
+		QPainter *hDC = SURFACE(surf)->GetDC();
 		if (hDC) return new GDIPad(surf, hDC);
 	}
 

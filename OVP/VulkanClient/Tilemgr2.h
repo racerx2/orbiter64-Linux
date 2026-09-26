@@ -27,6 +27,8 @@
 #include <vector>
 #include <list>
 
+struct VkPixels; // VkTexFile.h
+
 #define NPOOLS 32
 #define MAXQUEUE2 20
 
@@ -178,9 +180,9 @@ protected:
 	 */
 	virtual void Load () = 0;
 
-	bool	CreateTexture(VkDev *pDev, VkTex *pPre, VkTex **pTex);
-	bool	LoadTextureFile(const char *path, VkTex **pPre);
-	bool	LoadTextureFromMemory(void *data, DWORD ndata, VkTex **pPre);
+	bool	CreateTexture(VkDev *pDev, VkPixels *pPre, VkTex **pTex); // pPre: the D3DPOOL_SYSTEMMEM texture (VkTexFile.h)
+	bool	LoadTextureFile(const char *path, VkPixels **pPre);
+	bool	LoadTextureFromMemory(void *data, DWORD ndata, VkPixels **pPre);
 
 	VBMESH *CreateMesh_quadpatch (int grdlat, int grdlng, float *elev=0, double elev_scale = 1.0, double globelev=0.0,
 		const TEXCRDRANGE2 *range=0, bool shift_origin=false, VECTOR3 *shift=0, double bb_excess=0.0);

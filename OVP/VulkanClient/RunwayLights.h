@@ -19,6 +19,7 @@
 #include "D3DXMath.h" // d3d9.h/d3dx9.h
 
 class BeaconArray;
+class VkDev; // d3d9.h: IDirect3DDevice9
 
 class RunwayLights
 {

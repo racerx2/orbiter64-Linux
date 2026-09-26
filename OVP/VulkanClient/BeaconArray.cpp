@@ -21,6 +21,7 @@ BeaconArray::BeaconArray(BeaconArrayEntry *pEnt, DWORD nEntry, vBase *_vB)
 	, nVert(nEntry)
 	, vB(_vB)
 	, pVB(NULL)
+	, pVBSys(NULL)
 	, hBase(NULL)
 	, bidx(0)
 	, base_elev()
@@ -31,7 +32,8 @@ BeaconArray::BeaconArray(BeaconArrayEntry *pEnt, DWORD nEntry, vBase *_vB)
 
 	pBeaconPos = new BeaconPos[nEntry];
 
-	HR(gc->GetDevice()->CreateVertexBuffer(nEntry*sizeof(BAVERTEX), D3DUSAGE_DYNAMIC|D3DUSAGE_POINTS, 0, D3DPOOL_DEFAULT, &pVB, NULL));
+	pVB = new VkBuf(gc->GetDevice(), nEntry*sizeof(BAVERTEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true); // D3DUSAGE_DYNAMIC|D3DUSAGE_POINTS, D3DPOOL_DEFAULT
+	pVBSys = new BAVERTEX[nEntry]; // not upstream: Lock/Unlock edit this copy
 
 	BAVERTEX *pVrt = LockVertexBuffer();
 
@@ -71,7 +73,8 @@ BeaconArray::BeaconArray(BeaconArrayEntry *pEnt, DWORD nEntry, vBase *_vB)
 BeaconArray::~BeaconArray()
 {
 	SAFE_DELETEA(pBeaconPos);
-	SAFE_RELEASE(pVB);
+	SAFE_DELETE(pVB);
+	SAFE_DELETEA(pVBSys);
 	gc->clbkReleaseTexture(pBright);
 }
 
@@ -101,9 +104,7 @@ void BeaconArray::Update(DWORD nCount, vPlanet *vP)
 BAVERTEX * BeaconArray::LockVertexBuffer()
 {
 	if (!pVB) return NULL;
-	BAVERTEX *pVert;
-	if (pVB->Lock(0, nVert*sizeof(BAVERTEX), (LPVOID*)&pVert, 0)==S_OK) return pVert;
-	return NULL;
+	return pVBSys; // Lock: the frame in flight may still read pVB
 }
 
 
@@ -112,13 +113,16 @@ BAVERTEX * BeaconArray::LockVertexBuffer()
 void BeaconArray::UnLockVertexBuffer()
 {
 	if (!pVB) return;
-	HR(pVB->Unlock());
+	// Unlock: a new buffer (the D3D9 driver renames a locked dynamic buffer), the old one goes when the GPU is done
+	SAFE_DELETE(pVB);
+	pVB = new VkBuf(gc->GetDevice(), nVert*sizeof(BAVERTEX), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+	pVB->Upload(pVBSys, nVert*sizeof(BAVERTEX));
 }
 
 
 // ===========================================================================================
 //
-void BeaconArray::Render(LPDIRECT3DDEVICE9 dev, const LPD3DXMATRIX pW, float time)
+void BeaconArray::Render(VkDev *dev, const LPD3DXMATRIX pW, float time)
 {
 	if (!pVB) return;
 
@@ -129,20 +133,20 @@ void BeaconArray::Render(LPDIRECT3DDEVICE9 dev, const LPD3DXMATRIX pW, float tim
 	HR(FX->SetFloat(eTime, time));
 	HR(FX->SetFloat(eMix, float(Config->RwyBrightness)));
 
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 
 	//dev->SetRenderState(D3DRS_ZENABLE, 0);
 
-	dev->SetVertexDeclaration(pBAVertexDecl);
+	dev->SetVertexDecl(pBAVertexDecl);
 	dev->SetStreamSource(0, pVB, 0, sizeof(BAVERTEX));
-	dev->DrawPrimitive(D3DPT_POINTLIST, 0, nVert);
+	dev->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, 0, nVert);
 
-	dev->SetRenderState(D3DRS_ZENABLE, 1);
+	dev->SetDepthTest(true);
 
 	HR(FX->EndPass());
 	HR(FX->End());
 
-	dev->SetRenderState(D3DRS_POINTSPRITEENABLE, 0);
+	// D3DRS_POINTSPRITEENABLE off left out: Vulkan point lists always rasterize as sprites (gl_PointCoord)
 }
 

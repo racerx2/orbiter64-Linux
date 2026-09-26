@@ -64,17 +64,17 @@ D3D9CelestialSphere::D3D9CelestialSphere(D3D9Client *gc, Scene *scene)
 D3D9CelestialSphere::~D3D9CelestialSphere()
 {
 	ClearStars();
-	m_clVtx->Release();
-	m_cbVtx->Release();
-	m_grdLngVtx->Release();
-	m_grdLatVtx->Release();
+	delete m_clVtx;
+	delete m_cbVtx;
+	delete m_grdLngVtx;
+	delete m_grdLatVtx;
 
 	for (auto vtx : m_azGridLabelVtx)
-		if (vtx) vtx->Release();
+		if (vtx) delete vtx;
 	if (m_elGridLabelVtx)
-		m_elGridLabelVtx->Release();
+		delete m_elGridLabelVtx;
 	if (m_GridLabelIdx)
-		m_GridLabelIdx->Release();
+		delete m_GridLabelIdx;
 
 	delete m_bkgImgMgr;
 	if (m_GridLabelTex)
@@ -132,9 +132,8 @@ void D3D9CelestialSphere::InitStars ()
 		m_sVtx.resize(nbuf);
 		for (auto it = m_sVtx.begin(); it != m_sVtx.end(); it++) {
 			nv = min((DWORD)maxNumVertices, m_nsVtx - idx);
-			m_pDevice->CreateVertexBuffer(UINT(nv * sizeof(VERTEX_XYZC)), D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &*it, NULL);
-			VERTEX_XYZC* vbuf;
-			(*it)->Lock(0, 0, (LPVOID*)&vbuf, 0);
+			*it = new VkBuf(m_pDevice, UINT(nv * sizeof(VERTEX_XYZC)), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+			VERTEX_XYZC* vbuf = new VERTEX_XYZC[nv]; // Lock: filled here, uploaded at Unlock
 			for (j = 0; j < nv; j++) {
 				const oapi::CelestialSphere::StarRenderRec& rec = sList[idx];
 				VERTEX_XYZC& v = vbuf[j];
@@ -144,7 +143,8 @@ void D3D9CelestialSphere::InitStars ()
 				v.col = D3DXCOLOR(rec.col.x, rec.col.y, rec.col.z, 1);
 				idx++;
 			}
-			(*it)->Unlock();
+			(*it)->Upload(vbuf, nv * sizeof(VERTEX_XYZC)); // Unlock
+			delete[] vbuf;
 		}
 
 		m_starCutoffIdx = ComputeStarBrightnessCutoff(sList);
@@ -157,28 +157,28 @@ void D3D9CelestialSphere::InitStars ()
 void D3D9CelestialSphere::ClearStars()
 {
 	for (auto it = m_sVtx.begin(); it != m_sVtx.end(); it++)
-		(*it)->Release();
+		delete (*it);
 	m_sVtx.clear();
 	m_nsVtx = 0;
 }
 
 // ==============================================================
 
-int D3D9CelestialSphere::MapLineBuffer(const std::vector<VECTOR3>& lineVtx, LPDIRECT3DVERTEXBUFFER9& buf) const
+int D3D9CelestialSphere::MapLineBuffer(const std::vector<VECTOR3>& lineVtx, VkBuf*& buf) const
 {
 	size_t nv = lineVtx.size();
 	if (!nv) return 0;
 
 	// create vertex buffer
-	m_pDevice->CreateVertexBuffer(sizeof(VERTEX_XYZ) * nv, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &buf, NULL);
-	VERTEX_XYZ* vbuf;
-	buf->Lock(0, 0, (LPVOID*)&vbuf, 0);
+	buf = new VkBuf(m_pDevice, sizeof(VERTEX_XYZ) * nv, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+	VERTEX_XYZ* vbuf = new VERTEX_XYZ[nv]; // Lock: filled here, uploaded at Unlock
 	for (size_t i = 0; i < nv; i++) {
 		vbuf[i].x = (float)lineVtx[i].x;
 		vbuf[i].y = (float)lineVtx[i].y;
 		vbuf[i].z = (float)lineVtx[i].z;
 	}
-	buf->Unlock();
+	buf->Upload(vbuf, sizeof(VERTEX_XYZ) * nv); // Unlock
+	delete[] vbuf;
 
 	return nv;
 }
@@ -205,8 +205,8 @@ void D3D9CelestialSphere::AllocGrids ()
 	double lng, lat, xz, y;
 	VERTEX_XYZ *vbuf;
 
-	m_pDevice->CreateVertexBuffer(sizeof(VERTEX_XYZ)*(NSEG+1)*11, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &m_grdLngVtx, NULL);
-	m_grdLngVtx->Lock (0, 0, (LPVOID*)&vbuf, 0);
+	m_grdLngVtx = new VkBuf(m_pDevice, sizeof(VERTEX_XYZ)*(NSEG+1)*11, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+	vbuf = new VERTEX_XYZ[(NSEG+1)*11]; // Lock: filled here, uploaded at Unlock
 	for (j = idx = 0; j <= 10; j++) {
 		lat = (j-5)*15*RAD;
 		xz = cos(lat);
@@ -219,10 +219,11 @@ void D3D9CelestialSphere::AllocGrids ()
 			idx++;
 		}
 	}
-	m_grdLngVtx->Unlock();
+	m_grdLngVtx->Upload(vbuf, sizeof(VERTEX_XYZ)*(NSEG+1)*11); // Unlock
+	delete[] vbuf;
 
-	m_pDevice->CreateVertexBuffer(sizeof(VERTEX_XYZ)*(NSEG+1)*12, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &m_grdLatVtx, NULL);
-	m_grdLatVtx->Lock (0, 0, (LPVOID*)&vbuf, 0);
+	m_grdLatVtx = new VkBuf(m_pDevice, sizeof(VERTEX_XYZ)*(NSEG+1)*12, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+	vbuf = new VERTEX_XYZ[(NSEG+1)*12]; // Lock: filled here, uploaded at Unlock
 	for (j = idx = 0; j < 12; j++) {
 		lng = j*15*RAD;
 		for (i = 0; i <= NSEG; i++) {
@@ -235,7 +236,8 @@ void D3D9CelestialSphere::AllocGrids ()
 			idx++;
 		}
 	}
-	m_grdLatVtx->Unlock();
+	m_grdLatVtx->Upload(vbuf, sizeof(VERTEX_XYZ)*(NSEG+1)*12); // Unlock
+	delete[] vbuf;
 }
 
 // ==============================================================
@@ -243,16 +245,15 @@ void D3D9CelestialSphere::AllocGrids ()
 void D3D9CelestialSphere::AllocGridLabels()
 {
 	VERTEX_XYZ_TEX* vbuf;
-	WORD* ibuf;
 
 	const MESHHANDLE hMesh = GridLabelMesh();
 	MESHGROUP* grp = oapiMeshGroup(hMesh, 0);
 
 	// create vertex buffers for longitude labels (azimuth/hour angle/longitude)
 	for (size_t idx = 0; idx < m_azGridLabelVtx.size(); idx++) {
-		LPDIRECT3DVERTEXBUFFER9& vb = m_azGridLabelVtx[idx];
-		m_pDevice->CreateVertexBuffer(sizeof(VERTEX_XYZ_TEX) * grp->nVtx, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &vb, NULL);
-		vb->Lock(0, 0, (LPVOID*)&vbuf, 0);
+		VkBuf*& vb = m_azGridLabelVtx[idx];
+		vb = new VkBuf(m_pDevice, sizeof(VERTEX_XYZ_TEX) * grp->nVtx, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+		vbuf = new VERTEX_XYZ_TEX[grp->nVtx]; // Lock: filled here, uploaded at Unlock
 		for (int i = 0; i < grp->nVtx; i++) {
 			vbuf[i].x = (float)grp->Vtx[i].x;
 			vbuf[i].y = (float)grp->Vtx[i].y;
@@ -260,19 +261,18 @@ void D3D9CelestialSphere::AllocGridLabels()
 			vbuf[i].tu = (float)(grp->Vtx[i].tu + idx * 0.1015625);
 			vbuf[i].tv = (float)grp->Vtx[i].tv;
 		}
-		vb->Unlock();
+		vb->Upload(vbuf, sizeof(VERTEX_XYZ_TEX) * grp->nVtx); // Unlock
+		delete[] vbuf;
 	}
 
 	// the index list is used for both azimuth and elevation grid labels
-	m_pDevice->CreateIndexBuffer(sizeof(WORD) * grp->nIdx, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &m_GridLabelIdx, NULL);
-	m_GridLabelIdx->Lock(0, 0, (LPVOID*)&ibuf, 0);
-	memcpy(ibuf, grp->Idx, sizeof(WORD) * grp->nIdx);
-	m_GridLabelIdx->Unlock();
+	m_GridLabelIdx = new VkBuf(m_pDevice, sizeof(WORD) * grp->nIdx, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, false); // D3DFMT_INDEX16
+	m_GridLabelIdx->Upload(grp->Idx, sizeof(WORD) * grp->nIdx); // Lock/memcpy/Unlock
 
 	// create vertex buffer for latitude labels (just one shared between all grids)
 	grp = oapiMeshGroup(hMesh, 1);
-	m_pDevice->CreateVertexBuffer(sizeof(VERTEX_XYZ_TEX) * grp->nVtx, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &m_elGridLabelVtx, NULL);
-	m_elGridLabelVtx->Lock(0, 0, (LPVOID*)&vbuf, 0);
+	m_elGridLabelVtx = new VkBuf(m_pDevice, sizeof(VERTEX_XYZ_TEX) * grp->nVtx, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, false); // D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT
+	vbuf = new VERTEX_XYZ_TEX[grp->nVtx]; // Lock: filled here, uploaded at Unlock
 	for (int i = 0; i < grp->nVtx; i++) {
 		vbuf[i].x = (float)grp->Vtx[i].x;
 		vbuf[i].y = (float)grp->Vtx[i].y;
@@ -280,7 +280,8 @@ void D3D9CelestialSphere::AllocGridLabels()
 		vbuf[i].tu = (float)grp->Vtx[i].tu;
 		vbuf[i].tv = (float)grp->Vtx[i].tv;
 	}
-	m_elGridLabelVtx->Unlock();
+	m_elGridLabelVtx->Upload(vbuf, sizeof(VERTEX_XYZ_TEX) * grp->nVtx); // Unlock
+	delete[] vbuf;
 }
 
 // ==============================================================
@@ -314,7 +315,7 @@ void D3D9CelestialSphere::OnOptionChanged(DWORD cat, DWORD item)
 
 // ==============================================================
 
-void D3D9CelestialSphere::Render(LPDIRECT3DDEVICE9 pDevice, const VECTOR3& skyCol)
+void D3D9CelestialSphere::Render(VkDev *pDevice, const VECTOR3& skyCol)
 {
 	SetSkyColour(skyCol);
 
@@ -469,7 +470,7 @@ void D3D9CelestialSphere::Render(LPDIRECT3DDEVICE9 pDevice, const VECTOR3& skyCo
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderStars(ID3DXEffect *FX)
+void D3D9CelestialSphere::RenderStars(VkEffect *FX)
 {
 	_TRACE;
 
@@ -481,12 +482,12 @@ void D3D9CelestialSphere::RenderStars(ID3DXEffect *FX)
 	int bgidx = min(255, (int)(GetSkyBrightness() * 256.0));
 	int ns = m_starCutoffIdx[bgidx];
 
-	HR(m_pDevice->SetVertexDeclaration(pPosColorDecl));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	m_pDevice->SetVertexDecl(pPosColorDecl);
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 	for (i = j = 0; i < ns; i += maxNumVertices, j++) {
-		HR(m_pDevice->SetStreamSource(0, m_sVtx[j], 0, sizeof(VERTEX_XYZC)));
-		HR(m_pDevice->DrawPrimitive(D3DPT_POINTLIST, 0, min (ns-i, maxNumVertices)));
+		m_pDevice->SetStreamSource(0, m_sVtx[j], 0, sizeof(VERTEX_XYZC));
+		m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_POINT_LIST, min (ns-i, maxNumVertices)));
 	}
 	HR(FX->EndPass());
 	HR(FX->End());	
@@ -494,7 +495,7 @@ void D3D9CelestialSphere::RenderStars(ID3DXEffect *FX)
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderConstellationLines(ID3DXEffect *FX)
+void D3D9CelestialSphere::RenderConstellationLines(VkEffect *FX)
 {
 	const FVECTOR4 baseCol(0.5f, 0.3f, 0.2f, 1.0f);
 	D3DXVECTOR4 vColor = ColorAdjusted(baseCol);
@@ -502,18 +503,18 @@ void D3D9CelestialSphere::RenderConstellationLines(ID3DXEffect *FX)
 
 	_TRACE;
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(m_pDevice->SetStreamSource(0, m_clVtx, 0, sizeof(VERTEX_XYZ)));
-	HR(m_pDevice->SetVertexDeclaration(pPositionDecl));
-	HR(m_pDevice->DrawPrimitive(D3DPT_LINELIST, 0, m_nclVtx));
+	m_pDevice->SetStreamSource(0, m_clVtx, 0, sizeof(VERTEX_XYZ));
+	m_pDevice->SetVertexDecl(pPositionDecl);
+	m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, m_nclVtx));
 	HR(FX->EndPass());
 	HR(FX->End());	
 }
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderConstellationBoundaries(ID3DXEffect* FX)
+void D3D9CelestialSphere::RenderConstellationBoundaries(VkEffect *FX)
 {
 	const FVECTOR4 baseCol(0.25f, 0.2f, 0.15f, 1.0f);
 	D3DXVECTOR4 vColor = ColorAdjusted(baseCol);
@@ -521,26 +522,26 @@ void D3D9CelestialSphere::RenderConstellationBoundaries(ID3DXEffect* FX)
 
 	_TRACE;
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(m_pDevice->SetStreamSource(0, m_cbVtx, 0, sizeof(VERTEX_XYZ)));
-	HR(m_pDevice->SetVertexDeclaration(pPositionDecl));
-	HR(m_pDevice->DrawPrimitive(D3DPT_LINELIST, 0, m_ncbVtx));
+	m_pDevice->SetStreamSource(0, m_cbVtx, 0, sizeof(VERTEX_XYZ));
+	m_pDevice->SetVertexDecl(pPositionDecl);
+	m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, m_ncbVtx));
 	HR(FX->EndPass());
 	HR(FX->End());
 }
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderGreatCircle(ID3DXEffect *FX)
+void D3D9CelestialSphere::RenderGreatCircle(VkEffect *FX)
 {
 	_TRACE;
 	UINT numPasses = 0;
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(m_pDevice->SetStreamSource(0, m_grdLngVtx, 0, sizeof(VERTEX_XYZ)));
-	HR(m_pDevice->SetVertexDeclaration(pPositionDecl));
-	HR(m_pDevice->DrawPrimitive(D3DPT_LINESTRIP, 5*(NSEG+1), NSEG));
+	m_pDevice->SetStreamSource(0, m_grdLngVtx, 0, sizeof(VERTEX_XYZ));
+	m_pDevice->SetVertexDecl(pPositionDecl);
+	m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, 5*(NSEG+1), VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, NSEG));
 	HR(FX->EndPass());
 	HR(FX->End());	
 	
@@ -548,28 +549,28 @@ void D3D9CelestialSphere::RenderGreatCircle(ID3DXEffect *FX)
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderGrid(ID3DXEffect *FX, bool eqline)
+void D3D9CelestialSphere::RenderGrid(VkEffect *FX, bool eqline)
 {
 	_TRACE;
 	int i;
 	UINT numPasses = 0;
-	HR(m_pDevice->SetVertexDeclaration(pPositionDecl));
-	HR(m_pDevice->SetStreamSource(0, m_grdLngVtx, 0, sizeof(VERTEX_XYZ)));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	m_pDevice->SetVertexDecl(pPositionDecl);
+	m_pDevice->SetStreamSource(0, m_grdLngVtx, 0, sizeof(VERTEX_XYZ));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
 	for (i = 0; i <= 10; i++)
 		if (eqline || i != 5)
-			HR(m_pDevice->DrawPrimitive(D3DPT_LINESTRIP, i*(NSEG+1), NSEG));
-	HR(m_pDevice->SetStreamSource(0, m_grdLatVtx, 0, sizeof(VERTEX_XYZ)));
+			m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, i*(NSEG+1), VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, NSEG));
+	m_pDevice->SetStreamSource(0, m_grdLatVtx, 0, sizeof(VERTEX_XYZ));
 	for (i = 0; i < 12; i++)
-		HR(m_pDevice->DrawPrimitive(D3DPT_LINESTRIP, i * (NSEG+1), NSEG));
+		m_pDevice->DrawPrimitive(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, i * (NSEG+1), VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, NSEG));
 	HR(FX->EndPass());
 	HR(FX->End());	
 }
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderGridLabels(ID3DXEffect* FX, int az_idx, const oapi::FVECTOR4& baseCol, const MATRIX3& R, double dphi)
+void D3D9CelestialSphere::RenderGridLabels(VkEffect *FX, int az_idx, const oapi::FVECTOR4& baseCol, const MATRIX3& R, double dphi)
 {
 	if (!m_GridLabelTex) return;
 	if (az_idx >= m_azGridLabelVtx.size()) return;
@@ -577,14 +578,15 @@ void D3D9CelestialSphere::RenderGridLabels(ID3DXEffect* FX, int az_idx, const oa
 		AllocGridLabels();
 
 	UINT numPasses = 0;
-	HR(m_pDevice->SetVertexDeclaration(pPosTexDecl));
-	HR(m_pDevice->SetStreamSource(0, m_azGridLabelVtx[az_idx], 0, sizeof(VERTEX_XYZ_TEX)));
-	HR(m_pDevice->SetIndices(m_GridLabelIdx));
+	m_pDevice->SetVertexDecl(pPosTexDecl);
+	m_pDevice->SetStreamSource(0, m_azGridLabelVtx[az_idx], 0, sizeof(VERTEX_XYZ_TEX));
+	m_pDevice->SetIndices(m_GridLabelIdx);
 	HR(FX->SetTechnique(s_eLabel));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(m_pDevice->SetTexture(0, m_GridLabelTex->GetTexture()));
-	HR(m_pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, 24 * 4, 0, 24 * 2));
+	HR(FX->SetTexture(FX->GetParameterByName(0, "gTex0"), m_GridLabelTex->GetTexture())); // SetTexture(0,..): s0 is Tex0S, read from gTex0
+	HR(FX->CommitChanges());
+	m_pDevice->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 24 * 2));
 	HR(FX->EndPass());
 	HR(FX->End());
 
@@ -602,11 +604,12 @@ void D3D9CelestialSphere::RenderGridLabels(ID3DXEffect* FX, int az_idx, const oa
 		FX->SetMatrix(s_eWVP, &T1);
 	}
 
-	HR(m_pDevice->SetStreamSource(0, m_elGridLabelVtx, 0, sizeof(VERTEX_XYZ_TEX)));
-	HR(FX->Begin(&numPasses, D3DXFX_DONOTSAVESTATE));
+	m_pDevice->SetStreamSource(0, m_elGridLabelVtx, 0, sizeof(VERTEX_XYZ_TEX));
+	HR(FX->Begin(&numPasses, VKFX_DONOTSAVESTATE));
 	HR(FX->BeginPass(0));
-	HR(m_pDevice->SetTexture(0, m_GridLabelTex->GetTexture()));
-	HR(m_pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, 11 * 4, 0, 11 * 2));
+	HR(FX->SetTexture(FX->GetParameterByName(0, "gTex0"), m_GridLabelTex->GetTexture())); // SetTexture(0,..): s0 is Tex0S, read from gTex0
+	HR(FX->CommitChanges());
+	m_pDevice->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, 0, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 11 * 2));
 	HR(FX->EndPass());
 	HR(FX->End());
 
@@ -618,10 +621,10 @@ void D3D9CelestialSphere::RenderGridLabels(ID3DXEffect* FX, int az_idx, const oa
 
 // ==============================================================
 
-void D3D9CelestialSphere::RenderBkgImage(LPDIRECT3DDEVICE9 dev)
+void D3D9CelestialSphere::RenderBkgImage(VkDev *dev)
 {
 	m_bkgImgMgr->Render(dev, 8, GetSkyBrightness());
-	dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	dev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 }
 
 // ==============================================================
@@ -652,7 +655,7 @@ bool D3D9CelestialSphere::EclDir2WindowPos(const VECTOR3& dir, int& x, int& y) c
 	}
 }
 
-void D3D9CelestialSphere::D3D9TechInit(ID3DXEffect* fx)
+void D3D9CelestialSphere::D3D9TechInit(VkEffect *fx)
 {
 	s_FX = fx;
 	s_eStar = fx->GetTechniqueByName("StarTech");
@@ -662,10 +665,10 @@ void D3D9CelestialSphere::D3D9TechInit(ID3DXEffect* fx)
 	s_eWVP = fx->GetParameterByName(0, "gWVP");
 }
 
-ID3DXEffect* D3D9CelestialSphere::s_FX = 0;
-D3DXHANDLE D3D9CelestialSphere::s_eStar = 0;
-D3DXHANDLE D3D9CelestialSphere::s_eLine = 0;
-D3DXHANDLE D3D9CelestialSphere::s_eLabel = 0;
-D3DXHANDLE D3D9CelestialSphere::s_eColor = 0;
-D3DXHANDLE D3D9CelestialSphere::s_eWVP = 0;
+VkEffect *D3D9CelestialSphere::s_FX = 0;
+VkFxHandle D3D9CelestialSphere::s_eStar = 0;
+VkFxHandle D3D9CelestialSphere::s_eLine = 0;
+VkFxHandle D3D9CelestialSphere::s_eLabel = 0;
+VkFxHandle D3D9CelestialSphere::s_eColor = 0;
+VkFxHandle D3D9CelestialSphere::s_eWVP = 0;
 

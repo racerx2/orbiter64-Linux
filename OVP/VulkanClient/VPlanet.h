@@ -375,7 +375,7 @@ public:
 
 protected:
 	void RenderSphere (VkDev *dev);
-	void RenderCloudLayer (VkDev *dev, DWORD cullmode);
+	void RenderCloudLayer (VkDev *dev, VkCullModeFlags cullmode); // D3DCULL: VkCullModeFlags
 	void RenderBaseSurfaces (VkDev *dev);
 	void RenderBaseStructures (VkDev *dev);
 	void RenderBaseShadows (VkDev *dev, float depth);

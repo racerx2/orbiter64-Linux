@@ -16,11 +16,11 @@ class VideoTab {
 
 	struct _AtmoCfg { string cfg, file; };
 public:
-	VideoTab(oapi::D3D9Client *gc, HINSTANCE _hInst, HINSTANCE _hOrbiterInst, HWND hVideoTab);
+	VideoTab(oapi::D3D9Client *gc, void *_hInst, void *_hOrbiterInst, QWidget *hVideoTab);
 	~VideoTab();
 
-	BOOL WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	// Video tab message handler
+	void WndProc (QWidget *hWnd);
+	// Video tab message handler: connects the video controls (called once, from LaunchpadVideoWndProc)
 
 	void UpdateConfigData();
 	// copy dialog state back to parameter structure
@@ -41,21 +41,21 @@ protected:
 	// Update dialog after window height selection
 
 private:
-	static INT_PTR CALLBACK SetupDlgProcWrp(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK CreditsDlgProcWrp(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	INT_PTR CALLBACK SetupDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	INT_PTR CALLBACK CreditsDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	void InitCreditsDialog(HWND hWnd);
+	static void SetupDlgProcWrp(QWidget *hWnd, void *context);   // DLGINIT, context = lParam (the VideoTab)
+	static void CreditsDlgProcWrp(QWidget *hWnd, void *context); // DLGINIT, context = lParam (the VideoTab)
+	void SetupDlgProc(QWidget *hWnd);   // connects the WM_COMMAND and WM_HSCROLL handlers
+	void CreditsDlgProc(QWidget *hWnd); // connects the WM_COMMAND handler
+	void InitCreditsDialog(QWidget *hWnd);
 	void CreateSymbolicLinks();
-	void InitSetupDialog(HWND hWnd);
-	void SaveSetupState(HWND hWnd);
+	void InitSetupDialog(QWidget *hWnd);
+	void SaveSetupState(QWidget *hWnd);
 	void ScanAtmoCfgs();
 	bool GetConfigName(const char* file, string& cfg, string& planet);
 	
 	oapi::D3D9Client *gclient;
-	HINSTANCE hOrbiterInst; // orbiter instance handle
-	HINSTANCE hInst;        // module instance handle
-	HWND hTab;              // window handle of the video tab
+	void *hOrbiterInst;     // orbiter instance handle
+	void *hInst;            // module instance handle
+	QWidget *hTab;          // window handle of the video tab
 	int aspect_idx;
 	DWORD SelectedAdapterIdx;
 	bool bHasMultiSample;

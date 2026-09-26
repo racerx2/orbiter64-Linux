@@ -36,7 +36,9 @@
 #include "VectorHelpers.h"
 #include "OapiExtension.h"
 #include "IProcess.h"
+#include "VkTexFile.h"
 #include <filesystem>
+#include <QMessageBox>
 
 using namespace oapi;
 
@@ -50,8 +52,8 @@ static std::map<std::string, vPlanet::_MicroCfg> MicroCfgs;
 typedef std::map<std::string, vPlanet::_MicroCfg>::iterator MicroCfgsIterator;
 
 ImageProcessing* vPlanet::pIP;
-LPDIRECT3DDEVICE9 vPlanet::pDev;
-LPDIRECT3DTEXTURE9 vPlanet::ptEclipse;
+VkDev *vPlanet::pDev;
+VkTex *vPlanet::ptEclipse;
 
 int vPlanet::Qc = 0;
 int vPlanet::Wc = 0;
@@ -59,7 +61,7 @@ int vPlanet::Nc = 0;
 
 extern int SURF_MAX_PATCHLEVEL;
 extern D3D9Client* g_client;
-extern unordered_map<std::string, LPDIRECT3DTEXTURE9> MicroTextures;
+extern unordered_map<std::string, VkTex*> MicroTextures;
 
 // ==============================================================
 // Face's Terrain Flattening section
@@ -97,16 +99,17 @@ std::unordered_map<OBJHANDLE, bool> g_ShapesLoaded;
 std::vector<std::string> EnumerateDirectory(std::string directory, std::string filter)
 {
 	std::vector<std::string> result;
-	std::string search_path = directory + "\\" + filter;
-	WIN32_FIND_DATA fd;
-	HANDLE hFind = ::FindFirstFile(search_path.c_str(), &fd);
-	if (hFind != INVALID_HANDLE_VALUE)
+	std::string search_path = oapiResolvePath(directory.c_str()); // FindFirstFile(directory\filter): directory_iterator, "*.ext" matched without case
+	std::string ext = filter.substr(filter.find_last_of('*') + 1);
+	std::error_code ec;
+	std::filesystem::directory_iterator hFind(search_path, ec);
+	if (!ec)
 	{
-		do
+		for (auto &fd : hFind)
 		{
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) result.push_back(fd.cFileName);
-		} while (::FindNextFile(hFind, &fd));
-		::FindClose(hFind);
+			std::string fn = fd.path().filename().string();
+			if (!fd.is_directory(ec) && fn.size() >= ext.size() && !strcasecmp(fn.c_str() + fn.size() - ext.size(), ext.c_str())) result.push_back(fn);
+		}
 	}
 	return result;
 }
@@ -141,16 +144,16 @@ void ProcessPlanetFlats(OBJHANDLE hPlanet)
 {
 	char name[MAX_PATH];
 	char fname[MAX_PATH];
-	oapiGetObjectName(hPlanet, name, ARRAYSIZE(name) - 6);
-	sprintf_s(fname, ARRAYSIZE(fname), "%s\\Flat", name);
+	oapiGetObjectName(hPlanet, name, std::size(name) - 6);
+	snprintf(fname, std::size(fname), "%s/Flat", name); // '/': TexturePath checks the path as given
 	g_client->TexturePath(fname, name);
 	auto files = EnumerateDirectory(name, "*.flt");
 	// Load all planet shapes
 	for (auto file : files)
 	{
 		auto radius = oapiGetSize(hPlanet);
-		sprintf_s(fname, ARRAYSIZE(fname), "%s\\%s", name, file.c_str());
-		auto f = fopen(fname, "r");
+		snprintf(fname, std::size(fname), "%s/%s", name, file.c_str());
+		auto f = fopen(oapiResolvePath(fname).c_str(), "r");
 		if (f != 0)
 		{
 			while (!feof(f))
@@ -159,7 +162,7 @@ void ProcessPlanetFlats(OBJHANDLE hPlanet)
 				double lat, lng, phi;
 				if ((read = fscanf(f, "%s %d %lf %lf %d %d %lf %d", fname, &height, &lng, &lat, &dim1, &dim2, &phi, &falloff)) < 5) continue; // Skip incomplete lines
 				if (fname[0] == '/' && fname[1] == '/') continue; // Skip commented lines
-				_strlwr(fname);
+				for (char *c = fname; *c; c++) *c = (char)tolower(*c); // _strlwr
 				if (read < 6)	dim2 = dim1; // Fallback for one dimension only
 				if (read < 7)	phi = 0;     // Fallback for no angle given
 				if (read < 8)	falloff = 0; // Fallback for no falloff given
@@ -343,7 +346,7 @@ void vPlanet::GlobalExit()
 	g_ShapesLoaded.clear();
 
 	SAFE_DELETE(pIP);
-	SAFE_RELEASE(ptEclipse);
+	SAFE_DELETE(ptEclipse);
 
 	for (int i=0;i<8;i++) SAFE_DELETE(pRender[i]);
 }
@@ -354,7 +357,7 @@ void vPlanet::GlobalInit(oapi::D3D9Client* gc)
 {
 	pDev = gc->GetDevice();
 
-	D3DXCreateTexture(pDev, 512, 1, 1, D3DUSAGE_DYNAMIC, D3DFMT_R32F, D3DPOOL_DEFAULT, &ptEclipse);
+	ptEclipse = new VkTex(pDev, 512, 1, 1, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT); // D3DUSAGE_DYNAMIC: rewritten with Upload
 	LoadMicroTextures(pDev);
 	GlobalInitAtmosphere(gc);
 }
@@ -514,21 +517,21 @@ vPlanet::vPlanet (OBJHANDLE _hObj, const Scene *scene) :
 	char msg[256]; char path[MAX_PATH];
 	// Check texture directory
 	GetClient()->PlanetTexturePath(GetName(), path);
-	auto x = filesystem::status(path);
+	auto x = filesystem::status(oapiResolvePath(path));
 	bHasTextures = filesystem::is_directory(x);
 
 	// Check *.tex file
 	string tf = string(GetName()) + ".tex";
 	GetClient()->PlanetTexturePath(tf.c_str(), path);
-	auto y = filesystem::status(path);
+	auto y = filesystem::status(oapiResolvePath(path));
 	bHasTextures |= filesystem::exists(y);
 	
 	if (!bHasTextures) {
 		VESSEL* vss = oapiGetFocusInterface();
-		sprintf_s(msg, sizeof(msg), "[WARNING] Surface textures are missing for %s", GetName());
+		snprintf(msg, sizeof(msg), "[WARNING] Surface textures are missing for %s", GetName());
 		if (vss && (vss->GetGravityRef() == hObj)) {
 			oapiWriteLog(msg);
-			MessageBox(GetClient()->GetWindow(), msg, "Warning", MB_OK);
+			QMessageBox::warning(NULL, "Warning", msg); // owner: the render window is a QWindow
 		}
 		else oapiWriteLog(msg);
 	}
@@ -550,7 +553,7 @@ vPlanet::~vPlanet ()
 	else if (surfmgr2) delete surfmgr2;
 	if (cloudmgr2) delete cloudmgr2;
 
-	for (auto x : overlays) for (auto y : x->pSurf) if (y) y->Release();
+	// overlays' y->Release() left out: the textures belong to their SURFHANDLEs (upstream released a reference it didn't own)
 
 	if (clouddata) {
 		delete clouddata->cloudmgr;
@@ -561,13 +564,13 @@ vPlanet::~vPlanet ()
 	if (ringmgr)  delete ringmgr;
 	if (mesh)     delete mesh;
 
-	SAFE_RELEASE(pSunColor);
-	SAFE_RELEASE(pRaySkyView);
-	SAFE_RELEASE(pMieSkyView);
-	SAFE_RELEASE(pLandViewRay);
-	SAFE_RELEASE(pLandViewMie);
-	SAFE_RELEASE(pAmbientSky);
-	SAFE_RELEASE(pLandViewAtn);
+	SAFE_DELETE(pSunColor);
+	SAFE_DELETE(pRaySkyView);
+	SAFE_DELETE(pMieSkyView);
+	SAFE_DELETE(pLandViewRay);
+	SAFE_DELETE(pLandViewMie);
+	SAFE_DELETE(pAmbientSky);
+	SAFE_DELETE(pLandViewAtn);
 }
 
 
@@ -589,7 +592,7 @@ void vPlanet::Activate(bool isactive)
 bool vPlanet::ParseConfig(const char* fname)
 {
 	std::string dummy;   
-	std::ifstream fs(fname);
+	std::ifstream fs(oapiResolvePath(fname));
 
 	if (fs.fail()) {
 		LogErr("Could not open a planet configuration file '%s'", fname);
@@ -916,7 +919,7 @@ void vPlanet::RenderZRange (double *nplane, double *fplane)
 
 // ==============================================================
 
-bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
+bool vPlanet::Render(VkDev *dev)
 {
 	_TRACE;
 	if (!active) return false;
@@ -928,8 +931,8 @@ bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
 		DWORD displ  = *(DWORD*)gc->GetConfigParam(CFGPRM_GETDISPLAYMODE);
 		vObject *vSel =  DebugControls::GetVisual();
 		if (vSel && displ>0) {
-			if (vSel->GetObjectA()) {
-				if (oapiGetObjectType(vSel->GetObjectA())==OBJTP_VESSEL) return false;
+			if (vSel->GetObject()) { // GetObjectA: windows.h's GetObject macro
+				if (oapiGetObjectType(vSel->GetObject())==OBJTP_VESSEL) return false;
 			}
 		}
 	}
@@ -993,7 +996,7 @@ bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
 
 		if (ringmgr) {
 			ringmgr->Render(dev, mWorld, false);
-			dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+			dev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		}
 
 		if (hazemgr2) {
@@ -1002,7 +1005,7 @@ bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
 		}
 
 		if (prm.bCloud && (prm.cloudvis & 1))
-			RenderCloudLayer (dev, D3DCULL_NONE);      // render clouds from below
+			RenderCloudLayer (dev, VK_CULL_MODE_NONE);      // render clouds from below
 
 		if (hazemgr) hazemgr->Render(dev, mWorld);       // horizon ring
 
@@ -1062,12 +1065,12 @@ bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
 		if (nbase) RenderBaseStructures (dev);
 
 		if (prm.bCloud && (prm.cloudvis & 2))
-			RenderCloudLayer (dev, D3DCULL_CCW);	  // render clouds from above
+			RenderCloudLayer (dev, VK_CULL_MODE_BACK_BIT);	  // render clouds from above
 
 		if (hazemgr) hazemgr->Render (dev, mWorld, true); // haze across planet disc
 		if (ringmgr) {
 			ringmgr->Render (dev, mWorld, true);
-			dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+			dev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		}
 
 	}
@@ -1080,14 +1083,14 @@ bool vPlanet::Render(LPDIRECT3DDEVICE9 dev)
 
 // ==============================================================
 
-void vPlanet::RenderBeacons(LPDIRECT3DDEVICE9 dev)
+void vPlanet::RenderBeacons(VkDev *dev)
 {
 	// Beacons rendered elsewhere before the cloud layer
 }
 
 // ==============================================================
 
-void vPlanet::RenderVectors (LPDIRECT3DDEVICE9 dev, D3D9Pad* pSkp)
+void vPlanet::RenderVectors (VkDev *dev, D3D9Pad* pSkp)
 {
 	// Call base class' method for planets axes
 	vObject::RenderVectors(dev, pSkp);
@@ -1113,7 +1116,7 @@ void vPlanet::ActivateLabels(bool activate)
 
 // ==============================================================
 
-void vPlanet::RenderLabels(LPDIRECT3DDEVICE9 dev, D3D9Pad *skp, oapi::Font **labelfont, int *fontidx)
+void vPlanet::RenderLabels(VkDev *dev, D3D9Pad *skp, oapi::Font **labelfont, int *fontidx)
 {
 	if (surfmgr2 && *(int*)oapiGetObjectParam(hObj, OBJPRM_PLANET_LABELENGINE) == 2)
 	{
@@ -1123,7 +1126,7 @@ void vPlanet::RenderLabels(LPDIRECT3DDEVICE9 dev, D3D9Pad *skp, oapi::Font **lab
 
 // ==============================================================
 
-void vPlanet::RenderSphere (LPDIRECT3DDEVICE9 dev)
+void vPlanet::RenderSphere (VkDev *dev)
 {
 	
 	bool bUseZBuf = true;
@@ -1174,7 +1177,7 @@ void vPlanet::RenderSphere (LPDIRECT3DDEVICE9 dev)
 	else {
 		float fogfactor;
 		D3D9Effect::FX->GetFloat(D3D9Effect::eFogDensity, &fogfactor);
-		dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+		dev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		if (prm.bFog) D3D9Effect::FX->SetFloat(D3D9Effect::eFogDensity, fogfactor/dist_scale);
 		surfmgr->SetAmbientColor(prm.AmbColor);
 		surfmgr->Render (dev, mWorld, dist_scale, patchres, 0.0, prm.bFog); // surface
@@ -1195,20 +1198,20 @@ void vPlanet::RenderSphere (LPDIRECT3DDEVICE9 dev)
 
 // ==============================================================
 
-void vPlanet::RenderCloudLayer (LPDIRECT3DDEVICE9 dev, DWORD cullmode)
+void vPlanet::RenderCloudLayer (VkDev *dev, VkCullModeFlags cullmode)
 {
-	if (cullmode != D3DCULL_CCW) dev->SetRenderState (D3DRS_CULLMODE, cullmode);
+	if (cullmode != VK_CULL_MODE_BACK_BIT) dev->SetCullMode(cullmode);
 	if (cloudmgr2) {
 		cloudmgr2->Render(dmWorld, false, prm);
 	}
 	else
 		clouddata->cloudmgr->Render (dev, clouddata->mWorldC, dist_scale, min(patchres,8), clouddata->viewap); // clouds
-	if (cullmode != D3DCULL_CCW) dev->SetRenderState (D3DRS_CULLMODE, D3DCULL_CCW);
+	if (cullmode != VK_CULL_MODE_BACK_BIT) dev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 }
 
 // ==============================================================
 
-void vPlanet::RenderCloudShadows (LPDIRECT3DDEVICE9 dev)
+void vPlanet::RenderCloudShadows (VkDev *dev)
 {
 	if (cloudmgr2) {
 		// Nothing to do here
@@ -1224,7 +1227,7 @@ void vPlanet::RenderCloudShadows (LPDIRECT3DDEVICE9 dev)
 
 // ==============================================================
 
-void vPlanet::RenderBaseSurfaces(LPDIRECT3DDEVICE9 dev)
+void vPlanet::RenderBaseSurfaces(VkDev *dev)
 {
 	// If this planet is not a proxy body skip the rest
 	if (hObj != oapiCameraProxyGbody()) return;
@@ -1239,7 +1242,7 @@ void vPlanet::RenderBaseSurfaces(LPDIRECT3DDEVICE9 dev)
 
 // ==============================================================
 
-void vPlanet::RenderBaseShadows(LPDIRECT3DDEVICE9 dev, float depth)
+void vPlanet::RenderBaseShadows(VkDev *dev, float depth)
 {
 	// If this planet is not a proxy body skip the rest
 	if (hObj != oapiCameraProxyGbody()) return;
@@ -1248,14 +1251,14 @@ void vPlanet::RenderBaseShadows(LPDIRECT3DDEVICE9 dev, float depth)
 		if (bObjectShadow) {
 			for (DWORD i = 0; i < nbase; i++) if (vbase[i]) vbase[i]->RenderGroundShadow(dev, depth);
 			// reset device parameters
-			dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+			VkDev::State s = dev->GetState(); s.stencil = false; dev->SetState(s); // SetRenderState(D3DRS_STENCILENABLE, FALSE)
 		}
 	}
 }
 
 // ==============================================================
 
-void vPlanet::RenderBaseStructures (LPDIRECT3DDEVICE9 dev)
+void vPlanet::RenderBaseStructures (VkDev *dev)
 {
 	// If this planet is not a proxy body skip the rest
 	if (hObj != oapiCameraProxyGbody()) return;
@@ -1320,14 +1323,14 @@ void vPlanet::SetupEclipse()
 
 	if (plnsize > 1.0 && ptEclipse && vE)
 	{
-		D3DLOCKED_RECT rect;
-		if (ptEclipse->LockRect(0, &rect, nullptr, D3DLOCK_DISCARD) == S_OK) {
+		float pBits[512]; // D3DLOCKED_RECT: the level is written here, then uploaded
+		if (ptEclipse->img) { // LockRect(D3DLOCK_DISCARD)
 			for (int i = 0; i < 512; i++) {
 				float x = float(i) * float(plnsize + sunsize) / 512.0f;
 				float v = OcclusionFactor(x, float(sunsize), float(plnsize));
-				((float*)rect.pBits)[i] = saturate(v);
+				pBits[i] = saturate(v);
 			}
-			ptEclipse->UnlockRect(0);
+			ptEclipse->Upload(0, 0, pBits, sizeof(pBits)); // UnlockRect; DISCARD renaming left out: the upload runs ahead of the frame, planets eclipsed in one frame share the last table
 		}
 		else LogErr("Failed to Lock 'hEclipse'");
 
@@ -1414,7 +1417,7 @@ void vPlanet::ParseMicroTexturesFile()
 	int         idx, found = 0;
 	_MicroCfg   currCfg = { 0 };
 
-	std::ifstream fs(filename.c_str());
+	std::ifstream fs(oapiResolvePath(filename.c_str()));
 	while (std::getline(fs, line))
 	{
 		// Empty or comment line?
@@ -1510,7 +1513,7 @@ vPlanet::sOverlay * vPlanet::IntersectOverlay(VECTOR4 q, FVECTOR4 *texcoord) con
 
 // ===========================================================================================
 //
-vPlanet::sOverlay * vPlanet::AddOverlaySurface(VECTOR4 lnglat, gcCore::OlayType type, LPDIRECT3DTEXTURE9 pSrf, vPlanet::sOverlay *pOld, const FVECTOR4 *pB)
+vPlanet::sOverlay * vPlanet::AddOverlaySurface(VECTOR4 lnglat, gcCore::OlayType type, VkTex *pSrf, vPlanet::sOverlay *pOld, const FVECTOR4 *pB)
 {
 	if (type == gcCore::OlayType::RELEASE_ALL) {
 		overlays.remove(pOld);
@@ -1538,21 +1541,24 @@ vPlanet::sOverlay * vPlanet::AddOverlaySurface(VECTOR4 lnglat, gcCore::OlayType 
 
 // ===========================================================================================
 //
-void vPlanet::SetMicroTexture(LPDIRECT3DTEXTURE9 pSrc, int slot)
+void vPlanet::SetMicroTexture(VkTex *pSrc, int slot)
 {
-	LPDIRECT3DTEXTURE9 pTex = NULL;
-	D3DSURFACE_DESC desc;
-	pSrc->GetLevelDesc(0, &desc);
-	DWORD MipLevels = pSrc->GetLevelCount();
-	HR(D3DXCreateTexture(GetDevice(), desc.Width, desc.Height, MipLevels, 0, desc.Format, D3DPOOL_DEFAULT, &pTex));
-	HR(GetDevice()->UpdateTexture(pSrc, pTex));
-	SAFE_RELEASE(MicroCfg.Level[slot].pTex);
+	VkTex *pTex = NULL;
+	VkPixels desc; // D3DSURFACE_DESC: size and format come with the source's pixels
+	DWORD MipLevels = pSrc->levels;
+	if (VkReadPixels(GetDevice(), pSrc, desc, MipLevels)) { // UpdateTexture: all levels of the source
+		desc.swz = VkSwizzleOf(pSrc->swizzle);
+		pTex = VkCreateTexture(GetDevice(), desc, VK_IMAGE_USAGE_SAMPLED_BIT); // D3DXCreateTexture
+	}
+	if (!pTex) LogErr("vPlanet::SetMicroTexture failed"); // HR
+	for (auto &m : MicroTextures) if (m.second == MicroCfg.Level[slot].pTex) MicroCfg.Level[slot].pTex = NULL; // not upstream: shared MicroTextures entries are freed at exit
+	SAFE_DELETE(MicroCfg.Level[slot].pTex);
 	MicroCfg.Level[slot].pTex = pTex;
 }
 
 // ===========================================================================================
 // static
-void vPlanet::LoadMicroTextures(LPDIRECT3DDEVICE9 pDev)
+void vPlanet::LoadMicroTextures(VkDev *pDev)
 {
 	if (Config->MicroMode == 0) return;
 
@@ -1561,11 +1567,11 @@ void vPlanet::LoadMicroTextures(LPDIRECT3DDEVICE9 pDev)
 		for (auto &x : body.second.Level)
 		{
 			char file_path[MAX_PATH];
-			sprintf_s(file_path, MAX_PATH, "Textures/%s", x.file);
+			snprintf(file_path, MAX_PATH, "Textures/%s", x.file);
 			
 			// If texture is not loaded, load it
 			if (MicroTextures.find(x.file) == MicroTextures.end()) {
-				if (D3DXCreateTextureFromFileA(pDev, file_path, &x.pTex) == S_OK) {
+				if ((x.pTex = VkCreateTextureFromFile(pDev, oapiResolvePath(file_path).c_str(), 0, 0, 0, VK_FORMAT_UNDEFINED, SWZ_NONE, VK_IMAGE_USAGE_SAMPLED_BIT))) { // D3DXCreateTextureFromFileA: full mip chain, format from file
 					LogAlw("Microtexture [%s] loaded", x.file);
 					MicroTextures[x.file] = x.pTex;
 				}
@@ -1578,10 +1584,8 @@ void vPlanet::LoadMicroTextures(LPDIRECT3DDEVICE9 pDev)
 			x.pTex = MicroTextures[x.file];
 			
 			if (x.pTex) {
-				D3DSURFACE_DESC desc;
-				x.pTex->GetLevelDesc(0, &desc);
-				x.px = double(desc.Width);
-				x.size = double(desc.Width) / x.reso;
+				x.px = double(x.pTex->w); // GetLevelDesc(0).Width
+				x.size = double(x.pTex->w) / x.reso;
 			}
 		}
 	}

@@ -11,7 +11,8 @@
 #define __CONFIG_H
 
 //#include <d3d.h>
-#include <windows.h>
+#include <cstring>   // strcmp: windows.h brought it in
+#include <strings.h> // strcasecmp/strncasecmp for _stricmp/_strnicmp
 #include "Vecmat.h"
 #include <iostream>
 #include <fstream>
@@ -324,13 +325,13 @@ int ListIndex      (int listlen, char **list, char *label);
 
 inline int StrComp (const char *str1, const char *str2, bool ignorecase)
 {
-	if (ignorecase) return _stricmp (str1, str2);
+	if (ignorecase) return strcasecmp (str1, str2);
 	else            return strcmp (str1, str2);
 }
 
 inline int StrNComp (const char *str1, const char *str2, int n, bool ignorecase)
 {
-	if (ignorecase) return _strnicmp (str1, str2, n);
+	if (ignorecase) return strncasecmp (str1, str2, n);
 	else            return strncmp (str1, str2, n);
 }
 

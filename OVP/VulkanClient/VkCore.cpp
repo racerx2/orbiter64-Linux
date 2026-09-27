@@ -418,7 +418,7 @@ void VkTex::GenerateMips (VkCommandBuffer cmd)
 VkSurf::VkSurf (VkTex *_tex, UINT _level, UINT _layer)
 {
 	tex = _tex;
-	dev = NULL;
+	dev = tex->Device (); // kept: the surface may outlive the texture (GetSurfaceLevel held a reference in D3D9)
 	owner = false;
 	level = _level;
 	layer = _layer;
@@ -452,13 +452,11 @@ VkSurf::VkSurf (VkDev *_dev, UINT _w, UINT _h, VkFormat fmt, VkImageUsageFlags u
 
 VkSurf::~VkSurf ()
 {
-	VkDev *td = owner ? dev : (tex ? tex->Device() : NULL);
-	if (td) td->ForgetTarget (this);
-	if (view && view != tex->view) {
-		VkDev *d = tex->Device();
+	if (dev) dev->ForgetTarget (this);
+	if (view) { // always an own view (MakeView)
 		VkImageView v = view;
-		VkDevice vd = d->dev;
-		d->Defer ([vd, v]() { vkDestroyImageView (vd, v, NULL); });
+		VkDevice vd = dev->dev;
+		dev->Defer ([vd, v]() { vkDestroyImageView (vd, v, NULL); });
 	}
 	if (owner) delete tex;
 }

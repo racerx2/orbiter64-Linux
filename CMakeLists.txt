@@ -108,8 +108,8 @@ set(CMAKE_SHARED_MODULE_PREFIX "")
 
 # Copy data and binary assets from source to binary tree to provide a working Orbiter environment
 # copy_directory_if_different: skips re-copying 228 MB of textures on every build
+# BinAssets copy left out: msvcr71/msvcp71.dll are the Windows runtime for old add-ons
 add_custom_target(CopyData ALL
-	COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/BinAssets/ ${CMAKE_BINARY_DIR}
 	COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/Scenarios/ ${CMAKE_BINARY_DIR}/Scenarios
 	COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/Textures/ ${ORBITER_BINARY_TEXTURES_DIR}
 	COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/Meshes/ ${CMAKE_BINARY_DIR}/Meshes
@@ -246,7 +246,8 @@ endfunction()
 
 
 # Installation
-install(DIRECTORY Scenarios Textures Meshes Config GravityModels Script Flights BinAssets/
+# BinAssets left out: it only holds msvcr71/msvcp71.dll, the Windows runtime for old add-ons
+install(DIRECTORY Scenarios Textures Meshes Config GravityModels Script Flights
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}
 )
 

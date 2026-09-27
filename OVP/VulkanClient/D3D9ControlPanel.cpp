@@ -137,7 +137,7 @@ void D3D9Client::RenderControlPanel()
 	
 	pItemsSkp->SetTextColor(0x00FF00);
 	pItemsSkp->SetFont(largef);
-	pItemsSkp->Text(20,70,"D3D9Client Statistics",21);
+	pItemsSkp->Text(20,70,"VulkanClient Statistics",23); // not upstream: Vulkan in place of D3D9
 	pItemsSkp->SetFont(smallf);
 	LabelPos = 130;
 	

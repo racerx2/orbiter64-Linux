@@ -581,7 +581,7 @@ void D3D9Mesh::ProcessInherit()
 			}
 		}
 	}
-	if (bPopUp) QMessageBox::warning(NULL, "D3D9Client Error:", "Invalid Mesh Detected");
+	if (bPopUp) QMessageBox::warning(NULL, "VulkanClient Error:", "Invalid Mesh Detected"); // not upstream: Vulkan in place of D3D9
 }
 
 

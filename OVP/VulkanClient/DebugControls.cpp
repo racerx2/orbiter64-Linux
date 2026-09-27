@@ -227,14 +227,14 @@ void Create()
 	cpr = cpg = cpb = cpa = 0.0f;
 
 	if (Config->EnableMeshDbg) {
-		dwCmd = oapiRegisterCustomCmd((char*)"D3D9 Debug Controls", (char*)"This dialog allows to control various debug and development features", OpenDlgClbk, NULL);
+		dwCmd = oapiRegisterCustomCmd((char*)"Vulkan Debug Controls", (char*)"This dialog allows to control various debug and development features", OpenDlgClbk, NULL); // not upstream: Vulkan in place of D3D9
 	}
 	else {
 		dwCmd = 0;
 	}
 
 	gfxDlg = new GFXDialog();
-	dwGFX = oapiRegisterCustomCmd((char*)"D3D9 Graphics Controls", (char*)"This dialog allows to control various graphics options", OpenGFXDlgClbk, gfxDlg);
+	dwGFX = oapiRegisterCustomCmd((char*)"Vulkan Graphics Controls", (char*)"This dialog allows to control various graphics options", OpenGFXDlgClbk, gfxDlg); // not upstream: Vulkan in place of D3D9
 
 	resbias = 4.0 + Config->LODBias;
   
@@ -2051,7 +2051,7 @@ void WndProc(QWidget *hWnd, void *context)
 			case IDC_DBG_EXECUTE:
 				bPaused = oapiGetPause();
 				oapiSetPause(true);
-				if (Execute(hWnd, OpenFileName)==false) QMessageBox(QMessageBox::NoIcon, "D3D9 Controls", "Failed :(", QMessageBox::Ok, hWnd).exec();
+				if (Execute(hWnd, OpenFileName)==false) QMessageBox(QMessageBox::NoIcon, "Vulkan Controls", "Failed :(", QMessageBox::Ok, hWnd).exec(); // not upstream: Vulkan in place of D3D9
 				oapiSetPause(bPaused);
 				break;
 

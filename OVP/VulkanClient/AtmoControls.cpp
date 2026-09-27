@@ -149,7 +149,7 @@ void Create()
 	vObj = NULL;
 	hDlg = NULL;
 
-	dwCmd = oapiRegisterCustomCmd((char*)"D3D9 Atmospheric Controls", (char*)"This dialog allows to control various atmospheric parameters and effects", OpenDlgClbk, NULL);
+	dwCmd = oapiRegisterCustomCmd((char*)"Vulkan Atmospheric Controls", (char*)"This dialog allows to control various atmospheric parameters and effects", OpenDlgClbk, NULL); // not upstream: Vulkan in place of D3D9
 
 	Slider.resize(ATM_SLIDER_COUNT);
 

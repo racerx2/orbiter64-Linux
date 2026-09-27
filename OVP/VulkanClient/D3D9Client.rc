@@ -24,7 +24,7 @@ IDB_BITMAP1        BITMAP         ".\\res\\Undo.bmp"
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 IDD_D3D9CREDITS DIALOG 0, 0, 451, 321
 STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "D3D9Client Credits"
+CAPTION "VulkanClient Credits" // not upstream: Vulkan in place of D3D9
 FONT 8, "Ms Shell Dlg"
 {
     DEFPUSHBUTTON   "Close", IDOK, 415, 305, 34, 14, 0, WS_EX_LEFT
@@ -37,7 +37,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 IDD_D3D9MESHDEBUG DIALOG 0, 0, 374, 428
 STYLE DS_3DLOOK | DS_CENTER | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_THICKFRAME | WS_SYSMENU
 EXSTYLE WS_EX_WINDOWEDGE
-CAPTION "D3D9 Debug Controls"
+CAPTION "Vulkan Debug Controls" // not upstream: Vulkan in place of D3D9
 FONT 8, "Ms Shell Dlg"
 {
     GROUPBOX        "Mesh Options", IDC_DBG_MESHGRP, 5, 166, 176, 60, 0, WS_EX_LEFT
@@ -219,7 +219,7 @@ FONT 8, "Ms Shell Dlg"
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 IDD_D3D9SETUP DIALOGEX 0, 0, 545, 378
 STYLE DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_POPUP | WS_SYSMENU
-CAPTION "D3D9Client Advanced Setup"
+CAPTION "VulkanClient Advanced Setup" // not upstream: Vulkan in place of D3D9
 FONT 8, "MS Sans Serif", 0, 0, 0
 {
     LTEXT           "Blend Mode", IDC_STATIC, 380, 197, 39, 8, SS_LEFT, WS_EX_LEFT
@@ -249,7 +249,7 @@ FONT 8, "MS Sans Serif", 0, 0, 0
     AUTOCHECKBOX    "Disable near clip plane compatibility mode", IDC_NEARPLANE, 20, 279, 147, 8, 0, WS_EX_LEFT
     CONTROL         "", IDC_LODBIAS, TRACKBAR_CLASS, WS_TABSTOP | TBS_AUTOTICKS | TBS_TOP, 256, 147, 95, 20, WS_EX_LEFT
     CONTROL         "", IDC_MICROBIAS, TRACKBAR_CLASS, WS_TABSTOP | TBS_AUTOTICKS | TBS_TOP, 435, 222, 95, 20, WS_EX_LEFT
-    PUSHBUTTON      "D3D9Client Credits", IDC_CREDITS, 5, 360, 80, 14, BS_FLAT, WS_EX_LEFT
+    PUSHBUTTON      "VulkanClient Credits", IDC_CREDITS, 5, 360, 80, 14, BS_FLAT, WS_EX_LEFT // not upstream: Vulkan in place of D3D9
     COMBOBOX        IDC_FONT, 270, 23, 80, 15, WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
     COMBOBOX        IDC_DEBUG, 270, 65, 80, 15, WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
     COMBOBOX        IDC_MIPMAPS, 263, 200, 91, 15, WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
@@ -511,7 +511,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
             VALUE "FileDescription", "Render engine plugin for Orbiter Space Flight Simulator"
             VALUE "FileVersion", "30.7.0.0"
             VALUE "InternalName", "D3D9Client"
-            VALUE "LegalCopyright", "Copyright © 2010 - 2017"
+            VALUE "LegalCopyright", "Copyright ï¿½ 2010 - 2017"
             VALUE "OriginalFilename", "D3D9Client.dll"
             VALUE "ProductName", "D3D9Client"
             VALUE "ProductVersion", "30.7.0.0"

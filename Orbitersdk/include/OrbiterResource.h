@@ -103,6 +103,9 @@ OAPIFUNC const RESIMAGE *oapiFindResImage (void *hModule, int resId);
 // image resource as a QImage (LoadBitmap/LoadIcon counterpart); caller owns the image
 OAPIFUNC QImage *oapiLoadResImage (void *hModule, int resId);
 
+// not upstream: makes a bitmap's surround (its corner colour, joined to the edge) transparent, for trees that follow the desktop theme
+OAPIFUNC void oapiClearImageBackground (QImage *img);
+
 // MENU/MENUEX resource (FindResource counterpart)
 OAPIFUNC const RESMENU *oapiFindResMenu (void *hModule, int resId);
 

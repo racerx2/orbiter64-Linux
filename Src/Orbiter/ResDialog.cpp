@@ -338,6 +338,44 @@ QImage *oapiLoadResImage (void *hModule, int resId)
 	return new QImage (img);
 }
 
+void oapiClearImageBackground (QImage *img)
+{
+	if (!img || img->isNull()) return;
+	*img = img->convertToFormat (QImage::Format_ARGB32);
+	const int w = img->width(), h = img->height();
+	const QRgb bg = img->pixel (0, 0);
+	const int bc[3] = {qRed (bg), qGreen (bg), qBlue (bg)};
+	std::vector<char> seen (w*h, 0);
+	std::vector<int> todo;
+	for (int x = 0; x < w; x++) { todo.push_back (x); todo.push_back ((h-1)*w + x); }
+	for (int y = 0; y < h; y++) { todo.push_back (y*w); todo.push_back (y*w + w-1); }
+	while (!todo.empty()) {
+		int i = todo.back(); todo.pop_back();
+		if (seen[i]) continue;
+		seen[i] = 1;
+		int x = i % w, y = i / w;
+		QRgb p = img->pixel (x, y);
+		int pc[3] = {qRed (p), qGreen (p), qBlue (p)};
+		double a = 0.0; // share of the pixel's own colour; the rest is the surround it was blended with
+		bool near = true;
+		for (int c = 0; c < 3; c++) {
+			if (std::abs (pc[c]-bc[c]) > 75) near = false;
+			if (pc[c] < bc[c]) a = std::max (a, (bc[c]-pc[c]) / (double)bc[c]);
+		}
+		if (!near) continue;
+		if (a < 1.0/255.0) img->setPixel (x, y, qRgba (0, 0, 0, 0));
+		else {
+			int f[3];
+			for (int c = 0; c < 3; c++) f[c] = std::clamp ((int)std::lround ((pc[c] - (1.0-a)*bc[c]) / a), 0, 255);
+			img->setPixel (x, y, qRgba (f[0], f[1], f[2], (int)std::lround (a*255.0)));
+		}
+		if (x > 0) todo.push_back (i-1);
+		if (x < w-1) todo.push_back (i+1);
+		if (y > 0) todo.push_back (i-w);
+		if (y < h-1) todo.push_back (i+w);
+	}
+}
+
 // LoadIcon counterpart for SS_ICON: the SM_CXICON (32x32) image of the .ico, else the first one scaled to it
 static QImage *LoadResIcon (void *hModule, int resId)
 {

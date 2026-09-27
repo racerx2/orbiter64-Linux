@@ -94,6 +94,7 @@ static void PostCommand (QWidget *hDlg, int id) // PostMessage (hDlg, WM_COMMAND
 static int AddTreeIcon (std::vector<QPixmap> &imglist, void *hInst, int resId) // ImageList_Add (imglist, LoadBitmap (hInst, resId), 0)
 {
 	QImage *bmp = oapiLoadResImage (hInst, resId);
+	oapiClearImageBackground (bmp); // not upstream: the white surround shows on a dark desktop theme; Windows' tree is always white
 	imglist.push_back (bmp ? QPixmap::fromImage (*bmp) : QPixmap());
 	delete bmp;
 	return (int)imglist.size()-1;

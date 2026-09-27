@@ -39,6 +39,7 @@ const char *htmlstyle = "<style type=""text/css"">body{font-family:Arial;font-si
 static QPixmap TreeIcon (void *hInst, int resId)
 {
 	QImage *img = oapiLoadResImage (hInst, resId);
+	oapiClearImageBackground (img); // not upstream: the white surround shows on a dark desktop theme; Windows' tree is always white
 	QPixmap pm = (img ? QPixmap::fromImage (*img) : QPixmap());
 	delete img;
 	return pm;

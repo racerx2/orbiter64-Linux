@@ -124,10 +124,16 @@ set_target_properties(CopyData
 	FOLDER Data
 )
 
-# hhc_fix.bat and pdftex_fix.bat left out: they work around Windows doc tool exit codes
+# hhc_fix.bat left out: hhc.py below always exits 0
 # not upstream: the Html Help compiler is cmake/hhc.py; its .chm is a zip of the project's pages, which Orbiter's help viewer reads
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(HHC_CMD ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/hhc.py)
+
+# =====================================================================================
+# work around pdftex returning an error because of doxygen bug
+
+set(PDFTEX_CMD ${CMAKE_CURRENT_BINARY_DIR}/cmake/pdftex_fix.sh) # pdftex_fix.bat as a shell script
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pdftex_fix.sh.in ${PDFTEX_CMD} @ONLY)
 
 set(OrbiterTgt Orbiter)
 set(ORBITER_LIB "") # no import library on ELF: modules bind the exe's exported oapi* symbols at dlopen

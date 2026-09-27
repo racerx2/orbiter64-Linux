@@ -1,3 +1,5 @@
+# not upstream: Doxygen runs HHC_LOCATION as one program, so the executable hhc.py itself (HHC_CMD is python + script)
+set(HHC_CMD ${ORBITER_SOURCE_ROOT_DIR}/cmake/hhc.py)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
 
 set(out ${ORBITER_BINARY_SDK_DIR}/doc/API_Reference.chm)
@@ -8,7 +10,7 @@ set(api_ref_out "")
 add_custom_command(
 	OUTPUT ${out}
 	DEPENDS ${doxysrc}
-	COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile 2> nul
+	COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile 2> /dev/null # nul is the Windows null device
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different html/API_Reference.chm ${out}
 	JOB_POOL htmlhelp
 )

@@ -158,7 +158,17 @@ void    SetEnvironmentVars ();
 // hMutex, hConsoleMutex left out: unused handles
 
 // =======================================================================
-// _matherr() left out: glibc has no math error hook (acos out of [-1,1] gives NaN, not 0 or Pi)
+// _matherr()
+// trap global math exceptions
+// glibc has no math error hook: the exe exports its own acos, which every module binds to, as the CRT took the exe's _matherr
+
+extern "C" __attribute__((visibility("default"))) double acos (double x) noexcept
+{
+	static double (*libm_acos)(double) = (double(*)(double))dlsym (RTLD_NEXT, "acos");
+	if (x < -1.0 || x > 1.0) // _DOMAIN
+		return (x < 0.0 ? Pi : 0.0);
+	return libm_acos (x);
+}
 
 
 // =======================================================================

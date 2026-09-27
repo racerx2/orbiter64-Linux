@@ -9,6 +9,11 @@
 #ifndef DI7FRAME_H
 #define DI7FRAME_H
 #define STRICT 1
+#ifndef __linux__
+#include <windows.h>
+#include <dinput.h>
+#include <d3d.h>
+#else // __linux__
 // DirectInput 8 counterpart: keyboard state fed from the render window's key events, joysticks read from evdev
 #include "OrbiterPlatform.h"
 #include <vector>
@@ -83,6 +88,7 @@ private:
 	std::vector<int> btncode;                    // evdev button codes in HID order
 	BYTE btn[128];
 };
+#endif // __linux__
 
 //-----------------------------------------------------------------------------
 // Name: CDIFramework7
@@ -90,50 +96,95 @@ private:
 //-----------------------------------------------------------------------------
 class CDIFramework7
 {
+#ifndef __linux__
+	LPDIRECTINPUT8       m_pDI;             // DInput object
+	LPDIRECTINPUTDEVICE8 m_pdidKbdDevice;   // keyboard device
+	LPDIRECTINPUTDEVICE8 m_pdidMouseDevice; // mouse device
+	LPDIRECTINPUTDEVICE8 m_pdidJoyDevice;   // joystick device
+	GUID                 m_guidJoystick;    // GUID for the joystick
+#else // __linux__
 	// LPDIRECTINPUT8 m_pDI left out: evdev needs no input system object
 	KeyboardDevice*      m_pdidKbdDevice;   // keyboard device
 	// m_pdidMouseDevice left out: mouse input arrives as window events
 	JoystickDevice*      m_pdidJoyDevice;   // joystick device
 	// m_guidJoystick left out: devices are picked by index into jList
+#endif // __linux__
 	BOOL                 m_bUseKbd;
 	BOOL                 m_bUseJoy;
 
 	struct JLIST {
+#ifndef __linux__
+		DIDEVICEINSTANCE*    descJoy;     // list of enumerated joystick devices
+#else // __linux__
 		JoyDeviceInstance*   descJoy;     // list of enumerated joystick devices
+#endif // __linux__
 		DWORD                nJoy;        // number of enumerated joysticks
 	} jList;
 
+#ifndef __linux__
+	static BOOL CALLBACK EnumJoysticksCallback (LPCDIDEVICEINSTANCE pInst,
+		VOID* pvContext);
+#else // __linux__
 	static bool EnumJoysticksCallback (const JoyDeviceInstance *pInst,
 		void* pvContext);
+#endif // __linux__
 
 public:
 	CDIFramework7();
 	~CDIFramework7();
 
+#ifndef __linux__
+	HRESULT Create (HINSTANCE hInst);
+#else // __linux__
 	int Create (void *hInst);
+#endif // __linux__
 	// Initialize the DirectInput objects
 
+#ifndef __linux__
+	VOID Destroy ();
+#else // __linux__
 	void Destroy ();
+#endif // __linux__
 	// Destroys devices and DI object
 
+#ifndef __linux__
+	VOID GetJoysticks (DIDEVICEINSTANCE **dev, DWORD *pdwCount);
+#else // __linux__
 	void GetJoysticks (JoyDeviceInstance **dev, DWORD *pdwCount);
+#endif // __linux__
 	// Returns the list of enumerated joysticks
 
 	DWORD NumJoysticks () const { return jList.nJoy; }
 	// number of enumerated joysticks
 
+#ifndef __linux__
+	HRESULT CreateDevice (HWND hWnd, LPDIRECTINPUT8 pDI,
+		LPDIRECTINPUTDEVICE8 pDIDevice, GUID guidDevice, const DIDATAFORMAT *pdidDataFormat,
+		DWORD dwFlags);
+
+	HRESULT CreateKbdDevice (HWND hWnd);
+	HRESULT CreateMouseDevice (HWND hWnd);
+	HRESULT CreateJoyDevice (HWND hWnd, DWORD idx = 0);
+#else // __linux__
 	// generic CreateDevice left out: each device type is created by its own function
 
 	int CreateKbdDevice (QWindow *hWnd);
 	// CreateMouseDevice left out: unused upstream; the mouse arrives as window events
 	int CreateJoyDevice (QWindow *hWnd, DWORD idx = 0);
+#endif // __linux__
 
 	void DestroyJoyDevice();
 	void DestroyDevices();
 
 	// accessor functions
+#ifndef __linux__
+	inline LPDIRECTINPUTDEVICE8 GetKbdDevice() { return m_pdidKbdDevice; }
+	inline LPDIRECTINPUTDEVICE8 GetMouseDevice() { return m_pdidMouseDevice; }
+	inline LPDIRECTINPUTDEVICE8 GetJoyDevice() { return m_pdidJoyDevice; }
+#else // __linux__
 	inline KeyboardDevice *GetKbdDevice() { return m_pdidKbdDevice; }
 	inline JoystickDevice *GetJoyDevice() { return m_pdidJoyDevice; }
+#endif // __linux__
 };
 
 #endif // !DI7FRAME_H

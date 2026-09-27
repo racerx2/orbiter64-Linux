@@ -1,14 +1,26 @@
 Include(FetchContent)
 
+if(NOT WIN32) # Linux port
 # v3.0.0-preview3 sizes a static array with MINSIGSTKSZ, which glibc 2.34+ turned into a sysconf() call
+endif() # NOT WIN32
+if(WIN32) # Windows: upstream
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.0.0-preview3
+)
+else() # Linux port
 FetchContent_Declare(
   Catch2
   GIT_REPOSITORY https://github.com/catchorg/Catch2.git
   GIT_TAG        v3.8.1
 )
+endif() # WIN32
 
+if(NOT WIN32) # Linux port
 # static Catch2: tracy.cmake turns BUILD_SHARED_LIBS on for everything after it
 set(BUILD_SHARED_LIBS OFF)
+endif() # NOT WIN32
 FetchContent_MakeAvailable(Catch2)
 
 # Utility function
@@ -45,6 +57,7 @@ function(add_test_file test_name)
 	set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
 endfunction()
 
+if(NOT WIN32) # Linux port
 # not upstream: unit tests for ported code that runs without the Orbiter exe; extra args are the port sources under test
 function(add_unit_test test_name)
 	add_executable(${test_name} "${test_name}.cpp" ${ARGN})
@@ -68,8 +81,10 @@ function(add_unit_test test_name)
 	set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
 endfunction()
 
+endif() # NOT WIN32
 # Register unit tests
 add_test_file(Lua.Interpreter)
+if(NOT WIN32) # Linux port
 # not upstream: LuaInterpreter.so imports the exe-side API (Orbiter.exe on Windows); functions bind lazily, the rest comes from test doubles
 target_sources(Lua.Interpreter PRIVATE Lua.Interpreter.Exe.cpp)
 set_target_properties(Lua.Interpreter PROPERTIES ENABLE_EXPORTS ON)
@@ -94,6 +109,7 @@ target_link_libraries(ResDialog.Test Qt6::Widgets DlgCtrl)
 orbiter_rc_resources(ResDialog.Test ${ORBITER_SOURCE_DIR}/Orbiter.rc EXE SYMBOL OrbiterResources)
 orbiter_rc_resources(ResDialog.Test ${CMAKE_CURRENT_SOURCE_DIR}/ResMenu.Test.rc SYMBOL TestMenuResources)
 set_tests_properties(ResDialog.Test PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
+endif() # NOT WIN32
 
 if (BUILD_ORBITER_SERVER)
 

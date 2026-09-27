@@ -21,7 +21,9 @@
 
 class RadiatorControl;
 
+#ifdef __linux__
 class CoolantLoop; // g++: a friend declaration does not declare the name
+#endif // __linux__
 class ThermalSubsystem: public DGSubsystem {
 	friend class CoolantLoop;
 
@@ -111,10 +113,12 @@ private:
 // Coolant loop
 // ==============================================================
 
+#ifdef __linux__
 class CoolantLoopDisplay;
 class CoolantPumpSwitch;
 class CoolantPumpDial;
 class CoolantReftempDial;
+#endif // __linux__
 class CoolantLoop: public DGSubsystem {
 	friend class CoolantLoopDisplay;
 	friend class CoolantPumpSwitch;
@@ -246,7 +250,9 @@ private:
 // Radiator control
 // ==============================================================
 
+#ifdef __linux__
 class RadiatorSwitch;
+#endif // __linux__
 class RadiatorControl: public DGSubsystem {
 	friend class RadiatorSwitch;
 

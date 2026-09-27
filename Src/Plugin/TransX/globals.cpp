@@ -18,13 +18,25 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
+#ifndef __linux__
+#define STRICT
+#else // __linux__
 // STRICT left out: windows.h handle type-checking switch
+#endif // __linux__
 
+#ifndef __linux__
+#include <windows.h>
+#else // __linux__
 // windows.h left out: the Win32 types come from OrbiterPlatform.h
 #include <cstring> // str* functions (windows.h brought in string.h)
+#endif // __linux__
 #include <cstdio>
 #include <cmath>
+#ifndef __linux__
+#include "orbitersdk.h"
+#else // __linux__
 #include "Orbitersdk.h"
+#endif // __linux__
 #include "shiplist.h"
 #include <list>
 
@@ -35,7 +47,11 @@ using namespace std;
 // ==============================================================
 // API interface
 
+#ifndef __linux__
+DLLCLBK void InitModule (HINSTANCE hDLL)
+#else // __linux__
 DLLCLBK void InitModule (void *hDLL)
+#endif // __linux__
 {
     static char name[] = "TransX";
 	MFDMODESPECEX spec;
@@ -44,7 +60,11 @@ DLLCLBK void InitModule (void *hDLL)
 	spec.context = NULL;
 	//Code contributed by Dave Robotham
 	ifstream kstream;
+#ifndef __linux__
+	kstream.open("Config\\MFD\\TransX.cfg",NULL);
+#else // __linux__
 	kstream.open(oapiResolvePath("Config/MFD/TransX.cfg"),ios_base::openmode(0)); // NULL mode: g++ has no int to openmode conversion
+#endif // __linux__
 	if( kstream )
 	{
 		try
@@ -98,7 +118,11 @@ DLLCLBK void InitModule (void *hDLL)
 
 }//end code from Dave Robotham
 
+#ifndef __linux__
+DLLCLBK void ExitModule (HINSTANCE hDLL)
+#else // __linux__
 DLLCLBK void ExitModule (void *hDLL)
+#endif // __linux__
 {
 	oapiUnregisterMFDMode (mode);
 }
@@ -121,7 +145,11 @@ DLLCLBK void opcCloseRenderViewport()
 
 static int choose = 0;
 
+#ifndef __linux__
+DLLCLBK void opcOpenRenderViewport(HWND renderWnd,DWORD width,DWORD height,BOOL fullscreen)
+#else // __linux__
 DLLCLBK void opcOpenRenderViewport(QWindow *renderWnd,DWORD width,DWORD height,BOOL fullscreen)
+#endif // __linux__
 {
 	mapfunction *temp=mapfunction::getthemap();//kicks off the process of map creation
 	choose = 0;

@@ -8,6 +8,16 @@
 set(PRJ Atlantis)
 set(MESH_DIR ${ROOT_DIR}/Meshes/Atlantis)
 
+if(WIN32) # Windows: upstream
+set(Sources
+	AscentAP.cpp
+	Atlantis.cpp
+	PlBayOp.cpp
+	../Common.cpp
+	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.cpp
+	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.cpp
+)
+else() # Linux port
 set(Sources
 	AscentAP.cpp
 	Atlantis.cpp
@@ -15,18 +25,44 @@ set(Sources
 	../Common.cpp
 	# Common/Dialog/Graph.cpp and TabDlg.cpp left out: not installed, Atlantis no longer uses them
 )
+endif() # WIN32
 
+if(WIN32) # Windows: upstream
+set(Headers
+	AscentAP.h
+	Atlantis.h
+	PlBayOp.h
+	resource.h
+	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.h
+	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.h
+)
+else() # Linux port
 set(Headers
 	AscentAP.h
 	Atlantis.h
 	PlBayOp.h
 	# resource.h, Common/Dialog/Graph.h and TabDlg.h left out: not installed, Atlantis no longer uses them
 )
+endif() # WIN32
+if(WIN32) # Windows: upstream
+set(Other
+	Atlantis.rc
+	down.ico
+	ico00001.ico
+	ico00002.ico
+	ico00003.ico
+	ico00004.ico
+	icon1.ico
+	${MESH_DIR}/Atlantis.msh
+	${MESH_DIR}/AtlantisVC.msh
+)
+else() # Linux port
 set(Other
 	# Atlantis.rc and its icons left out: not installed, Atlantis no longer has resources
 	${MESH_DIR}/Atlantis.msh
 	${MESH_DIR}/AtlantisVC.msh
 )
+endif() # WIN32
 	
 source_group(APIHeaders FILES ${APIHeaders})
 source_group(Headers FILES ${Headers})
@@ -67,9 +103,18 @@ add_dependencies(${PRJ}
 target_link_libraries(${PRJ} debug ${DebugLib} Atlantis_Tank)
 target_link_libraries(${PRJ} optimized ${ReleaseLib} Atlantis_Tank)
 
+if(WIN32) # Windows: upstream
+set_target_properties(${PRJ}
+	PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
+	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
+	FOLDER Atlantis
+)
+else() # Linux port
 set_target_properties(${PRJ}
 	PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
 	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
 	FOLDER Atlantis
 )
+endif() # WIN32

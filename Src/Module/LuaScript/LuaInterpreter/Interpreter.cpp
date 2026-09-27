@@ -9,6 +9,7 @@
 #include "DrawAPI.h"
 #include "gcCoreAPI.h"
 #include <list>
+#ifdef __linux__
 #include <cstring> // windows.h brought the C string functions
 #include <iterator>
 #include <mutex>
@@ -18,10 +19,12 @@
 #include <strings.h>
 #include <string>
 #include <algorithm>
+#endif // __linux__
 
 using std::min;
 using std::max;
 
+#ifdef __linux__
 // not upstream: Win32 mutex semantics (owner thread, recursive, timed wait, only the owner releases)
 class ExecMutex {
 public:
@@ -51,6 +54,7 @@ private:
 	int count;
 };
 
+#endif // __linux__
 typedef struct {
 	NTVERTEX *vtx;  // vertex array
 	int nVtx;       // number of vertices in the array
@@ -105,8 +109,13 @@ Interpreter::Interpreter ()
 	lua_pushlightuserdata (L, this);
 	lua_setfield (L, LUA_REGISTRYINDEX, "interp");
 
+#ifndef __linux__
+	hExecMutex = CreateMutex (NULL, TRUE, NULL);
+	hWaitMutex = CreateMutex (NULL, FALSE, NULL);
+#else // __linux__
 	hExecMutex = new ExecMutex (true);  // CreateMutex, owned by the creating thread
 	hWaitMutex = new ExecMutex (false); // CreateMutex
+#endif // __linux__
 
 }
 
@@ -150,6 +159,10 @@ Interpreter::~Interpreter ()
 {
 	lua_close (L);
 
+#ifndef __linux__
+	if (hExecMutex) CloseHandle (hExecMutex);
+	if (hWaitMutex) CloseHandle (hWaitMutex);
+#else // __linux__
 	if (hExecMutex) delete hExecMutex; // CloseHandle
 	if (hWaitMutex) delete hWaitMutex;
 }
@@ -243,13 +256,16 @@ static void SetPackagePaths (lua_State *L)
 	SetPackagePath (L, "path", LUA_PATH, "./?.lua;./lua/?.lua;./lua/?/init.lua;./?/init.lua");
 	SetPackagePath (L, "cpath", LUA_CPATH, "./?.so;./loadall.so");
 	lua_pop (L, 1);
+#endif // __linux__
 }
 
 void Interpreter::Initialise ()
 {
 	luaL_openlibs (L);    // load the default libraries
+#ifdef __linux__
 	ResolveScriptPaths (L); // not upstream: see above
 	SetPackagePaths (L);    // not upstream: see above
+#endif // __linux__
 	LoadAPI ();           // load default set of API interface functions
 	LoadVesselAPI ();     // load vessel-specific part of API
 	LoadLightEmitterMethods (); // load light source methods
@@ -508,11 +524,19 @@ const char *Interpreter::lua_tostringex (lua_State *L, int idx, char *cbuf)
 		return cbuf;
 	} else if (lua_islightuserdata (L,idx)) {
 		void *p = lua_touserdata(L,idx);
+#ifndef __linux__
+		sprintf (cbuf, "0x%08p [data]", p);
+#else // __linux__
 		sprintf (cbuf, "%p [data]", p); // glibc's %p writes the 0x itself
+#endif // __linux__
 		return cbuf;
 	} else if (lua_isuserdata (L,idx)) {
 		void *p = lua_touserdata(L,idx);
+#ifndef __linux__
+		sprintf (cbuf, "0x%08p [object]", p);
+#else // __linux__
 		sprintf (cbuf, "%p [object]", p); // glibc's %p writes the 0x itself
+#endif // __linux__
 		return cbuf;
 	} else if (lua_istable (L, idx)) {
 		if (idx < 0) idx--;
@@ -816,15 +840,25 @@ void Interpreter::WaitExec (DWORD timeout)
 {
 	// Called by orbiter thread or interpreter thread to wait its turn
 	// Orbiter waits for the script for 1 second to return
+#ifndef __linux__
+	WaitForSingleObject (hWaitMutex, timeout); // wait for synchronisation mutex
+	WaitForSingleObject (hExecMutex, timeout); // wait for execution mutex
+	ReleaseMutex (hWaitMutex);              // release synchronisation mutex
+#else // __linux__
 	hWaitMutex->Wait (timeout); // wait for synchronisation mutex
 	hExecMutex->Wait (timeout); // wait for execution mutex
 	hWaitMutex->Release ();     // release synchronisation mutex
+#endif // __linux__
 }
 
 void Interpreter::EndExec ()
 {
 	// called by orbiter thread or interpreter thread to hand over control
+#ifndef __linux__
+	ReleaseMutex (hExecMutex);
+#else // __linux__
 	hExecMutex->Release ();
+#endif // __linux__
 }
 
 void Interpreter::frameskip (lua_State *L)
@@ -907,7 +941,11 @@ void Interpreter::LoadAPI ()
 		//{"api", help_api},
 		{NULL, NULL}
 	};
+#ifndef __linux__
+	for (int i = 0; i < ARRAYSIZE(glob) && glob[i].name; i++) {
+#else // __linux__
 	for (int i = 0; i < (int)std::size(glob) && glob[i].name; i++) { // ARRAYSIZE
+#endif // __linux__
 		lua_pushcfunction (L, glob[i].func);
 		lua_setglobal (L, glob[i].name);
 	}
@@ -4003,8 +4041,12 @@ Do not use it in published modules!
 int Interpreter::oapiExit(lua_State* L)
 {
 	auto code = lua_tointeger(L, 1);
+#ifndef __linux__
+	exit(code);
+#else // __linux__
 	fflush(NULL);
 	_Exit(code); // exit() on the script thread runs the modules' destructors while the main thread runs on
+#endif // __linux__
 	return 0; // compiler warnings
 }
 
@@ -6171,7 +6213,11 @@ int Interpreter::oapi_set_cameramode (lua_State *L)
 	ASSERT_STRING(L,-1);
 	strcpy(modestr, lua_tostring(L,-1));
 	lua_pop(L,1);
+#ifndef __linux__
+	if (!_stricmp(modestr, "ground")) {
+#else // __linux__
 	if (!strcasecmp(modestr, "ground")) {
+#endif // __linux__
 
 		lua_getfield(L,1,"ref");
 		ASSERT_STRING(L,-1);
@@ -6207,7 +6253,11 @@ int Interpreter::oapi_set_cameramode (lua_State *L)
 		lua_pop(L,1);
 		cm = new CameraMode_Ground();
 
+#ifndef __linux__
+	} else if (!_stricmp(modestr, "track")) {
+#else // __linux__
 	} else if (!strcasecmp(modestr, "track")) {
+#endif // __linux__
 
 		lua_getfield(L,1,"trackmode");
 		ASSERT_STRING(L,-1);
@@ -6234,7 +6284,11 @@ int Interpreter::oapi_set_cameramode (lua_State *L)
 		lua_pop(L,1);
 		cm = new CameraMode_Track();
 
+#ifndef __linux__
+	} else if (!_stricmp(modestr, "cockpit")) {
+#else // __linux__
 	} else if (!strcasecmp(modestr, "cockpit")) {
+#endif // __linux__
 
 		lua_getfield(L,1,"cockpitmode");
 		if (lua_isstring(L,-1)) {
@@ -6645,7 +6699,11 @@ int Interpreter::oapi_create_animationcomponent (lua_State *L)
 	}
 	lua_pop(L,1); // pop table of group indices
 
+#ifndef __linux__
+	if (!_stricmp(typestr, "rotation")) {
+#else // __linux__
 	if (!strcasecmp(typestr, "rotation")) {
+#endif // __linux__
 		lua_getfield(L,1,"ref");
 		ASSERT_VECTOR(L,-1);
 		VECTOR3 ref = lua_tovector(L,-1);
@@ -6659,13 +6717,21 @@ int Interpreter::oapi_create_animationcomponent (lua_State *L)
 		double angle = lua_tonumber(L,-1);
 		lua_pop(L,1);
 		trans = new MGROUP_ROTATE(mesh,grp,ngrp,ref,axis,(float)angle);
+#ifndef __linux__
+	} else if (!_stricmp(typestr, "translation")) {
+#else // __linux__
 	} else if (!strcasecmp(typestr, "translation")) {
+#endif // __linux__
 		lua_getfield(L,1,"shift");
 		ASSERT_VECTOR(L,-1);
 		VECTOR3 shift = lua_tovector(L,-1);
 		lua_pop(L,1);
 		trans = new MGROUP_TRANSLATE(mesh,grp,ngrp,shift);
+#ifndef __linux__
+	} else if (!_stricmp(typestr, "scaling")) {
+#else // __linux__
 	} else if (!strcasecmp(typestr, "scaling")) {
+#endif // __linux__
 		lua_getfield(L,1,"ref");
 		ASSERT_VECTOR(L,-1);
 		VECTOR3 ref = lua_tovector(L,-1);

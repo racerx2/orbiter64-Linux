@@ -7,17 +7,27 @@
 #include <stdio.h>
 #include "OrbiterAPI.h"
 #include "DlgMgr.h"
+#ifndef __linux__
+#include "Resource.h"
+#else // __linux__
 #include "resource.h"
+#endif // __linux__
 #include "Orbiter.h"
 #include "Log.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extras.h"
+#ifndef __linux__
+#include "imgui_impl_win32.h"
+#else // __linux__
 #include "imgui_impl_qt.h"
+#endif // __linux__
 #include "implot.h"
+#ifdef __linux__
 #include <QApplication>
 #include <QWidget>
 #include <QWindow>
+#endif // __linux__
 #include "IconsFontAwesome6.h"
 #include <chrono>
 #include <algorithm>
@@ -30,17 +40,45 @@ using namespace oapi;
 extern char DBG_MSG[256];
 extern Orbiter *g_pOrbiter;
 
+#ifndef __linux__
+static int x_sizeframe = GetSystemMetrics (SM_CXSIZEFRAME);
+static int y_sizeframe = GetSystemMetrics (SM_CYSIZEFRAME);
+static int x_fixedframe = GetSystemMetrics (SM_CXFIXEDFRAME);
+static int y_fixedframe = GetSystemMetrics (SM_CYFIXEDFRAME);
+
+#endif // !__linux__
 static bool doflip = true;
 static void RenderNotifications();
 
+#ifndef __linux__
+// dialog thread messages
+#define TM_OPENDIALOG WM_USER
+#endif // !__linux__
 #define DLG_CAPTIONBUTTON (DLG_CAPTIONCLOSE|DLG_CAPTIONHELP)
 
+#ifndef __linux__
+struct THREADDATA {
+	HINSTANCE hInst;
+	HWND hParent;
+	int id;
+	DWORD flag;
+	DLGPROC procDlg;
+	void *context;
+} g_tdata;
+
+HWND g_hDlg;       // dialog handle passed from dlg to main thread
+HANDLE hCreateDlg; // used for synchronising dialog creation
+#endif // !__linux__
 static DIALOGENTRY *de_create = 0;
 
 // ==================================================================
 // class DialogManager
 
+#ifndef __linux__
+DialogManager::DialogManager (Orbiter *orbiter, HWND hAppWnd)
+#else // __linux__
 DialogManager::DialogManager (Orbiter *orbiter, QWindow *hAppWnd)
+#endif // __linux__
 {
 	pOrbiter = orbiter;
 	gc = orbiter->GetGraphicsClient();
@@ -59,7 +97,11 @@ DialogManager::~DialogManager ()
 }
 
 
+#ifndef __linux__
+void DialogManager::Init (HWND hAppWnd)
+#else // __linux__
 void DialogManager::Init (QWindow *hAppWnd)
+#endif // __linux__
 {
 	Clear();
 	hWnd        = hAppWnd;
@@ -88,21 +130,33 @@ void DialogManager::Clear ()
 
 // =======================================================================
 
+#ifndef __linux__
+HWND DialogManager::OpenDialogEx (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+#else // __linux__
 QWidget *DialogManager::OpenDialogEx (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
+#endif // __linux__
 {
 	if ((flag & DLG_ALLOWMULTI) == 0)
 		if (IsEntry (hInst, id)) return NULL; // already open, and multiple instances not allowed
 	return AddEntry (hInst, id, hParent, pDlg, flag, context);
 }
 
+#ifndef __linux__
+void DialogManager::OpenDialogAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+#else // __linux__
 void DialogManager::OpenDialogAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
+#endif // __linux__
 {
 	if ((flag & DLG_ALLOWMULTI) == 0)
 		if (IsEntry (hInst, id)) return; // already open, and multiple instances not allowed
 	AddEntryAsync (hInst, id, hParent, pDlg, flag, context);
 }
 
+#ifndef __linux__
+bool DialogManager::CloseDialog (HWND hDlg)
+#else // __linux__
 bool DialogManager::CloseDialog (QWidget *hDlg)
+#endif // __linux__
 {
 	if (DelEntry (hDlg, 0, 0)) {
 		//DestroyWindow (hDlg);
@@ -111,13 +165,25 @@ bool DialogManager::CloseDialog (QWidget *hDlg)
 	return false;
 }
 
+#ifndef __linux__
+void *DialogManager::GetDialogContext (HWND hDlg)
+#else // __linux__
 void *DialogManager::GetDialogContext (QWidget *hDlg)
+#endif // __linux__
 {
+#ifndef __linux__
+	DialogWin *dlg = (DialogWin*)GetWindowLongPtr (hDlg, DWLP_USER);
+#else // __linux__
 	DialogWin *dlg = (hDlg ? (DialogWin*)hDlg->property ("DialogWin").value<void*>() : 0);
+#endif // __linux__
 	return (dlg ? dlg->GetContext() : 0);
 }
 
+#ifndef __linux__
+DIALOGENTRY *DialogManager::AddWindow (HINSTANCE hInst, HWND hWnd, HWND hParent, DWORD flag)
+#else // __linux__
 DIALOGENTRY *DialogManager::AddWindow (void *hInst, QWidget *hWnd, QWindow *hParent, DWORD flag)
+#endif // __linux__
 {
 	DIALOGENTRY *tmp = new DIALOGENTRY; TRACENEW
 	de_create = tmp;
@@ -140,12 +206,20 @@ DIALOGENTRY *DialogManager::AddWindow (void *hInst, QWidget *hWnd, QWindow *hPar
 	return tmp;
 }
 
+#ifndef __linux__
+HWND DialogManager::AddEntry (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+#else // __linux__
 QWidget *DialogManager::AddEntry (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
+#endif // __linux__
 {
 	return AddEntry (new DialogWin (hInst, hParent, id, pDlg, flag, context));
 }
 
+#ifndef __linux__
+HWND DialogManager::AddEntry (DialogWin *dlg)
+#else // __linux__
 QWidget *DialogManager::AddEntry (DialogWin *dlg)
+#endif // __linux__
 {
 	DIALOGENTRY *tmp = new DIALOGENTRY; TRACENEW
 	de_create = tmp;
@@ -159,18 +233,44 @@ QWidget *DialogManager::AddEntry (DialogWin *dlg)
 	lastEntry = tmp;
 	nEntry++;
 	de_create = 0;
+#ifndef __linux__
+	HWND hWnd = tmp->dlg->OpenWindow(); // is this the best place to create the window?
+#else // __linux__
 	QWidget *hWnd = tmp->dlg->OpenWindow(); // is this the best place to create the window?
+#endif // __linux__
 	AddList (hWnd);
 	return hWnd;
 }
 
+#ifndef __linux__
+void DialogManager::AddEntryAsync (HINSTANCE hInst, int id, HWND hParent, DLGPROC pDlg, DWORD flag, void *context)
+#else // __linux__
 void DialogManager::AddEntryAsync (void *hInst, int id, QWindow *hParent, DLGINIT pDlg, DWORD flag, void *context)
+#endif // __linux__
 {
+#ifndef __linux__
+#ifdef USEDLGTHREAD
+	g_tdata.hInst = hInst;
+	g_tdata.hParent = hParent;
+	g_tdata.id = id;
+	g_tdata.flag = flag;
+	g_tdata.procDlg = pDlg;
+	g_tdata.context = context;
+	PostThreadMessage (thid, TM_OPENDIALOG, (WPARAM)&g_tdata, 0);
+#else
+	AddEntry (hInst, id, hParent, pDlg, flag, context);
+#endif
+#else // __linux__
 	// widgets live on the GUI thread, so there is no separate dialog thread (upstream's USEDLGTHREAD is off as well)
 	AddEntry (hInst, id, hParent, pDlg, flag, context);
+#endif // __linux__
 }
 
+#ifndef __linux__
+bool DialogManager::DelEntry (HWND hDlg, HINSTANCE hInst, int id)
+#else // __linux__
 bool DialogManager::DelEntry (QWidget *hDlg, void *hInst, int id)
+#endif // __linux__
 {
 	DIALOGENTRY *tmp;
 	for (tmp = firstEntry; tmp; tmp = tmp->next) {
@@ -178,9 +278,15 @@ bool DialogManager::DelEntry (QWidget *hDlg, void *hInst, int id)
 		if (hDlg && hDlg != dlg->GetHwnd()) continue;
 		if (hInst && hInst != dlg->GetHinst()) continue;
 		if (id && id != dlg->GetResId()) continue;
+#ifdef __linux__
 		QWidget *hWnd = dlg->GetHwnd();
+#endif // __linux__
 		delete dlg;
+#ifndef __linux__
+		DelList (hDlg);
+#else // __linux__
 		DelList (hWnd);
+#endif // __linux__
 		if (tmp == firstEntry) firstEntry = tmp->next;
 		if (tmp == lastEntry)  lastEntry  = tmp->prev;
 		if (tmp->prev) tmp->prev->next = tmp->next;
@@ -192,12 +298,24 @@ bool DialogManager::DelEntry (QWidget *hDlg, void *hInst, int id)
 	return false;
 }
 
+#ifndef __linux__
+void DialogManager::AddList (HWND hWnd)
+#else // __linux__
 void DialogManager::AddList (QWidget *hWnd)
+#endif // __linux__
 {
 	if (nList == nListBuf) { // grow buffer
+#ifndef __linux__
+		HWND *tmp = new HWND[nListBuf += 16];
+#else // __linux__
 		QWidget **tmp = new QWidget*[nListBuf += 16];
+#endif // __linux__
 		if (nList) {
+#ifndef __linux__
+			memcpy (tmp, DlgList, nList*sizeof(HWND));
+#else // __linux__
 			memcpy (tmp, DlgList, nList*sizeof(QWidget*));
+#endif // __linux__
 			delete []DlgList;
 		}
 		DlgList = tmp;
@@ -205,7 +323,11 @@ void DialogManager::AddList (QWidget *hWnd)
 	DlgList[nList++] = hWnd;
 }
 
+#ifndef __linux__
+void DialogManager::DelList (HWND hWnd)
+#else // __linux__
 void DialogManager::DelList (QWidget *hWnd)
+#endif // __linux__
 {
 	DWORD i;
 	for (i = 0; i < nList; i++) {
@@ -219,7 +341,11 @@ void DialogManager::DelList (QWidget *hWnd)
 	}
 }
 
+#ifndef __linux__
+HWND DialogManager::GetNextEntry (HWND hWnd) const
+#else // __linux__
 QWidget *DialogManager::GetNextEntry (QWidget *hWnd) const
+#endif // __linux__
 {
 	if (!hWnd) {
 		if (firstEntry) {
@@ -238,7 +364,11 @@ QWidget *DialogManager::GetNextEntry (QWidget *hWnd) const
 	}
 }
 
+#ifndef __linux__
+HWND DialogManager::IsEntry (HINSTANCE hInst, int id)
+#else // __linux__
 QWidget *DialogManager::IsEntry (void *hInst, int id)
+#endif // __linux__
 {
 	DIALOGENTRY *tmp = firstEntry;
 	while (tmp) {
@@ -250,12 +380,20 @@ QWidget *DialogManager::IsEntry (void *hInst, int id)
 	return 0;
 }
 
+#ifndef __linux__
+bool DialogManager::AddTitleButton (DWORD msg, HBITMAP hBmp, DWORD flag)
+#else // __linux__
 bool DialogManager::AddTitleButton (DWORD msg, QImage *hBmp, DWORD flag)
+#endif // __linux__
 {
 	return DialogWin::Create_AddTitleButton (msg, hBmp, flag);
 }
 
+#ifndef __linux__
+DWORD DialogManager::GetTitleButtonState (HWND hDlg, DWORD msg)
+#else // __linux__
 DWORD DialogManager::GetTitleButtonState (QWidget *hDlg, DWORD msg)
+#endif // __linux__
 {
 	DIALOGENTRY *tmp;
 	for (tmp = firstEntry; tmp; tmp = tmp->next)
@@ -264,7 +402,11 @@ DWORD DialogManager::GetTitleButtonState (QWidget *hDlg, DWORD msg)
 	return 0;
 }
 
+#ifndef __linux__
+bool DialogManager::SetTitleButtonState (HWND hDlg, DWORD msg, DWORD state)
+#else // __linux__
 bool DialogManager::SetTitleButtonState (QWidget *hDlg, DWORD msg, DWORD state)
+#endif // __linux__
 {
 	state = (state ? 1:0);
 	if (DialogWin::Create_SetTitleButtonState (msg, state)) return true;
@@ -294,11 +436,26 @@ void DialogManager::BroadcastMessage (DWORD msg, void *data)
 // Name: OrbiterDefDialogProc()
 // Desc: Default message handler for orbiter dialog boxes
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+INT_PTR OrbiterDefDialogProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+#else // __linux__
 bool OrbiterDefDialogProc (QWidget *hDlg, QEvent *event)
+#endif // __linux__
 {
+#ifndef __linux__
+	switch (uMsg) {
+	case WM_SETCURSOR:
+#else // __linux__
 	switch (event->type()) {
 	case QEvent::Enter: {
+#endif // __linux__
 		// implements "focus follows mouse" behaviour
+#ifndef __linux__
+		if (!g_pOrbiter->StickyFocus() && g_pOrbiter->Cfg()->CfgUIPrm.MouseFocusMode == 2 && GetFocus() != hDlg &&
+			!IsChild (hDlg, GetFocus()) && GetParent (hDlg) == g_pOrbiter->GetRenderWnd()) {
+				SetFocus (hDlg);
+				return FALSE;
+#else // __linux__
 		QWidget *focus = QApplication::focusWidget();
 		QWindow *owner = (hDlg->windowHandle() ? hDlg->windowHandle()->transientParent() : NULL);
 		if (!g_pOrbiter->StickyFocus() && g_pOrbiter->Cfg()->CfgUIPrm.MouseFocusMode == 2 && focus != hDlg &&
@@ -306,12 +463,34 @@ bool OrbiterDefDialogProc (QWidget *hDlg, QEvent *event)
 				hDlg->activateWindow();
 				hDlg->setFocus();
 				return false;
+#endif // __linux__
 		}
+#ifndef __linux__
+		break;
+	case WM_NCLBUTTONDBLCLK: {
+		// implements window minimisation on title bar double-click
+		DialogWin *dlg = (DialogWin*)GetWindowLongPtr (hDlg, DWLP_USER);
+		if (dlg) dlg->ToggleShrink();
+#endif // !__linux__
 		} break;
+#ifndef __linux__
+
+	// *** Create a timer to force frame updates during dialog box moves ***
+	case WM_ENTERSIZEMOVE:
+		SetTimer (hDlg, 0xff, 1, NULL);
+		return 0;
+	case WM_EXITSIZEMOVE:
+		KillTimer (hDlg, 0xff);
+		return 0;
+	case WM_TIMER:
+		if (wParam == 0xff) g_pOrbiter->SingleFrame();
+		return 0;
+#else // __linux__
 	// title bar double-clicks (window shrinking) and the modal move loop (frame updates during dialog moves)
 	// belong to the window manager: neither reaches the application
 	default:
 		break;
+#endif // __linux__
 
 	// *** Provide custom buttons in the window title bar ***
 //	case WM_SETTEXT:
@@ -334,20 +513,58 @@ bool OrbiterDefDialogProc (QWidget *hDlg, QEvent *event)
 	//	SetBkColor (hDC, 0x808080);
 	//	} return (INT_PTR)GetStockObject (GRAY_BRUSH);
 	}
+#ifndef __linux__
+	return FALSE;
+#else // __linux__
 	return false;
+#endif // __linux__
 }
 
 // ====================================================================
 // Tread management for dialog thread
 // ====================================================================
 
+#ifdef __linux__
 // Qt widgets can only be created on the GUI thread, so dialogs are opened there directly (see AddEntryAsync)
+#endif // __linux__
 void DialogManager::StartDialogThread ()
 {
+#ifndef __linux__
+	DWORD WINAPI DlgThreadProc (void *data);
+	hThread = CreateThread (NULL, 2048, DlgThreadProc, this, 0, &thid);
+	hCreateDlg = CreateEvent (NULL, FALSE, FALSE, NULL);
+#endif // !__linux__
 }
 
 void DialogManager::DestroyDialogThread ()
 {
+#ifndef __linux__
+	PostThreadMessage (thid, WM_QUIT, 0, 0);
+	CloseHandle (hThread);
+	CloseHandle (hCreateDlg);
+}
+
+DWORD WINAPI DlgThreadProc (void *data)
+{
+	DialogManager *dlgmgr = (DialogManager*)data;
+	MSG msg;
+	void DoDialog (THREADDATA *tdata);
+
+	while (GetMessage (&msg, NULL, 0, 0)) {
+		switch (msg.message) {
+		case TM_OPENDIALOG: {
+			THREADDATA *tdata = (THREADDATA*)msg.wParam;
+			dlgmgr->AddEntry (tdata->hInst, tdata->id, tdata->hParent, tdata->procDlg, tdata->flag, tdata->context);
+			} break;
+		default:
+			TranslateMessage (&msg);
+			DispatchMessage (&msg);
+			break;
+		}
+	}
+
+	return 0;
+#endif // !__linux__
 }
 
 // ====================================================================
@@ -487,7 +704,11 @@ void DialogManager::InitImGui()
 	monoFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_MonospacedFontFile, prm.ImGui_FontSize);
 	manuscriptFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
 
+#ifndef __linux__
+	ImGui_ImplWin32_Init(hWnd);
+#else // __linux__
 	ImGui_ImplQt_Init(hWnd);
+#endif // __linux__
 	gc->clbkImGuiInit();
 }
 
@@ -496,7 +717,11 @@ void DialogManager::ShutdownImGui()
 	if(!gc) return;
 
 	gc->clbkImGuiShutdown();
+#ifndef __linux__
+	ImGui_ImplWin32_Shutdown();
+#else // __linux__
 	ImGui_ImplQt_Shutdown();
+#endif // __linux__
 	ImPlot::DestroyContext();
 	ImGui::DestroyContext();
 }
@@ -506,7 +731,11 @@ void DialogManager::ImGuiNewFrame()
 	if(!gc) return;
 
 	gc->clbkImGuiNewFrame();
+#ifndef __linux__
+	ImGui_ImplWin32_NewFrame();
+#else // __linux__
 	ImGui_ImplQt_NewFrame();
+#endif // __linux__
 	ImGui::NewFrame();
 
 	// Focus-follows-mouse: when the mouse is not over any ImGui window,
@@ -913,7 +1142,11 @@ namespace ImGui {
 		ImGui::PopStyleColor(2);
 		ImGui::PopStyleVar();
 		if(tooltip && ImGui::IsItemHovered())
+#ifndef __linux__
+			ImGui::SetTooltip(tooltip);
+#else // __linux__
 			ImGui::SetTooltip("%s", tooltip);
+#endif // __linux__
 		ImGui::PopClipRect();
         g.LastItemData = last_item_backup;
 		return ret;

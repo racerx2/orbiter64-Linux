@@ -1,4 +1,46 @@
 ## irrKlang
+if(WIN32) # Windows: upstream
+if(NOT IRRKLANG_DIR)
+	set(IRRKLANG_DIR ${EXTERN_DIR}/irrKlang/${ARCH})
+
+	if(NOT EXISTS ${IRRKLANG_DIR})
+		if(BUILD64)
+			set(IRRKLANG_URL https://web.archive.org/web/20250213015920/https://www.ambiera.at/downloads/irrKlang-64bit-1.6.0.zip)
+		else()
+			set(IRRKLANG_URL https://web.archive.org/web/20250225180248/http://www.ambiera.at/downloads/irrKlang-32bit-1.6.0.zip)
+		endif()
+
+		include(FetchContent)
+		FetchContent_Declare(irrKlang
+			URL ${IRRKLANG_URL}
+			SOURCE_DIR ${IRRKLANG_DIR}
+			DOWNLOAD_EXTRACT_TIMESTAMP ON
+		)
+
+		message("Downloading irrKlang from ${IRRKLANG_URL} ...")
+		FetchContent_MakeAvailable(irrKlang)
+
+	else()
+		message("Found existing irrKlang at ${IRRKLANG_DIR}")
+	endif()
+
+elseif(NOT EXISTS ${IRRKLANG_DIR})
+	message(FATAL_ERROR "IRRKLANG_DIR does not exist")
+endif()
+
+if(BUILD64)
+	set(IRRKLANG_BIN_DIR ${IRRKLANG_DIR}/bin/winx64-visualStudio)
+	set(IRRKLANG_LIB_DIR ${IRRKLANG_DIR}/lib/Winx64-visualStudio)
+else()
+	# because of a bug in the 32bit version of irrKlang (it has hidden "__MACOSX" dir),
+	# CMake does not strip the top-level directory
+	string(APPEND IRRKLANG_DIR /irrKlang-1.6.0)
+
+	set(IRRKLANG_BIN_DIR ${IRRKLANG_DIR}/bin/win32-visualStudio)
+	set(IRRKLANG_LIB_DIR ${IRRKLANG_DIR}/lib/Win32-visualStudio)
+endif()
+set(IRRKLANG_LIB ${IRRKLANG_LIB_DIR}/irrKlang.lib)
+else() # Linux port
 # irrKlang left out: a closed-source Windows library; XRSound plays through its own mixer on PipeWire (src/Audio)
 # not upstream: the mixer's decoders, public-domain single-file libraries (OGG stb_vorbis, MP3 dr_mp3, FLAC dr_flac), pinned
 include(FetchContent)
@@ -19,14 +61,34 @@ FetchContent_Declare(dr_flac
 )
 FetchContent_MakeAvailable(stb_vorbis dr_mp3 dr_flac)
 set(AUDIO_DECODER_INCLUDE_DIRS ${stb_vorbis_SOURCE_DIR} ${dr_mp3_SOURCE_DIR} ${dr_flac_SOURCE_DIR})
+endif() # WIN32
 
 ## XRSound
 set(ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 set(SOLUTION_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+if(WIN32) # Windows: upstream
+set(IRRKLANG_DLL_DIR ${IRRKLANG_DIR})
+else() # Linux port
 # IRRKLANG_DLL_DIR left out: there are no irrKlang DLLs to deploy
+endif() # WIN32
 # Deploy assets
 file(GLOB config_files ${ASSET_DIR}/XRSound/*.cfg)
 
+if(WIN32) # Windows: upstream
+add_custom_target(XRSound_assets ALL
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/Doc
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/XRSound
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/XRSound/
+	COMMAND ${CMAKE_COMMAND} -E copy ${config_files} ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+	COMMAND ${CMAKE_COMMAND} -E copy ${ASSET_DIR}/XRSound/ReadMe.txt ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+	COMMAND ${CMAKE_COMMAND} -E copy "${ASSET_DIR}/Doc/XRSound User Manual.pdf" ${ORBITER_BINARY_ROOT_DIR}/Doc/
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOLUTION_DIR}/XRSound.h ${ORBITER_BINARY_SDK_DIR}/XRSound/
+	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}
+	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}
+	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/irrKlang.dll ${ORBITER_BINARY_ROOT_DIR}
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_DIR}/XRSound/Default ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
+)
+else() # Linux port
 add_custom_target(XRSound_assets ALL
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/Doc
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/XRSound
@@ -39,6 +101,7 @@ add_custom_target(XRSound_assets ALL
 	# copy_directory_if_different: the 200 MB of default sounds are not copied again on every build
 	COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${ASSET_DIR}/XRSound/Default ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
 )
+endif() # WIN32
 
 install(DIRECTORY ${ORBITER_BINARY_ROOT_DIR}/XRSound
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}
@@ -52,9 +115,16 @@ install(DIRECTORY ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
 install(FILES "${ORBITER_BINARY_ROOT_DIR}/Doc/XRSound User Manual.pdf"
 	DESTINATION ${ORBITER_INSTALL_DOC_DIR}/
 )
+if(WIN32) # Windows: upstream
+install(FILES ${ORBITER_BINARY_ROOT_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}/irrKlang.dll
+	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/
+)
+else() # Linux port
 # irrKlang DLL install left out: no irrKlang
+endif() # WIN32
 
 add_subdirectory(src)
+if(NOT WIN32) # Linux port
 
 # not upstream: mixer test, decodes a WAV from the assets and plays 0.5 s (reports it when no PipeWire daemon answers)
 if(ORBITER_MAKE_TESTS)
@@ -70,3 +140,4 @@ if(ORBITER_MAKE_TESTS)
 	add_test(NAME XRSound.AudioEngine.Test COMMAND $<TARGET_FILE:XRSound.AudioEngine.Test>)
 	set_tests_properties(XRSound.AudioEngine.Test PROPERTIES TIMEOUT 20)
 endif()
+endif() # NOT WIN32

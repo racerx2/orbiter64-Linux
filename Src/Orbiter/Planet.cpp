@@ -215,7 +215,11 @@ Planet::Planet (char *fname)
 	maxelev = 0.0;
 	labelLegend  = NULL;
 	nLabelLegend = 0;
+#ifndef __linux__
+	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+#else // __linux__
 	ifstream ifs (oapiResolvePath (g_pOrbiter->ConfigPath (fname)));
+#endif // __linux__
 	if (!ifs) return;
 
 	AtmInterface = 0;
@@ -345,10 +349,18 @@ Planet::Planet (char *fname)
 		char cbuf[256], *nm, *ps;
 		double lng, lat;
 		for (;;) {
+#ifndef __linux__
+			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_SURFBASE", 12)) break;
+#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_SURFBASE", 12)) break;
+#endif // __linux__
 			pc = trim_string (cbuf);
 			if (!pc[0]) continue;
+#ifndef __linux__
+			if (!_strnicmp (pc, "DIR", 3)) { // scan folder
+#else // __linux__
 			if (!strncasecmp (pc, "DIR", 3)) { // scan folder
+#endif // __linux__
 				ScanBases (trim_string (pc+3));
 			} else {                        // read single base definition
 				nm = strtok (trim_string(cbuf), ":");
@@ -387,7 +399,11 @@ Planet::Planet (char *fname)
 		char cbuf[256], *site, *addr, *equp;
 		double lng, lat, alt;
 		for (;;) {
+#ifndef __linux__
+			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_OBSERVER", 12)) break;
+#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_OBSERVER", 12)) break;
+#endif // __linux__
 			site = strtok (trim_string(cbuf), ":");
 			addr = strtok (NULL, ":");
 			equp = strtok (NULL, ";");
@@ -476,7 +492,11 @@ void Planet::ScanBases (char *path)
 		if (sscanf (pc+7, "%s", cbuf) == 1) {
 			const char *context = g_pOrbiter->PState()->Context();
 			if (!context) return;
+#ifndef __linux__
+			if (_stricmp (cbuf, context)) return;
+#else // __linux__
 			if (strcasecmp (cbuf, context)) return;
+#endif // __linux__
 		}
 		cut = (cut ? min (cut,pc) : pc);
 	}
@@ -487,7 +507,11 @@ void Planet::ScanBases (char *path)
 
 	sprintf (spath, "%s/dummy", path);
 	strcpy (cbuf, g_pOrbiter->ConfigPath(spath));
+#ifndef __linux__
+	fs::path configdir = fs::path(cbuf).parent_path();
+#else // __linux__
 	fs::path configdir = fs::path(oapiResolvePath(cbuf)).parent_path();
+#endif // __linux__
 	std::error_code ec;
 	for (const auto& entry : fs::directory_iterator(configdir, ec)) {
 		if (entry.path().extension().string() == ".cfg") {
@@ -497,7 +521,11 @@ void Planet::ScanBases (char *path)
 				if (!ifs.getline(cbuf, 256)) break;
 				pc = trim_string(cbuf);
 			} while (!pc[0]);
+#ifndef __linux__
+			if (_strnicmp(pc, "BASE-V2.0", 9)) continue;
+#else // __linux__
 			if (strncasecmp(pc, "BASE-V2.0", 9)) continue;
+#endif // __linux__
 			sprintf(spath, "%s\\%s", path, entry.path().stem().string().c_str());
 			Base* base = new Base(spath, this); TRACENEW
 			if (!AddBase(base))
@@ -558,27 +586,52 @@ void Planet::ScanLabelLists (ifstream &cfg)
 			if (FindLine(ulf, "BEGIN_HEADER")) {
 				char item[256], value[256];
 				for (;;) {
+#ifndef __linux__
+					if (!ulf.getline(cbuf, 256) || !_strnicmp(cbuf, "END_HEADER", 10)) break;
+#else // __linux__
 					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
+#endif // __linux__
 					sscanf(cbuf, "%s %s", item, value);
+#ifndef __linux__
+					if (!_stricmp(item, "InitialState")) {
+						if (!_stricmp(value, "on")) ll->active = true;
+#else // __linux__
 					if (!strcasecmp(item, "InitialState")) {
 						if (!strcasecmp(value, "on")) ll->active = true;
+#endif // __linux__
 					}
+#ifndef __linux__
+					else if (!_stricmp(item, "ColourIdx")) {
+#else // __linux__
 					else if (!strcasecmp(item, "ColourIdx")) {
+#endif // __linux__
 						int col;
 						sscanf(value, "%d", &col);
 						ll->colour = max(0, min(5, col));
 					}
+#ifndef __linux__
+					else if (!_stricmp(item, "ShapeIdx")) {
+#else // __linux__
 					else if (!strcasecmp(item, "ShapeIdx")) {
+#endif // __linux__
 						int shape;
 						sscanf(value, "%d", &shape);
 						ll->shape = max(0, min(6, shape));
 					}
+#ifndef __linux__
+					else if (!_stricmp(item, "Size")) {
+#else // __linux__
 					else if (!strcasecmp(item, "Size")) {
+#endif // __linux__
 						float size;
 						sscanf(value, "%f", &size);
 						ll->size = max(0.1f, min(2.0f, size));
 					}
+#ifndef __linux__
+					else if (!_stricmp(item, "DistanceFactor")) {
+#else // __linux__
 					else if (!strcasecmp(item, "DistanceFactor")) {
+#endif // __linux__
 						float distfac;
 						sscanf(value, "%f", &distfac);
 						ll->distfac = max(1e-5f, min(1e3f, distfac));
@@ -623,7 +676,11 @@ void Planet::ScanLabelLegend()
 	if (labelpath) strncpy (path, labelpath, 256);
 	else           sprintf (path, "%s%s/", g_pOrbiter->Cfg()->CfgDirPrm.ConfigDir, name.c_str());
 	strcat (path, "Label.cfg");
+#ifndef __linux__
+	std::ifstream ifs(path);
+#else // __linux__
 	std::ifstream ifs(oapiResolvePath(path));
+#endif // __linux__
 	while (ifs.good()) {
 		char typestr[16], activestr[16], markerstr[16], namebuf[256], *name;
 		int r,g,b;
@@ -809,7 +866,11 @@ void Planet::AddObserverSite (double lng, double lat, double alt, char *site, ch
 const GROUNDOBSERVERSPEC *Planet::GetGroundObserver (char *site, char *addr) const
 {
 	for (int i = 0; i < nobserver; i++) {
+#ifndef __linux__
+		if (!_stricmp (site, observer[i]->site) && !_stricmp (addr, observer[i]->addr)) {
+#else // __linux__
 		if (!strcasecmp (site, observer[i]->site) && !strcasecmp (addr, observer[i]->addr)) {
+#endif // __linux__
 			return observer[i];
 		}
 	}

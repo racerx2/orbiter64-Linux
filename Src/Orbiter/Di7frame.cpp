@@ -7,7 +7,11 @@
 // ====================================================================================
 
 #include "Di7frame.h"
+#ifndef __linux__
+#include "D3d7util.h"
+#endif // !__linux__
 #include "Log.h"
+#ifdef __linux__
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -225,6 +229,7 @@ bool JoystickDevice::SetAxisSaturation (Axis a, DWORD sat)
 	axis[a].sat = sat;
 	return true;
 }
+#endif // __linux__
 
 //-----------------------------------------------------------------------------
 // Name: CDIFramework7()
@@ -232,9 +237,17 @@ bool JoystickDevice::SetAxisSaturation (Axis a, DWORD sat)
 //-----------------------------------------------------------------------------
 CDIFramework7::CDIFramework7 ()
 {
+#ifndef __linux__
+	m_pDI             = NULL;
+#endif // !__linux__
 	m_pdidKbdDevice   = NULL;
+#ifndef __linux__
+	m_pdidMouseDevice = NULL;
+#endif // !__linux__
 	m_pdidJoyDevice   = NULL;
+#ifdef __linux__
 	jList.descJoy     = NULL;
+#endif // __linux__
 	jList.nJoy        = 0;
 }
 
@@ -251,10 +264,38 @@ CDIFramework7::~CDIFramework7 ()
 // Name: Create()
 // Desc: Initialises the DirectInput objects
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+HRESULT CDIFramework7::Create (HINSTANCE hInst)
+#else // __linux__
 int CDIFramework7::Create (void *hInst)
+#endif // __linux__
 {
+#ifndef __linux__
+	HRESULT hr;
+#else // __linux__
 	// DirectInput8Create left out: evdev has no input system object
+#endif // __linux__
 
+#ifndef __linux__
+	// Create the main DirectInput object
+	if (FAILED (hr = DirectInput8Create (hInst, DIRECTINPUT_VERSION,
+		IID_IDirectInput8, (LPVOID*)&m_pDI, NULL))) {
+		LOGOUT("ERROR: DI: DirectInputCreate failed");
+		LOGOUT_DIERR(hr);
+		return hr;
+	}
+
+	// Check to see whether a joystick is present. If one is, the enumeration
+	// callback will save the joystick's GUID, so we can create it later
+	ZeroMemory (&m_guidJoystick, sizeof (GUID));
+	
+	m_pDI->EnumDevices (DI8DEVCLASS_GAMECTRL, EnumJoysticksCallback,
+		(LPVOID)&jList, DIEDFL_ATTACHEDONLY);
+
+	// pick first joystick by default
+	if (jList.nJoy)
+		memcpy (&m_guidJoystick, &jList.descJoy[0].guidInstance, sizeof (GUID));
+#else // __linux__
 	// Check to see whether a joystick is present: enumerate /dev/input/event* nodes
 	// that report an x axis and joystick or gamepad buttons (DI8DEVCLASS_GAMECTRL)
 	if (DIR *d = opendir ("/dev/input")) {
@@ -286,23 +327,36 @@ int CDIFramework7::Create (void *hInst)
 	}
 
 	// pick first joystick by default (m_guidJoystick left out: CreateJoyDevice takes the list index)
+#endif // __linux__
 
 	LOGOUT("Found %d joystick(s)", jList.nJoy);
+#ifndef __linux__
+	return S_OK;
+#else // __linux__
 	return DI_OK;
+#endif // __linux__
 }
 
 //-----------------------------------------------------------------------------
 // Name: Destroy()
 // Desc: Deletes devices and DI object
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+VOID CDIFramework7::Destroy ()
+#else // __linux__
 void CDIFramework7::Destroy ()
+#endif // __linux__
 {
 	DestroyDevices();
+#ifndef __linux__
+	SAFE_RELEASE (m_pDI);
+#else // __linux__
 	if (jList.nJoy) {
 		delete []jList.descJoy;
 		jList.descJoy = NULL;
 		jList.nJoy = 0;
 	}
+#endif // __linux__
 }
 
 //-----------------------------------------------------------------------------
@@ -310,50 +364,160 @@ void CDIFramework7::Destroy ()
 // Desc: Called once for each enumerated joystick. If we find one, create a device
 //       interface on it so that we can play with it
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+BOOL CALLBACK CDIFramework7::EnumJoysticksCallback (LPCDIDEVICEINSTANCE pInst, VOID* pvContext)
+#else // __linux__
 bool CDIFramework7::EnumJoysticksCallback (const JoyDeviceInstance *pInst, void* pvContext)
+#endif // __linux__
 {
 	// Check here whether the enumerated device is appropriate
 	struct JLIST *jlist = (struct JLIST*)pvContext;
+#ifndef __linux__
+	DIDEVICEINSTANCE *tmp = new DIDEVICEINSTANCE[jlist->nJoy+1]; TRACENEW
+#else // __linux__
 	JoyDeviceInstance *tmp = new JoyDeviceInstance[jlist->nJoy+1]; TRACENEW
+#endif // __linux__
 	if (jlist->nJoy) {
+#ifndef __linux__
+		memcpy (tmp, jlist->descJoy, jlist->nJoy*sizeof(DIDEVICEINSTANCE));
+#else // __linux__
 		memcpy (tmp, jlist->descJoy, jlist->nJoy*sizeof(JoyDeviceInstance));
+#endif // __linux__
 		delete []jlist->descJoy;
 	}
 	jlist->descJoy = tmp;
+#ifndef __linux__
+	memcpy (jlist->descJoy + jlist->nJoy++, pInst, sizeof(DIDEVICEINSTANCE));
+	return DIENUM_CONTINUE;
+#else // __linux__
 	memcpy (jlist->descJoy + jlist->nJoy++, pInst, sizeof(JoyDeviceInstance));
 	return true; // DIENUM_CONTINUE
+#endif // __linux__
 }
 
 //-----------------------------------------------------------------------------
 // Name: GetJoysticks()
 // Desc: Returns the list of enumerated joysticks
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+VOID CDIFramework7::GetJoysticks (DIDEVICEINSTANCE **dev, DWORD *pdwCount)
+#else // __linux__
 void CDIFramework7::GetJoysticks (JoyDeviceInstance **dev, DWORD *pdwCount)
+#endif // __linux__
 {
 	*dev = jList.descJoy;
 	*pdwCount = jList.nJoy;
 }
 
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+// Name: CreateDevice()
+// Desc: Creates a DirectInput device
+//-----------------------------------------------------------------------------
+HRESULT CDIFramework7::CreateDevice (HWND hWnd, LPDIRECTINPUT8 pDI,
+	LPDIRECTINPUTDEVICE8 pDIDevice, GUID guidDevice, const DIDATAFORMAT *pdidDataFormat,
+	DWORD dwFlags)
+{
+	// Obtain an interface to the input device
+	if (FAILED (pDI->CreateDevice (guidDevice, &pDIDevice, NULL))) {
+		LOGOUT("ERROR: DI: CreateDeviceEx failed");
+		return E_FAIL;
+	}
+
+	// Set the device data format. A data format specifies which controls on a
+	// device you are interested in and indicates how they should be reported.
+	if (FAILED (pDIDevice->SetDataFormat (pdidDataFormat))) {
+		LOGOUT("ERROR: DI: SetDataFormat failed");
+		return E_FAIL;
+	}
+
+	// Set the cooperative level to let DirectInput know how this device should
+	// interact with the system and with other DirectInput applications
+	if (FAILED (pDIDevice->SetCooperativeLevel (hWnd, dwFlags))) {
+		LOGOUT("ERROR: DI: SetCooperativeLevel failed");
+		return E_FAIL;
+	}
+
+	if (guidDevice == GUID_SysKeyboard)
+		m_pdidKbdDevice = pDIDevice;
+	else if (guidDevice == GUID_SysMouse)
+		m_pdidMouseDevice = pDIDevice;
+	else
+		m_pdidJoyDevice = pDIDevice;
+
+	return S_OK;
+}
+
+//-----------------------------------------------------------------------------
+#endif // !__linux__
 // Name: CreateKbdDevice()
 // Desc: Creates a DirectInput device for the keyboard
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+HRESULT CDIFramework7::CreateKbdDevice (HWND hWnd)
+#else // __linux__
 int CDIFramework7::CreateKbdDevice (QWindow *hWnd)
+#endif // __linux__
 {
+#ifndef __linux__
+	HRESULT hr;
+	if (FAILED (hr = CreateDevice (hWnd, m_pDI, m_pdidKbdDevice, GUID_SysKeyboard,
+		&c_dfDIKeyboard, DISCL_NONEXCLUSIVE | DISCL_FOREGROUND))) return hr;
+#else // __linux__
 	// cooperative level (DISCL_NONEXCLUSIVE | DISCL_FOREGROUND): the render window only
 	// feeds key events while it has focus, and releases all keys when focus is lost
+#endif // __linux__
 
 	// set buffer size for storage of buffered key events
+#ifndef __linux__
+	DIPROPDWORD dipdw;
+	dipdw.diph.dwSize = sizeof(DIPROPDWORD);
+	dipdw.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	dipdw.diph.dwObj = 0;
+	dipdw.diph.dwHow = DIPH_DEVICE;
+	dipdw.dwData = 10;
+	return m_pdidKbdDevice->SetProperty (DIPROP_BUFFERSIZE, &dipdw.diph);
+}
+
+//-----------------------------------------------------------------------------
+// Name: CreateMouseDevice()
+// Desc: Creates a DirectInput device for the mouse
+//-----------------------------------------------------------------------------
+HRESULT CDIFramework7::CreateMouseDevice (HWND hWnd)
+{
+	HRESULT hr;
+	if (FAILED (hr = CreateDevice (hWnd, m_pDI, m_pdidMouseDevice, GUID_SysMouse,
+		&c_dfDIMouse, DISCL_NONEXCLUSIVE | DISCL_FOREGROUND))) return hr;
+
+	// switch mouse to absolute mode
+	DIPROPDWORD diprw;
+	diprw.diph.dwSize       = sizeof (DIPROPDWORD);
+	diprw.diph.dwHeaderSize = sizeof (DIPROPHEADER);
+	diprw.diph.dwObj        = 0;
+	diprw.diph.dwHow        = DIPH_DEVICE;
+	diprw.dwData            = DIPROPAXISMODE_ABS;
+	return m_pdidMouseDevice->SetProperty (DIPROP_AXISMODE, &diprw.diph);
+#else // __linux__
 	m_pdidKbdDevice = new KeyboardDevice (10);
 	return DI_OK;
+#endif // __linux__
 }
 
 //-----------------------------------------------------------------------------
 // Name: CreateJoyDevice()
 // Desc: Creates a DirectInput device for a joystick
 //-----------------------------------------------------------------------------
+#ifndef __linux__
+HRESULT CDIFramework7::CreateJoyDevice (HWND hWnd, DWORD idx)
+#else // __linux__
 int CDIFramework7::CreateJoyDevice (QWindow *hWnd, DWORD idx)
+#endif // __linux__
 {
+#ifndef __linux__
+	if (idx >= jList.nJoy) return E_FAIL;
+	return CreateDevice (hWnd, m_pDI, m_pdidJoyDevice, jList.descJoy[idx].guidInstance,
+		&c_dfDIJoystick2, DISCL_EXCLUSIVE | DISCL_FOREGROUND);
+#else // __linux__
 	if (idx >= jList.nJoy) return DIERR_INPUTLOST;
 	JoystickDevice *dev = new JoystickDevice (jList.descJoy[idx].path);
 	if (!dev->Valid()) {
@@ -363,13 +527,18 @@ int CDIFramework7::CreateJoyDevice (QWindow *hWnd, DWORD idx)
 	}
 	m_pdidJoyDevice = dev;
 	return DI_OK;
+#endif // __linux__
 }
 
 void CDIFramework7::DestroyJoyDevice()
 {
 	if (m_pdidJoyDevice) {
 		m_pdidJoyDevice->Unacquire();
+#ifndef __linux__
+		m_pdidJoyDevice->Release();
+#else // __linux__
 		delete m_pdidJoyDevice;
+#endif // __linux__
 		m_pdidJoyDevice = NULL;
 	}
 }
@@ -382,9 +551,24 @@ void CDIFramework7::DestroyDevices()
 {
 	if (m_pdidKbdDevice) {
 		m_pdidKbdDevice->Unacquire ();
+#ifndef __linux__
+		m_pdidKbdDevice->Release ();
+#else // __linux__
 		delete m_pdidKbdDevice;
+#endif // __linux__
 		m_pdidKbdDevice = NULL;
 	}
+#ifndef __linux__
+	if (m_pdidMouseDevice) {
+		m_pdidMouseDevice->Unacquire ();
+		m_pdidMouseDevice->Release ();
+		m_pdidMouseDevice = NULL;
+	}
+#else // __linux__
 	// mouse device left out (see Di7frame.h)
+#endif // __linux__
 	DestroyJoyDevice();
 }
+#ifndef __linux__
+
+#endif // !__linux__

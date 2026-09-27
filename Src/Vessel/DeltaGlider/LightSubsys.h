@@ -47,8 +47,10 @@ private:
 // Instrument lights
 // ==============================================================
 
+#ifdef __linux__
 class InstrumentLightSwitch; // g++: a friend declaration does not declare the name
 class InstrumentBrightnessDial;
+#endif // __linux__
 class InstrumentLight: public DGSubsystem {
 	friend class InstrumentLightSwitch;
 	friend class InstrumentBrightnessDial;
@@ -102,8 +104,10 @@ private:
 // Cockpit floodlights
 // ==============================================================
 
+#ifdef __linux__
 class CockpitLightSwitch;
 class CockpitBrightnessDial;
+#endif // __linux__
 class CockpitLight: public DGSubsystem {
 	friend class CockpitLightSwitch;
 	friend class CockpitBrightnessDial;
@@ -157,7 +161,9 @@ private:
 // Landing/docking lights
 // ==============================================================
 
+#ifdef __linux__
 class LandDockLightSwitch;
+#endif // __linux__
 class LandDockLight: public DGSubsystem {
 	friend class LandDockLightSwitch;
 
@@ -196,7 +202,9 @@ private:
 // Strobes
 // ==============================================================
 
+#ifdef __linux__
 class StrobeLightSwitch;
+#endif // __linux__
 class StrobeLight: public DGSubsystem {
 	friend class StrobeLightSwitch;
 
@@ -234,7 +242,9 @@ private:
 // Navigation lights
 // ==============================================================
 
+#ifdef __linux__
 class NavLightSwitch;
+#endif // __linux__
 class NavLight: public DGSubsystem {
 	friend class NavLightSwitch;
 

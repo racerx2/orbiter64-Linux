@@ -2,6 +2,9 @@
 // Licensed under the MIT License
 
 #include "Util.h"
+#ifndef __linux__
+#include <shlobj.h>
+#else // __linux__
 // shlobj.h left out: directories are made with mkdir
 #include <sys/stat.h>
 #include <errno.h>
@@ -13,6 +16,7 @@
 #include <QGuiApplication>
 #include <dlfcn.h>
 #include <link.h>
+#endif // __linux__
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
@@ -47,13 +51,31 @@ bool MakePath (const char *fname)
 	char cbuf[256];
 	int i, len = strlen(fname);
 	for (i = len; i > 0; i--)
+#ifndef __linux__
+		if (fname[i-1] == '\\') break;
+#else // __linux__
 		if (fname[i-1] == '\\' || fname[i-1] == '/') break;
+#endif // __linux__
 	if (!i) return false;
+#ifndef __linux__
+	if (fname[0] != '\\' && fname[1] != ':') {
+		GetCurrentDirectory (256, cbuf);
+#else // __linux__
 	if (fname[0] != '\\' && fname[0] != '/') { // relative path (no drive letters on Linux)
 		if (!getcwd (cbuf, 256)) return false;
+#endif // __linux__
 		len = strlen(cbuf);
+#ifndef __linux__
+		cbuf[len++] = '\\';
+#else // __linux__
 		cbuf[len++] = '/';
+#endif // __linux__
 	} else len = 0;
+#ifndef __linux__
+	strncpy_s (cbuf+len, 256-len, fname, i);
+	int res = SHCreateDirectoryEx (NULL, cbuf, NULL);
+	return res == ERROR_SUCCESS;
+#else // __linux__
 	snprintf (cbuf+len, 256-len, "%.*s", i, fname);
 	// SHCreateDirectoryEx counterpart: create every missing level; ERROR_SUCCESS only if the last level is new
 	std::string path = oapiResolvePath (cbuf);
@@ -65,6 +87,7 @@ bool MakePath (const char *fname)
 		if (!created && errno != EEXIST) return false;
 	}
 	return created;
+#endif // __linux__
 }
 
 bool iequal(const std::string& s1, const std::string& s2)
@@ -80,15 +103,31 @@ bool iequal(const std::string& s1, const std::string& s2)
 }
 
 
+#ifndef __linux__
+RECT GetClientPos (HWND hWnd, HWND hChild)
+#else // __linux__
 RECT GetClientPos (QWidget *hWnd, QWidget *hChild)
+#endif // __linux__
 {
 	RECT r;
+#ifndef __linux__
+	POINT p;
+	GetWindowRect (hChild, &r);
+	p.x = r.left, p.y = r.top; ScreenToClient (hWnd, &p);
+	r.left = p.x, r.top = p.y;
+	p.x = r.right, p.y = r.bottom; ScreenToClient (hWnd, &p);
+	r.right = p.x, r.bottom = p.y;
+#else // __linux__
 	QPoint p = hWnd->mapFromGlobal (hChild->mapToGlobal (QPoint (0, 0))); // GetWindowRect + ScreenToClient
 	r.left = p.x(), r.top = p.y();
 	r.right = r.left + hChild->width(), r.bottom = r.top + hChild->height();
+#endif // __linux__
 	return r;
 }
 
+#ifndef __linux__
+void SetClientPos (HWND hWnd, HWND hChild, RECT &r)
+#else // __linux__
 POINT CursorPos (const QWindow *hWnd)
 {
 	QPoint p = QCursor::pos ();
@@ -103,8 +142,13 @@ POINT CursorPos (const QWindow *hWnd)
 }
 
 void SetClientPos (QWidget *hWnd, QWidget *hChild, RECT &r)
+#endif // __linux__
 {
+#ifndef __linux__
+	MoveWindow (hChild, r.left, r.top, r.right-r.left, r.bottom-r.top, true);
+#else // __linux__
 	hChild->setGeometry (r.left, r.top, r.right-r.left, r.bottom-r.top); // MoveWindow: child coordinates are parent-client relative
+#endif // __linux__
 }
 
 
@@ -310,6 +354,7 @@ DWORD GetCSSColor(const char *col)
 
 	// Color not found, default to fuchsia
 	return 0xFF00FF;
+#ifdef __linux__
 }
 
 void *ModuleProc (void *hModule, const char *name)
@@ -332,4 +377,5 @@ const char *ModuleFileName (void *hModule)
 {
 	struct link_map *lm;
 	return (hModule && !dlinfo (hModule, RTLD_DI_LINKMAP, &lm) && lm->l_name ? lm->l_name : "");
+#endif // __linux__
 }

@@ -14,6 +14,13 @@
 
 #define VC_EXTRALEAN		// Exclude rarely-used stuff from Windows headers
 
+#ifndef __linux__
+#include <afxwin.h>         // MFC core and standard components
+#include <afxext.h>         // MFC extensions
+#ifndef _AFX_NO_AFXCMN_SUPPORT
+#include <afxcmn.h>			// MFC support for Windows Common Controls
+#endif // _AFX_NO_AFXCMN_SUPPORT
+#else // __linux__
 // afxwin.h, afxext.h, afxcmn.h left out: MFC is replaced by Qt 6 Widgets and ResDialog (.rc templates)
 #include <QApplication>
 #include <QDialog>
@@ -21,7 +28,9 @@
 #include <QPointer>
 #include <string>
 #include "ResDialog.h"
+#endif // __linux__
 
+#ifdef __linux__
 // not upstream: the part of MFC's CDialog this app uses, on the Qt dialog ResDialog builds from the .rc template
 class ResDlg {
 public:
@@ -68,6 +77,7 @@ private:
 	bool bLockout = false;
 	int idLastControl = 0;
 };
+#endif // __linux__
 
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.

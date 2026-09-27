@@ -6,13 +6,43 @@
 // Contains standard module entry point and version information.
 // ========================================================================
 
+#ifndef __linux__
+#include <windows.h>
+#else // __linux__
 #include <dlfcn.h>
+#endif // __linux__
 #include <fstream>
 #include <stdio.h>
 
+#ifndef __linux__
+#define DLLCLBK extern "C" __declspec(dllexport)
+#define OAPIFUNC __declspec(dllimport)
+#else // __linux__
 #define DLLCLBK extern "C" __attribute__((visibility("default")))
 #define OAPIFUNC __attribute__((visibility("default")))
+#endif // __linux__
 
+#ifndef __linux__
+BOOL WINAPI DllMain (HINSTANCE hModule,
+					 DWORD ul_reason_for_call,
+					 LPVOID lpReserved)
+{
+	OAPIFUNC void InitLib (HINSTANCE hModule);
+	typedef void (*DLLEXIT)(HINSTANCE);
+	static DLLEXIT DLLExit;
+
+	switch (ul_reason_for_call) {
+	case DLL_PROCESS_ATTACH:
+		InitLib (hModule);
+		DLLExit = (DLLEXIT)GetProcAddress (hModule, "ExitModule");
+		if (!DLLExit) DLLExit = (DLLEXIT)GetProcAddress (hModule, "opcDLLExit");
+		break;
+	case DLL_PROCESS_DETACH:
+		if (DLLExit) (*DLLExit)(hModule);
+		break;
+	}
+	return TRUE;
+#else // __linux__
 // DllMain counterpart: ELF constructor/destructor of the module (Windows calls DllMain only for DLLs, so the exe is skipped)
 OAPIFUNC void InitLib (void *hModule);
 typedef void (*DLLEXIT)(void*);
@@ -52,6 +82,7 @@ DLLCLBK void ModuleDetach ()
 __attribute__((destructor)) static void DllMain_ProcessDetach ()
 {
 	ModuleDetach ();
+#endif // __linux__
 }
 
 int oapiGetModuleVersion ()
@@ -70,3 +101,6 @@ DLLCLBK int GetModuleVersion (void)
 }
 
 void dummy () {}
+#ifndef __linux__
+
+#endif // !__linux__

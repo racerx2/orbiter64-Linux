@@ -2,6 +2,9 @@
 //	Date.pch will be the pre-compiled header
 //	stdafx.obj will contain the pre-compiled type information
 
+#ifndef __linux__
+#include "stdafx.h"
+#else // __linux__
 #include "StdAfx.h"
 #include <QKeyEvent>
 #include <QLineEdit>
@@ -9,11 +12,17 @@
 #include <QPushButton>
 #include <QScreen>
 #include <cstdio>
+#endif // __linux__
 
+#ifdef __linux__
 // not upstream: ResDlg (see StdAfx.h)
+#endif // __linux__
 
+#ifdef __linux__
 QPointer<QWidget> ResDlg::hMainWnd;
+#endif // __linux__
 
+#ifdef __linux__
 struct ExchangeFail {}; // CUserException thrown by CDataExchange::Fail
 
 ResDlg::ResDlg (UINT nIDTemplate, QWidget *pParentWnd)
@@ -161,3 +170,4 @@ void ResDlg::ValidateMaxChars (BOOL bSaveAndValidate, const std::string &value, 
 		e->setMaxLength (nChars); // EM_LIMITTEXT
 	}
 }
+#endif // __linux__

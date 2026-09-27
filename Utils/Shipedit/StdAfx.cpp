@@ -2,6 +2,9 @@
 //	Shipedit.pch will be the pre-compiled header
 //	stdafx.obj will contain the pre-compiled type information
 
+#ifndef __linux__
+#include "stdafx.h"
+#else // __linux__
 #include "StdAfx.h"
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -14,7 +17,9 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#endif // __linux__
 
+#ifdef __linux__
 // not upstream: ResDlg (see StdAfx.h)
 
 QPointer<QWidget> ResDlg::hMainWnd;
@@ -345,3 +350,4 @@ void ResDlg::ValidateMaxChars (BOOL bSaveAndValidate, const std::string &value, 
 		e->setMaxLength (nChars); // EM_LIMITTEXT
 	}
 }
+#endif // __linux__

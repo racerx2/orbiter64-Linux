@@ -811,10 +811,11 @@ int GraphicsClient::clbkEndBltGroup ()
 
 #ifndef __linux__
 bool GraphicsClient::clbkCopyBitmap (SURFHANDLE pdds, HBITMAP hbm,
+    int x, int y, int dx, int dy)
 #else // __linux__
 bool GraphicsClient::clbkCopyBitmap (SURFHANDLE pdds, QImage *hbm,
-#endif // __linux__
     int x, int y, int dx, int dy)
+#endif // __linux__
 {
 #ifndef __linux__
     HDC                     hdcImage;

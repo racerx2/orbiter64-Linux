@@ -189,53 +189,50 @@ void MsgProc (QWidget *hDlg, void *context)
 #ifndef __linux__
 	case WM_DESTROY:
 		GetWindowText (GetDlgItem (hDlg, IDC_REMEMBER), name, 256);
+		sscanf (name, "%d", &myprm);
+		return TRUE;
 #else // __linux__
 	// WM_DESTROY
 	new DestroyHook (hDlg, [hDlg]() {
 		char name[256];
 		oapiGetDlgItemText (hDlg, IDC_REMEMBER, name, 256);
-#endif // __linux__
 		sscanf (name, "%d", &myprm);
-#ifndef __linux__
-		return TRUE;
-#else // __linux__
 	});
 #endif // __linux__
 
 #ifndef __linux__
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+
+		case IDC_WHOAMI:  // user pressed dialog button
+			// display the focus vessel name
+			oapiGetObjectName (oapiGetFocusObject(), name, 256);
+			SetWindowText (GetDlgItem (hDlg, IDC_IAM), name);
+			return TRUE;
+
+		case IDCANCEL: // dialog closed by user
+			CloseDlg (hDlg);
+			return TRUE;
+		}
+		break;
+	}
+	return oapiDefDialogProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_COMMAND
 	oapiConnectDlgCommands (hDlg, [hDlg](int id, int code, QWidget *hCtrl) {
 		char name[256];
 		switch (id) {
-#endif // __linux__
 
 		case IDC_WHOAMI:  // user pressed dialog button
 			// display the focus vessel name
 			oapiGetObjectName (oapiGetFocusObject(), name, 256);
-#ifndef __linux__
-			SetWindowText (GetDlgItem (hDlg, IDC_IAM), name);
-			return TRUE;
-#else // __linux__
 			oapiSetDlgItemText (hDlg, IDC_IAM, name);
 			return;
-#endif // __linux__
 
 		case IDCANCEL: // dialog closed by user
 			CloseDlg (hDlg);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		}
-#ifndef __linux__
-		break;
-	}
-	return oapiDefDialogProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	// oapiDefDialogProc left out: oapiOpenDialog wires the default dialog behaviour
 #endif // __linux__

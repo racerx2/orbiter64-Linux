@@ -575,27 +575,15 @@ void ServerDlgProc(QWidget* hDlg, void* context)
 		SetTimer(hDlg, 1, 1000, NULL);
 		return TRUE;
 	case WM_TIMER:
-#else // __linux__
-	QTimer* timer = new QTimer(hDlg); // SetTimer; destroyed with the dialog (KillTimer)
-	QObject::connect(timer, &QTimer::timeout, hDlg, [hDlg]() {
-#endif // __linux__
 		if (s_console)
 			s_console->GetOrbiter()->UpdateServerWnd(hDlg);
-#ifndef __linux__
 		return 0;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
-#else // __linux__
-	});
-	timer->start(1000);
-	oapiConnectDlgCommands(hDlg, [](int id, int code, QWidget* hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDOK:
 			if (s_console)
 				s_console->GetOrbiter()->CloseSession();
 		}
-#ifndef __linux__
 		break;
 	case WM_CLOSE:
 		if (s_console)
@@ -607,6 +595,18 @@ void ServerDlgProc(QWidget* hDlg, void* context)
 	}
 	return FALSE;
 #else // __linux__
+	QTimer* timer = new QTimer(hDlg); // SetTimer; destroyed with the dialog (KillTimer)
+	QObject::connect(timer, &QTimer::timeout, hDlg, [hDlg]() {
+		if (s_console)
+			s_console->GetOrbiter()->UpdateServerWnd(hDlg);
+	});
+	timer->start(1000);
+	oapiConnectDlgCommands(hDlg, [](int id, int code, QWidget* hCtrl) {
+		switch (id) {
+		case IDOK:
+			if (s_console)
+				s_console->GetOrbiter()->CloseSession();
+		}
 	});
 	new EventHook(hDlg, [](QObject*, QEvent* event) {
 		if (event->type() == QEvent::Close) {

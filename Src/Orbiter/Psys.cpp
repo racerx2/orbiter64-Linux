@@ -237,6 +237,7 @@ void PlanetarySystem::ScanLabelLists (ifstream &cfg, bool bScanHeaders)
 	char cbuf[256];
 	oapi::GraphicsClient::LABELLIST* ll;
 	int idx = 0;
+#ifndef __linux__
 	ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
 		// open marker file
 		ifstream ulf(entry.path());
@@ -254,63 +255,33 @@ void PlanetarySystem::ScanLabelLists (ifstream &cfg, bool bScanHeaders)
 			if (FindLine(ulf, "BEGIN_HEADER")) {
 				char item[256], value[256];
 				for (;;) {
-#ifndef __linux__
 					if (!ulf.getline(cbuf, 256) || !_strnicmp(cbuf, "END_HEADER", 10)) break;
-#else // __linux__
-					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
-#endif // __linux__
 					sscanf(cbuf, "%s %s", item, value);
-#ifndef __linux__
 					if (!_stricmp(item, "InitialState")) {
 						if (!_stricmp(value, "on")) list.active = true;
-#else // __linux__
-					if (!strcasecmp(item, "InitialState")) {
-						if (!strcasecmp(value, "on")) list.active = true;
-#endif // __linux__
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "ColourIdx")) {
-#else // __linux__
-					else if (!strcasecmp(item, "ColourIdx")) {
-#endif // __linux__
 						int col;
 						sscanf(value, "%d", &col);
 						list.colour = max(0, min(5, col));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "ShapeIdx")) {
-#else // __linux__
-					else if (!strcasecmp(item, "ShapeIdx")) {
-#endif // __linux__
 						int shape;
 						sscanf(value, "%d", &shape);
 						list.shape = max(0, min(6, shape));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "Size")) {
-#else // __linux__
-					else if (!strcasecmp(item, "Size")) {
-#endif // __linux__
 						float size;
 						sscanf(value, "%f", &size);
 						list.size = max(0.1f, min(2.0f, size));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "DistanceFactor")) {
-#else // __linux__
-					else if (!strcasecmp(item, "DistanceFactor")) {
-#endif // __linux__
 						float distfac;
 						sscanf(value, "%f", &distfac);
 						list.distfac = max(1e-5f, min(1e3f, distfac));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "Frame")) {
 						if (_stricmp(value, "Ecliptic"))
-#else // __linux__
-					else if (!strcasecmp(item, "Frame")) {
-						if (strcasecmp(value, "Ecliptic"))
-#endif // __linux__
 							list.flag = 1; // flag for celestial position data
 					}
 				}
@@ -357,6 +328,98 @@ void PlanetarySystem::ScanLabelLists (ifstream &cfg, bool bScanHeaders)
 			}
 		}
 	});
+#else // __linux__
+	ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
+		// open marker file
+		ifstream ulf(entry.path());
+		// read label header
+		if (bScanHeaders) {
+			oapi::GraphicsClient::LABELLIST list;
+			//list.marker.clear();
+			list.colour = 1;
+			list.shape = 0;
+			list.size = 1.0f;
+			list.distfac = 1.0f;
+			list.active = false;
+			list.flag = 0;
+			list.name = entry.path().stem().string();
+			if (FindLine(ulf, "BEGIN_HEADER")) {
+				char item[256], value[256];
+				for (;;) {
+					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
+					sscanf(cbuf, "%s %s", item, value);
+					if (!strcasecmp(item, "InitialState")) {
+						if (!strcasecmp(value, "on")) list.active = true;
+					}
+					else if (!strcasecmp(item, "ColourIdx")) {
+						int col;
+						sscanf(value, "%d", &col);
+						list.colour = max(0, min(5, col));
+					}
+					else if (!strcasecmp(item, "ShapeIdx")) {
+						int shape;
+						sscanf(value, "%d", &shape);
+						list.shape = max(0, min(6, shape));
+					}
+					else if (!strcasecmp(item, "Size")) {
+						float size;
+						sscanf(value, "%f", &size);
+						list.size = max(0.1f, min(2.0f, size));
+					}
+					else if (!strcasecmp(item, "DistanceFactor")) {
+						float distfac;
+						sscanf(value, "%f", &distfac);
+						list.distfac = max(1e-5f, min(1e3f, distfac));
+					}
+					else if (!strcasecmp(item, "Frame")) {
+						if (strcasecmp(value, "Ecliptic"))
+							list.flag = 1; // flag for celestial position data
+					}
+				}
+			}
+			m_labelList.push_back(list);
+			ll = &m_labelList.back();
+		}
+		else {
+			ll = &m_labelList[idx++];
+		}
+
+		// check if positions are in celestial or ecliptic frame
+		bool celestialpos = ((ll->flag & 1) != 0);
+
+		// read label list for active labels, if not already present
+		if (ll->active && !ll->marker.size()) {
+			double lng, lat;
+			int nl;
+			char* pc;
+			FindLine(ulf, "BEGIN_DATA");
+			for (nl = 0;; nl++) {
+				if (!ulf.getline(cbuf, 256)) break;
+				pc = strtok(cbuf, ":");
+				if (!pc || sscanf(pc, "%lf%lf", &lng, &lat) != 2) continue;
+				lng = Rad(lng);
+				lat = Rad(lat);
+				if (celestialpos) {
+					static double eps = 0.4092797095927;
+					static double coseps = cos(eps), sineps = sin(eps);
+					double ra = lng, dc = lat;
+					Equ2Ecl(coseps, sineps, ra, dc, lng, lat);
+				}
+				oapi::GraphicsClient::LABELSPEC ls;
+				double xz = cos(lat);
+				ls.pos.y = sin(lat);
+				ls.pos.x = xz * cos(lng);
+				ls.pos.z = xz * sin(lng);
+				for (i = 0; i < 2; i++) {
+					if (pc = strtok(NULL, ":")) {
+						ls.label[i] = trim_string(pc);
+					}
+				}
+				ll->marker.push_back(ls);
+			}
+		}
+	});
+#endif // __linux__
 }
 
 void PlanetarySystem::ActivatePlanetLabels(bool activate)

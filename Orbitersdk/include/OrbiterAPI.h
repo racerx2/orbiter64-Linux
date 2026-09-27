@@ -5279,10 +5279,11 @@ OAPIFUNC bool oapiUnregisterExternMFD (ExternMFD *emfd);
 	*/
 #ifndef __linux__
 OAPIFUNC void oapiRegisterPanelBackground (HBITMAP hBmp, DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM,
+				                           DWORD ck = (DWORD)-1);
 #else // __linux__
 OAPIFUNC void oapiRegisterPanelBackground (QImage *hBmp, DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM,
-#endif // __linux__
 				                           DWORD ck = (DWORD)-1);
+#endif // __linux__
 
 	/**
 	* \anchor register_p_a

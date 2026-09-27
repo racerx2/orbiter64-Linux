@@ -841,13 +841,16 @@ bool Pane::GlobalToHomog (const Vector &glob, oapi::FVECTOR3 &homog) const
 #ifndef __linux__
 	D3DVECTOR gpos = {(D3DVALUE)glob.x, (D3DVALUE)glob.y, (D3DVALUE)glob.z};
 	return (D3DMath_VectorMatrixMultiply (homog, gpos, *g_camera->D3D_ProjViewMatrix()) == S_OK &&
-#else // __linux__
-	oapi::FVECTOR3 gpos = {(float)glob.x, (float)glob.y, (float)glob.z};
-	return (D3DMath_VectorMatrixMultiply (homog, gpos, *g_camera->D3D_ProjViewMatrix()) == 0 && // S_OK
-#endif // __linux__
 		homog.x >= -1.0f && homog.x <= 1.0f &&
 		homog.y >= -1.0f && homog.y <= 1.0f &&
 		/* homog.z >=  0.0 && */ homog.z <= g_camera->HomogZlimit());
+#else // __linux__
+	oapi::FVECTOR3 gpos = {(float)glob.x, (float)glob.y, (float)glob.z};
+	return (D3DMath_VectorMatrixMultiply (homog, gpos, *g_camera->D3D_ProjViewMatrix()) == 0 && // S_OK
+		homog.x >= -1.0f && homog.x <= 1.0f &&
+		homog.y >= -1.0f && homog.y <= 1.0f &&
+		/* homog.z >=  0.0 && */ homog.z <= g_camera->HomogZlimit());
+#endif // __linux__
 }
 
 void Pane::ScreenToGlobal (int x, int y, Vector &glob) const

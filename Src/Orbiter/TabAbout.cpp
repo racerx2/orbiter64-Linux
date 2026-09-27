@@ -55,6 +55,7 @@ void orbiter::AboutTab::Create ()
 	SetWindowText (GetDlgItem (hTab, IDC_ABT_TXT_WEBADDR), SIG2 "\n" SIG5 "\n" SIG6);
 	SendDlgItemMessage(hTab, IDC_ABT_LBOX_COMPONENT, LB_ADDSTRING, 0,
 		(LPARAM)"D3D9Client module by Jarmo Nikkanen and Peter Schneider"
+	);
 #else // __linux__
 	DlgItem<QLabel> (hTab, IDC_ABT_TXT_NAME)->setText (NAME1);
 	DlgItem<QLabel> (hTab, IDC_ABT_TXT_BUILDDATE)->setText (SIG4);
@@ -62,16 +63,17 @@ void orbiter::AboutTab::Create ()
 	DlgItem<QLabel> (hTab, IDC_ABT_TXT_WEBADDR)->setText (SIG2 "\n" SIG5 "\n" SIG6);
 	DlgItem<QListWidget> (hTab, IDC_ABT_LBOX_COMPONENT)->addItem (
 		"D3D9Client module by Jarmo Nikkanen and Peter Schneider"
-#endif // __linux__
 	);
+#endif // __linux__
 #ifndef __linux__
 	SendDlgItemMessage(hTab, IDC_ABT_LBOX_COMPONENT, LB_ADDSTRING, 0,
 		(LPARAM)"XRSound module Copyright (c) Doug Beachy"
+	);
 #else // __linux__
 	DlgItem<QListWidget> (hTab, IDC_ABT_LBOX_COMPONENT)->addItem (
 		"XRSound module Copyright (c) Doug Beachy"
-#endif // __linux__
 	);
+#endif // __linux__
 }
 
 //-----------------------------------------------------------------------------

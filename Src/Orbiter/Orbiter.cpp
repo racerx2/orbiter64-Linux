@@ -1389,21 +1389,7 @@ INT Orbiter::Run ()
 			if (!m_pLaunchpad || !m_pLaunchpad->ConsumeMessage(&msg)) {
 				TranslateMessage (&msg);
 				DispatchMessage (&msg);
-#else // __linux__
-	QMetaObject::Connection idle = QObject::connect (dispatcher, &QAbstractEventDispatcher::aboutToBlock, [&]() {
-		// nested loops (modal dialogs) run no frames, as their own message loops didn't on Windows
-		if (!bSession || bInFrame || QThread::currentThread()->loopLevel() > 1) return;
-		bInFrame = true;
-		if (bAllowInput) bActive = true, bAllowInput = false;
-		if (BeginTimeStep (bRunning)) {
-			UpdateWorld();
-			EndTimeStep (bRunning);
-			if (bVisible) {
-				if (bActive) UserInput ();
-				bRenderOnce = TRUE;
-#endif // __linux__
 			}
-#ifndef __linux__
 		} else {
 			if (bSession) {
 				if (bAllowInput) bActive = true, bAllowInput = false;
@@ -1420,27 +1406,11 @@ INT Orbiter::Run ()
 				}
 				if (m_pConsole)
 					m_pConsole->ParseCmd();
-#else // __linux__
-			if (bRunning && bCapture) {
-				CaptureVideoFrame ();
-#endif // __linux__
 			}
-#ifndef __linux__
         }
-#else // __linux__
-		}
-		if (m_pConsole)
-			m_pConsole->ParseCmd();
-
-#endif // __linux__
 		if (bRenderOnce && bVisible) {
-#ifndef __linux__
 			if (FAILED (Render3DEnvironment ()))
 				if (hRenderWnd) DestroyWindow (hRenderWnd);
-#else // __linux__
-			if (Render3DEnvironment () != 0) // FAILED
-				if (hRenderWnd) DestroyRenderWindow (hRenderWnd);
-#endif // __linux__
 			bRenderOnce = FALSE;
 		}
 
@@ -1451,9 +1421,40 @@ INT Orbiter::Run ()
 			bpCanRender = bCanRender;
 		} else
 			bpCanRender = TRUE;
-#ifndef __linux__
     }
 #else // __linux__
+	QMetaObject::Connection idle = QObject::connect (dispatcher, &QAbstractEventDispatcher::aboutToBlock, [&]() {
+		// nested loops (modal dialogs) run no frames, as their own message loops didn't on Windows
+		if (!bSession || bInFrame || QThread::currentThread()->loopLevel() > 1) return;
+		bInFrame = true;
+		if (bAllowInput) bActive = true, bAllowInput = false;
+		if (BeginTimeStep (bRunning)) {
+			UpdateWorld();
+			EndTimeStep (bRunning);
+			if (bVisible) {
+				if (bActive) UserInput ();
+				bRenderOnce = TRUE;
+			}
+			if (bRunning && bCapture) {
+				CaptureVideoFrame ();
+			}
+		}
+		if (m_pConsole)
+			m_pConsole->ParseCmd();
+
+		if (bRenderOnce && bVisible) {
+			if (Render3DEnvironment () != 0) // FAILED
+				if (hRenderWnd) DestroyRenderWindow (hRenderWnd);
+			bRenderOnce = FALSE;
+		}
+
+		if (bSession) {
+			bCanRender = TRUE;
+			if (bCanRender && !bpCanRender)
+				RestoreDeviceObjects ();
+			bpCanRender = bCanRender;
+		} else
+			bpCanRender = TRUE;
 		bInFrame = false;
 		dispatcher->wakeUp (); // PeekMessage: come straight back for the next frame
 	});

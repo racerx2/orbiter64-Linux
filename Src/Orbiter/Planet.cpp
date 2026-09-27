@@ -560,6 +560,7 @@ void Planet::ScanLabelLists (ifstream &cfg)
 
 	oapi::GraphicsClient::LABELLIST* ll;
 	bool scanheader = (labellist == 0); // only need to parse the headers for the initial scan
+#ifndef __linux__
 	ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
 		char cbuf[256];
 		// open marker file
@@ -586,52 +587,27 @@ void Planet::ScanLabelLists (ifstream &cfg)
 			if (FindLine(ulf, "BEGIN_HEADER")) {
 				char item[256], value[256];
 				for (;;) {
-#ifndef __linux__
 					if (!ulf.getline(cbuf, 256) || !_strnicmp(cbuf, "END_HEADER", 10)) break;
-#else // __linux__
-					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
-#endif // __linux__
 					sscanf(cbuf, "%s %s", item, value);
-#ifndef __linux__
 					if (!_stricmp(item, "InitialState")) {
 						if (!_stricmp(value, "on")) ll->active = true;
-#else // __linux__
-					if (!strcasecmp(item, "InitialState")) {
-						if (!strcasecmp(value, "on")) ll->active = true;
-#endif // __linux__
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "ColourIdx")) {
-#else // __linux__
-					else if (!strcasecmp(item, "ColourIdx")) {
-#endif // __linux__
 						int col;
 						sscanf(value, "%d", &col);
 						ll->colour = max(0, min(5, col));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "ShapeIdx")) {
-#else // __linux__
-					else if (!strcasecmp(item, "ShapeIdx")) {
-#endif // __linux__
 						int shape;
 						sscanf(value, "%d", &shape);
 						ll->shape = max(0, min(6, shape));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "Size")) {
-#else // __linux__
-					else if (!strcasecmp(item, "Size")) {
-#endif // __linux__
 						float size;
 						sscanf(value, "%f", &size);
 						ll->size = max(0.1f, min(2.0f, size));
 					}
-#ifndef __linux__
 					else if (!_stricmp(item, "DistanceFactor")) {
-#else // __linux__
-					else if (!strcasecmp(item, "DistanceFactor")) {
-#endif // __linux__
 						float distfac;
 						sscanf(value, "%f", &distfac);
 						ll->distfac = max(1e-5f, min(1e3f, distfac));
@@ -668,6 +644,91 @@ void Planet::ScanLabelLists (ifstream &cfg)
 		nlabellist++;
 
 	});
+#else // __linux__
+	ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
+		char cbuf[256];
+		// open marker file
+		ifstream ulf(entry.path());
+
+		// read label header
+		if (scanheader) {
+			if (nlabellist == nlabellistbuf) { // increase buffer
+				oapi::GraphicsClient::LABELLIST* tmp = new oapi::GraphicsClient::LABELLIST[nlabellistbuf += 8];
+				for (int i = 0; i < nlabellist; i++)
+					tmp[i] = labellist[i];
+				if (nlabellist) delete[]labellist;
+				labellist = tmp;
+			}
+			ll = labellist + nlabellist;
+			ll->name = entry.path().filename().string();
+			ll->marker.clear();
+			ll->colour = 1;
+			ll->shape = 0;
+			ll->size = 1.0f;
+			ll->distfac = 1.0f;
+			ll->active = false;
+			ll->flag = 0;
+			if (FindLine(ulf, "BEGIN_HEADER")) {
+				char item[256], value[256];
+				for (;;) {
+					if (!ulf.getline(cbuf, 256) || !strncasecmp(cbuf, "END_HEADER", 10)) break;
+					sscanf(cbuf, "%s %s", item, value);
+					if (!strcasecmp(item, "InitialState")) {
+						if (!strcasecmp(value, "on")) ll->active = true;
+					}
+					else if (!strcasecmp(item, "ColourIdx")) {
+						int col;
+						sscanf(value, "%d", &col);
+						ll->colour = max(0, min(5, col));
+					}
+					else if (!strcasecmp(item, "ShapeIdx")) {
+						int shape;
+						sscanf(value, "%d", &shape);
+						ll->shape = max(0, min(6, shape));
+					}
+					else if (!strcasecmp(item, "Size")) {
+						float size;
+						sscanf(value, "%f", &size);
+						ll->size = max(0.1f, min(2.0f, size));
+					}
+					else if (!strcasecmp(item, "DistanceFactor")) {
+						float distfac;
+						sscanf(value, "%f", &distfac);
+						ll->distfac = max(1e-5f, min(1e3f, distfac));
+					}
+				}
+			}
+		}
+		else {
+			ll = labellist + nlabellist;
+		}
+
+		// read label list for active labels, if not already present
+		if (ll->active && !ll->marker.size()) {
+			int nlistbuf = 0;
+			double lng, lat;
+			int nl;
+			char* pc;
+			Vector pos;
+			FindLine(ulf, "BEGIN_DATA");
+			for (nl = 0;; nl++) {
+				if (!ulf.getline(cbuf, 256)) break;
+				pc = strtok(cbuf, ":");
+				if (!pc || sscanf(pc, "%lf%lf", &lng, &lat) != 2) continue;
+				EquatorialToLocal(RAD * lng, RAD * lat, size, pos);
+				oapi::GraphicsClient::LABELSPEC ls;
+				ls.pos = _V(pos.x, pos.y, pos.z);
+				for (i = 0; i < 2; i++) {
+					if (pc = strtok(NULL, ":"))
+						ls.label[i] = trim_string(pc);
+				}
+				ll->marker.push_back(ls);
+			}
+		}
+		nlabellist++;
+
+	});
+#endif // __linux__
 }
 
 void Planet::ScanLabelLegend()

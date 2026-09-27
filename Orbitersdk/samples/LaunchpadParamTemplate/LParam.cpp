@@ -150,42 +150,35 @@ void MyItem::DlgProc (QWidget *hWnd, void *context)
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDOK:    // store the value
+			GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 32);
+			if (sscanf (cbuf, "%lf", &gParams.my_param) != 1)
+				gParams.my_param = 0;
+			EndDialog (hWnd, 0);
+			return 0;
+		case IDCANCEL:
+			EndDialog (hWnd, 0);
+			return 0;
+		}
+		break;
+	}
+	return 0;
 #else // __linux__
 		oapiSetDlgItemText (hWnd, IDC_EDIT1, cbuf);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd](int id, int code, QWidget *hCtrl) {
 		char cbuf[32];
 		switch (id) {
-#endif // __linux__
 		case IDOK:    // store the value
-#ifndef __linux__
-			GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 32);
-#else // __linux__
 			oapiGetDlgItemText (hWnd, IDC_EDIT1, cbuf, 32);
-#endif // __linux__
 			if (sscanf (cbuf, "%lf", &gParams.my_param) != 1)
 				gParams.my_param = 0;
-#ifndef __linux__
-			EndDialog (hWnd, 0);
-			return 0;
-#else // __linux__
 			qobject_cast<QDialog*> (hWnd)->done (0); // EndDialog
 			return;
-#endif // __linux__
 		case IDCANCEL:
-#ifndef __linux__
-			EndDialog (hWnd, 0);
-			return 0;
-#else // __linux__
 			qobject_cast<QDialog*> (hWnd)->done (0); // EndDialog
 			return;
-#endif // __linux__
 		}
-#ifndef __linux__
-		break;
-	}
-	return 0;
-#else // __linux__
 	});
 #endif // __linux__
 }

@@ -2682,110 +2682,51 @@ void EdPg1Proc (QWidget *hTab, void *context)
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_INITDIALOG
-	InitEdPg1 (hTab, (OBJHANDLE)context);
-
-	// WM_COMMAND
-	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_GEAR_UP:
 			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_OPEN);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_GEAR_DOWN:
 			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_CLOSED);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_DPORT_CLOSE:
 			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_CLOSED);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_DPORT_OPEN:
 			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_OPEN);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_OLOCK_CLOSE:
 			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_CLOSED);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_OLOCK_OPEN:
 			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_OPEN);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_AUX_RETRO: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, 0.0);
 			UpdatePodSliders (hTab, v);
-#ifndef __linux__
 			} return TRUE;
-#else // __linux__
-			} return;
-#endif // __linux__
 		case IDC_AUX_HOVER: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, PI05);
 			UpdatePodSliders (hTab, v);
-#ifndef __linux__
 			} return TRUE;
-#else // __linux__
-			} return;
-#endif // __linux__
 		case IDC_AUX_FWD: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, PI);
 			UpdatePodSliders (hTab, v);
-#ifndef __linux__
 			} return TRUE;
-#else // __linux__
-			} return;
-#endif // __linux__
 		case IDC_AUX_SYNC:
-#ifndef __linux__
 			if (SendDlgItemMessage (hTab, IDC_AUX_SYNC, BM_GETCHECK, 0, 0) == BST_CHECKED) {
 				ShowWindow (GetDlgItem (hTab, IDC_LAUX_POS), SW_HIDE);
 				ShowWindow (GetDlgItem (hTab, IDC_RAUX_POS), SW_HIDE);
 				ShowWindow (GetDlgItem (hTab, IDC_AUX_POS), SW_SHOW);
 				GetV(hTab)->SetPodAngle (3, oapiGetGaugePos (GetDlgItem (hTab, IDC_AUX_POS))*0.01*PI);
-#else // __linux__
-			if (DlgItem<QAbstractButton>(hTab, IDC_AUX_SYNC)->isChecked()) {
-				oapiResDlgItem (hTab, IDC_LAUX_POS)->hide();
-				oapiResDlgItem (hTab, IDC_RAUX_POS)->hide();
-				oapiResDlgItem (hTab, IDC_AUX_POS)->show();
-				GetV(hTab)->SetPodAngle (3, oapiGetGaugePos (oapiResDlgItem (hTab, IDC_AUX_POS))*0.01*PI);
-#endif // __linux__
 			} else {
-#ifndef __linux__
 				ShowWindow (GetDlgItem (hTab, IDC_AUX_POS), SW_HIDE);
 				ShowWindow (GetDlgItem (hTab, IDC_LAUX_POS), SW_SHOW);
 				ShowWindow (GetDlgItem (hTab, IDC_RAUX_POS), SW_SHOW);
-#else // __linux__
-				oapiResDlgItem (hTab, IDC_AUX_POS)->hide();
-				oapiResDlgItem (hTab, IDC_LAUX_POS)->show();
-				oapiResDlgItem (hTab, IDC_RAUX_POS)->show();
-#endif // __linux__
 			}
 		}
-#ifndef __linux__
 		break;
 	case WM_HSCROLL: {
 		ShuttleA *v = GetV (hTab);
@@ -2798,7 +2739,68 @@ void EdPg1Proc (QWidget *hTab, void *context)
 			case SB_THUMBTRACK:
 			case SB_LINELEFT:
 			case SB_LINERIGHT:
+				if (id == IDC_LAUX_POS || id == IDC_AUX_POS)
+					v->SetPodAngle (1, HIWORD(wParam)*0.01*PI);
+				if (id == IDC_RAUX_POS || id == IDC_AUX_POS)
+					v->SetPodAngle (2, HIWORD(wParam)*0.01*PI);
+				UpdatePodSliders (hTab, v);
+				return TRUE;
+			}
+			break;
+		}
+		} break;
 #else // __linux__
+	// WM_INITDIALOG
+	InitEdPg1 (hTab, (OBJHANDLE)context);
+
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_GEAR_UP:
+			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_OPEN);
+			return;
+		case IDC_GEAR_DOWN:
+			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_CLOSED);
+			return;
+		case IDC_DPORT_CLOSE:
+			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_CLOSED);
+			return;
+		case IDC_DPORT_OPEN:
+			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_OPEN);
+			return;
+		case IDC_OLOCK_CLOSE:
+			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_CLOSED);
+			return;
+		case IDC_OLOCK_OPEN:
+			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_OPEN);
+			return;
+		case IDC_AUX_RETRO: {
+			ShuttleA *v = GetV(hTab);
+			v->SetPodAngle (3, 0.0);
+			UpdatePodSliders (hTab, v);
+			} return;
+		case IDC_AUX_HOVER: {
+			ShuttleA *v = GetV(hTab);
+			v->SetPodAngle (3, PI05);
+			UpdatePodSliders (hTab, v);
+			} return;
+		case IDC_AUX_FWD: {
+			ShuttleA *v = GetV(hTab);
+			v->SetPodAngle (3, PI);
+			UpdatePodSliders (hTab, v);
+			} return;
+		case IDC_AUX_SYNC:
+			if (DlgItem<QAbstractButton>(hTab, IDC_AUX_SYNC)->isChecked()) {
+				oapiResDlgItem (hTab, IDC_LAUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_RAUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_AUX_POS)->show();
+				GetV(hTab)->SetPodAngle (3, oapiGetGaugePos (oapiResDlgItem (hTab, IDC_AUX_POS))*0.01*PI);
+			} else {
+				oapiResDlgItem (hTab, IDC_AUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_LAUX_POS)->show();
+				oapiResDlgItem (hTab, IDC_RAUX_POS)->show();
+			}
+		}
 	});
 
 	// WM_HSCROLL
@@ -2809,31 +2811,13 @@ void EdPg1Proc (QWidget *hTab, void *context)
 			case GAUGE_THUMBTRACK:
 			case GAUGE_LINEDEC:
 			case GAUGE_LINEINC:
-#endif // __linux__
 				if (id == IDC_LAUX_POS || id == IDC_AUX_POS)
-#ifndef __linux__
-					v->SetPodAngle (1, HIWORD(wParam)*0.01*PI);
-#else // __linux__
 					v->SetPodAngle (1, pos*0.01*PI);
-#endif // __linux__
 				if (id == IDC_RAUX_POS || id == IDC_AUX_POS)
-#ifndef __linux__
-					v->SetPodAngle (2, HIWORD(wParam)*0.01*PI);
-#else // __linux__
 					v->SetPodAngle (2, pos*0.01*PI);
-#endif // __linux__
 				UpdatePodSliders (hTab, v);
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			}
-#ifndef __linux__
-			break;
-		}
-		} break;
-#else // __linux__
 		});
 #endif // __linux__
 	}

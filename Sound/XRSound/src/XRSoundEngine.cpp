@@ -70,11 +70,12 @@ bool XRSoundEngine::InitializeIrrKlangEngine()
 #ifndef __linux__
             sprintf_s(logMsg, "%s initialized using sound driver %s; irrKlang version = %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)", 
                 GetVersionStr(), XRSoundEngine::GetSoundDriverName(), IRR_KLANG_VERSION, 
+                s_globalConfig.UpdateInterval, (1.0 / s_globalConfig.UpdateInterval));
 #else // __linux__
             snprintf(logMsg, sizeof(logMsg), "%s initialized using sound driver %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)", 
                 GetVersionStr(), XRSoundEngine::GetSoundDriverName(), 
-#endif // __linux__
                 s_globalConfig.UpdateInterval, (1.0 / s_globalConfig.UpdateInterval));
+#endif // __linux__
         else
 #ifndef __linux__
             sprintf_s(logMsg, "%s ERROR: could not initialize default sound device.", GetVersionStr());

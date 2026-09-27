@@ -214,10 +214,11 @@ bool Mesh::GetGroup (DWORD grp, NTVERTEX *&vtx, DWORD &nvtx, WORD *&idx, DWORD &
 
 #ifndef __linux__
 int Mesh::AddGroup (D3DVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
+	DWORD mtrl_idx, DWORD tex_idx, WORD zbias)
 #else // __linux__
 int Mesh::AddGroup (NTVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
-#endif // __linux__
 	DWORD mtrl_idx, DWORD tex_idx, WORD zbias)
+#endif // __linux__
 {
 	GroupSpec *tmp_Grp = new GroupSpec[nGrp+1];
 	memcpy (tmp_Grp, Grp, sizeof(GroupSpec)*nGrp);

@@ -74,10 +74,11 @@ public:
 
 #ifndef __linux__
 	Mesh (D3DVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
+		DWORD matidx = SPEC_DEFAULT, DWORD texidx = SPEC_DEFAULT);
 #else // __linux__
 	Mesh (NTVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
-#endif // __linux__
 		DWORD matidx = SPEC_DEFAULT, DWORD texidx = SPEC_DEFAULT);
+#endif // __linux__
 	// Create a single-group mesh
 
 	Mesh (const Mesh &mesh);
@@ -110,10 +111,11 @@ public:
 
 #ifndef __linux__
 	int AddGroup (D3DVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
+		DWORD mtrl_idx = -1, DWORD tex_idx = -1, WORD zbias = 0);
 #else // __linux__
 	int AddGroup (NTVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
-#endif // __linux__
 		DWORD mtrl_idx = -1, DWORD tex_idx = -1, WORD zbias = 0);
+#endif // __linux__
 	// Add new group to the mesh and return its group index
 	// The lists are handled by the mesh and should not be released by
 	// the calling program

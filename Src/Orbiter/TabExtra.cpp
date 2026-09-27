@@ -819,55 +819,51 @@ void ExtraDynamics::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
+		case IDC_PROP_ACTIVE0:
+		case IDC_PROP_ACTIVE1:
+		case IDC_PROP_ACTIVE2:
+		case IDC_PROP_ACTIVE3:
+		case IDC_PROP_ACTIVE4:
+			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
+			break;
+		case IDC_RESET:
+			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDCHELP:
+			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraDynamics*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_PROP_ACTIVE0:
 		case IDC_PROP_ACTIVE1:
 		case IDC_PROP_ACTIVE2:
 		case IDC_PROP_ACTIVE3:
 		case IDC_PROP_ACTIVE4:
-#ifndef __linux__
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
-#else // __linux__
 			((ExtraDynamics*)context)->Activate (hWnd, id);
-#endif // __linux__
 			break;
 		case IDC_RESET:
-#ifndef __linux__
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraDynamics*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDCHELP:
-#ifndef __linux__
-			((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraDynamics*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraDynamics*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -1201,55 +1197,51 @@ void ExtraAngDynamics::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
+		case IDC_CHECK1:
+		case IDC_CHECK2:
+		case IDC_CHECK3:
+		case IDC_CHECK4:
+		case IDC_CHECK5:
+			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
+			break;
+		case IDC_BUTTON1:
+			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraAngDynamics*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_CHECK1:
 		case IDC_CHECK2:
 		case IDC_CHECK3:
 		case IDC_CHECK4:
 		case IDC_CHECK5:
-#ifndef __linux__
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->Activate (hWnd, LOWORD(wParam));
-#else // __linux__
 			((ExtraAngDynamics*)context)->Activate (hWnd, id);
-#endif // __linux__
 			break;
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraAngDynamics*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraAngDynamics*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraAngDynamics*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraAngDynamics*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -1460,56 +1452,49 @@ void ExtraStabilisation::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_STAB_ENABLE:
+			if (HIWORD (wParam) == BN_CLICKED) {
+				((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
+				return TRUE;
+			}
+			break;
+		case IDC_BUTTON1:
+			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams(hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraStabilisation*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_STAB_ENABLE:
-#ifndef __linux__
-			if (HIWORD (wParam) == BN_CLICKED) {
-				((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_CLICKED) {
 				((ExtraStabilisation*)context)->ToggleEnable (hWnd);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraStabilisation*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraStabilisation*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraStabilisation*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams(hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraStabilisation*)context)->StoreParams(hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -1685,44 +1670,37 @@ void ExtraMfdConfig::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraMfdConfig*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraMfdConfig*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraMfdConfig*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraMfdConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraMfdConfig*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -1869,44 +1847,37 @@ void ExtraShutdown::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraShutdown*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraShutdown*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraShutdown*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraShutdown*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraShutdown*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -2069,56 +2040,49 @@ void ExtraFixedStep::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_CHECK1:
+			if (HIWORD (wParam) == BN_CLICKED) {
+				((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
+				return TRUE;
+			}
+			break;
+		case IDC_BUTTON1:
+			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraFixedStep*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_CHECK1:
-#ifndef __linux__
-			if (HIWORD (wParam) == BN_CLICKED) {
-				((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ToggleEnable (hWnd);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_CLICKED) {
 				((ExtraFixedStep*)context)->ToggleEnable (hWnd);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraFixedStep*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraFixedStep*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraFixedStep*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraFixedStep*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -2212,44 +2176,37 @@ void ExtraRenderingOptions::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+	//	case IDC_BUTTON2:
+	//		((ExtraTimerSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+	//		return 0;
+		case IDOK:
+			if (((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraRenderingOptions*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraRenderingOptions*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 	//	case IDC_BUTTON2:
-#ifndef __linux__
-	//		((ExtraTimerSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-	//		return 0;
-#else // __linux__
 	//		((ExtraTimerSettings*)context)->OpenHelp (hWnd);
 	//		return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraRenderingOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraRenderingOptions*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -2357,44 +2314,37 @@ void ExtraPerformanceSettings::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		case IDC_BUTTON2:
+			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDOK:
+			if (((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraPerformanceSettings*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraPerformanceSettings*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		case IDC_BUTTON2:
-#ifndef __linux__
-			((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraPerformanceSettings*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraPerformanceSettings*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraPerformanceSettings*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -2507,44 +2457,37 @@ void ExtraLaunchpadOptions::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		//case IDC_BUTTON2:
+		//	((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+		//	return 0;
+		case IDOK:
+			if (((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraLaunchpadOptions*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraLaunchpadOptions*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		//case IDC_BUTTON2:
-#ifndef __linux__
-		//	((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-		//	return 0;
-#else // __linux__
 		//	((ExtraLaunchpadOptions*)context)->OpenHelp (hWnd);
 		//	return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraLaunchpadOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraLaunchpadOptions*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__
@@ -2635,44 +2578,37 @@ void ExtraLogfileOptions::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BUTTON1:
+			((ExtraLogfileOptions*)GetWindowLongPtr(hWnd, DWLP_USER))->ResetDialog (hWnd);
+			return 0;
+		//case IDC_BUTTON2:
+		//	((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+		//	return 0;
+		case IDOK:
+			if (((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
+				EndDialog (hWnd, 0);
+			break;
+		}
+		break;
+	}
+	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 	((ExtraLogfileOptions*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((ExtraLogfileOptions*)GetWindowLongPtr(hWnd, DWLP_USER))->ResetDialog (hWnd);
-			return 0;
-#else // __linux__
 			((ExtraLogfileOptions*)context)->ResetDialog (hWnd);
 			return;
-#endif // __linux__
 		//case IDC_BUTTON2:
-#ifndef __linux__
-		//	((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-		//	return 0;
-#else // __linux__
 		//	((ExtraLogfileOptions*)context)->OpenHelp (hWnd);
 		//	return;
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			if (((ExtraLogfileOptions*)GetWindowLongPtr (hWnd, DWLP_USER))->StoreParams (hWnd))
-				EndDialog (hWnd, 0);
-#else // __linux__
 			if (((ExtraLogfileOptions*)context)->StoreParams (hWnd))
 				qobject_cast<QDialog*> (hWnd)->done (0);
-#endif // __linux__
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return BuiltinLaunchpadItem::DlgProc (hWnd, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	BuiltinLaunchpadItem::DlgProc (hWnd, context);
 #endif // __linux__

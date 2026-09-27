@@ -761,24 +761,21 @@ void ScnEditorTab::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDHELP:
 			OpenHelp();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	}
 	return FALSE;
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDHELP:
+			OpenHelp();
+			return;
+		}
 	});
 #endif // __linux__
 }
@@ -895,6 +892,37 @@ void EditorTab_Vessel::TabProc (QWidget *hDlg)
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDCANCEL:
+			ed->CloseDialog();
+			return TRUE;
+		case IDC_VESSELNEW:
+			SwitchTab (1);
+			return TRUE;
+		case IDC_VESSELEDIT:
+			i = SendDlgItemMessage (hTab, IDC_LIST1, LB_GETCURSEL, 0, 0);
+			SendDlgItemMessage (hTab, IDC_LIST1, LB_GETTEXT, i, (LPARAM)cbuf);
+			ed->hVessel = oapiGetVesselByName (ed->ExtractVesselName(cbuf));
+			if (ed->hVessel) SwitchTab (3);
+			return TRUE;
+		case IDC_VESSELDEL:
+			DeleteVessel();
+			return TRUE;
+		case IDC_SAVE:
+			SwitchTab (2);
+			return TRUE;
+		case IDC_DATE:
+			SwitchTab (11);
+			return TRUE;
+		case IDC_LIST1:
+			if (HIWORD (wParam) == LBN_SELCHANGE) {
+				VesselSelected ();
+				return TRUE;
+			}
+			break;
+		}
+		break;
+	}
+	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_INITDIALOG
 		DlgItem<QAbstractButton> (hDlg, IDC_TRACK)->setChecked (true);
@@ -903,77 +931,34 @@ void EditorTab_Vessel::TabProc (QWidget *hDlg)
 		int i;
 		char cbuf[256];
 		switch (id) {
-#endif // __linux__
 		case IDCANCEL:
 			ed->CloseDialog();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_VESSELNEW:
 			SwitchTab (1);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_VESSELEDIT:
-#ifndef __linux__
-			i = SendDlgItemMessage (hTab, IDC_LIST1, LB_GETCURSEL, 0, 0);
-			SendDlgItemMessage (hTab, IDC_LIST1, LB_GETTEXT, i, (LPARAM)cbuf);
-#else // __linux__
 			i = ListGetCurSel (DlgItem<QListWidget> (hTab, IDC_LIST1));
 			ListGetText (DlgItem<QListWidget> (hTab, IDC_LIST1), i, cbuf, 256);
-#endif // __linux__
 			ed->hVessel = oapiGetVesselByName (ed->ExtractVesselName(cbuf));
 			if (ed->hVessel) SwitchTab (3);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_VESSELDEL:
 			DeleteVessel();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_SAVE:
 			SwitchTab (2);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_DATE:
 			SwitchTab (11);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_LIST1:
-#ifndef __linux__
-			if (HIWORD (wParam) == LBN_SELCHANGE) {
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
-#endif // __linux__
 				VesselSelected ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			}
 			break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -1173,21 +1158,11 @@ void EditorTab_New::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDCANCEL:
 			SwitchTab (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_CREATE:
 			if (CreateVessel ()) SwitchTab (3); // switch to editor page
-#ifndef __linux__
 			return TRUE;
 		}
 		break;
@@ -1204,11 +1179,7 @@ void EditorTab_New::TabProc (QWidget *hDlg)
 				return TRUE;
 			}
 			break;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_PAINT:
 		DrawVesselBmp ();
@@ -1216,6 +1187,16 @@ void EditorTab_New::TabProc (QWidget *hDlg)
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDCANCEL:
+			SwitchTab (0);
+			return;
+		case IDC_CREATE:
+			if (CreateVessel ()) SwitchTab (3); // switch to editor page
+			return;
+		}
 	});
 	// WM_NOTIFY: IDC_VESSELTP
 	QTreeWidget *tv = DlgItem<QTreeWidget> (hDlg, IDC_VESSELTP);
@@ -1568,32 +1549,29 @@ void EditorTab_Save::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDOK:
 			if (ed->SaveScenario (hTab))
 				SwitchTab (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (0);
+			return;
+		case IDOK:
+			if (ed->SaveScenario (hTab))
+				SwitchTab (0);
+			return;
+		}
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -1987,37 +1965,18 @@ void EditorTab_Date::TabProc (QWidget *hDlg)
 		} return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-		DlgItem<QComboBox> (hDlg, IDC_PROP_SORBITAL)->setCurrentIndex (1);
-	}
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_NOW:
 			SetMJD (oapiGetSysMJD(), true);
 			// fall through
 		case IDC_APPLY:
 			Apply();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_UT_DAY:
 		case IDC_UT_MONTH:
 		case IDC_UT_YEAR:
@@ -2025,91 +1984,41 @@ void EditorTab_Date::TabProc (QWidget *hDlg)
 		case IDC_UT_MIN:
 		case IDC_UT_SEC:
 			OnChangeDateTime ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_MJD:
 			OnChangeMjd ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_JD:
 			OnChangeJd ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_JC2000:
 			OnChangeJc ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EPOCH:
 			OnChangeEpoch ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-#else // __linux__
-	});
-	// WM_NOTIFY
-	oapiConnectDlgDeltaPos (hDlg, [this](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			double dmjd = 0;
 			bool dut = false;
-#ifndef __linux__
 			switch (((NMHDR*)lParam)->idFrom) {
-#else // __linux__
-			switch (idFrom) {
-#endif // __linux__
 			case IDC_SPIN_DAY:
-#ifndef __linux__
 				dmjd = -nmud->iDelta;
-#else // __linux__
-				dmjd = -iDelta;
-#endif // __linux__
 				break;
 			case IDC_SPIN_HOUR:
-#ifndef __linux__
 				dmjd = -nmud->iDelta/24.0;
-#else // __linux__
-				dmjd = -iDelta/24.0;
-#endif // __linux__
 				break;
 			case IDC_SPIN_MINUTE:
-#ifndef __linux__
 				dmjd = -nmud->iDelta/(24.0*60.0);
-#else // __linux__
-				dmjd = -iDelta/(24.0*60.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN_SECOND:
-#ifndef __linux__
 				dmjd = -nmud->iDelta/(24.0*3600.0);
-#else // __linux__
-				dmjd = -iDelta/(24.0*3600.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN_MONTH:
-#ifndef __linux__
 				if (nmud->iDelta > 0) {
-#else // __linux__
-				if (iDelta > 0) {
-#endif // __linux__
 					date.tm_mon--;
 					if (date.tm_mon < 1) date.tm_year--, date.tm_mon = 12;
 				} else {
@@ -2119,11 +2028,7 @@ void EditorTab_Date::TabProc (QWidget *hDlg)
 				dut = true;
 				break;
 			case IDC_SPIN_YEAR:
-#ifndef __linux__
 				date.tm_year -= nmud->iDelta;
-#else // __linux__
-				date.tm_year -= iDelta;
-#endif // __linux__
 				dut = true;
 				break;
 			}
@@ -2132,12 +2037,87 @@ void EditorTab_Date::TabProc (QWidget *hDlg)
 				else SetUT (&date, true);
 				Apply();
 			}
-#ifndef __linux__
 		}
 		break;
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+		DlgItem<QComboBox> (hDlg, IDC_PROP_SORBITAL)->setCurrentIndex (1);
+	}
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (0);
+			return;
+		case IDC_REFRESH:
+			Refresh();
+			return;
+		case IDC_NOW:
+			SetMJD (oapiGetSysMJD(), true);
+			// fall through
+		case IDC_APPLY:
+			Apply();
+			return;
+		case IDC_UT_DAY:
+		case IDC_UT_MONTH:
+		case IDC_UT_YEAR:
+		case IDC_UT_HOUR:
+		case IDC_UT_MIN:
+		case IDC_UT_SEC:
+			OnChangeDateTime ();
+			return;
+		case IDC_MJD:
+			OnChangeMjd ();
+			return;
+		case IDC_JD:
+			OnChangeJd ();
+			return;
+		case IDC_JC2000:
+			OnChangeJc ();
+			return;
+		case IDC_EPOCH:
+			OnChangeEpoch ();
+			return;
+		}
+	});
+	// WM_NOTIFY
+	oapiConnectDlgDeltaPos (hDlg, [this](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
+			double dmjd = 0;
+			bool dut = false;
+			switch (idFrom) {
+			case IDC_SPIN_DAY:
+				dmjd = -iDelta;
+				break;
+			case IDC_SPIN_HOUR:
+				dmjd = -iDelta/24.0;
+				break;
+			case IDC_SPIN_MINUTE:
+				dmjd = -iDelta/(24.0*60.0);
+				break;
+			case IDC_SPIN_SECOND:
+				dmjd = -iDelta/(24.0*3600.0);
+				break;
+			case IDC_SPIN_MONTH:
+				if (iDelta > 0) {
+					date.tm_mon--;
+					if (date.tm_mon < 1) date.tm_year--, date.tm_mon = 12;
+				} else {
+					date.tm_mon++;
+					if (date.tm_mon > 12) date.tm_year++, date.tm_mon = 1;
+				}
+				dut = true;
+				break;
+			case IDC_SPIN_YEAR:
+				date.tm_year -= iDelta;
+				dut = true;
+				break;
+			}
+			if (dmjd || dut) {
+				if (dmjd) SetMJD (mjd+dmjd, true);
+				else SetUT (&date, true);
+				Apply();
+			}
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -2239,10 +2219,11 @@ void EditorTab_Edit::InitTab ()
 	}
 #ifndef __linux__
 	SetWindowText (GetDlgItem (hTab, IDC_EDIT3),
+		vessel->GetFlightStatus() & 1 ? "Inactive (Landed)":"Active (Flight)");
 #else // __linux__
 	oapiSetDlgItemText (hTab, IDC_EDIT3,
-#endif // __linux__
 		vessel->GetFlightStatus() & 1 ? "Inactive (Landed)":"Active (Flight)");
+#endif // __linux__
 }
 
 char *EditorTab_Edit::HelpTopic ()
@@ -2293,92 +2274,86 @@ void EditorTab_Edit::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int ctlid, int code, QWidget *hCtrl) {
-		switch (ctlid) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_ELEMENTS:
 			SwitchTab (4);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_STATEVEC:
 			SwitchTab (5);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_GROUND:
 			SwitchTab (6);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_ORIENT:
 			SwitchTab (7);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_ANGVEL:
 			SwitchTab (8);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_PROPELLANT:
 			SwitchTab (9);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_DOCKING:
 			SwitchTab (10);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EXTRA1:
 		case IDC_EXTRA2:
 		case IDC_EXTRA3:
 		case IDC_EXTRA4:
 		case IDC_EXTRA5:
 		case IDC_EXTRA6: {
-#ifndef __linux__
 			int id = LOWORD(wParam)-IDC_EXTRA1;
-#else // __linux__
-			int id = ctlid-IDC_EXTRA1;
-#endif // __linux__
 			if (CustomPage[id])
 				SwitchTab (CustomPage[id]);
 			else
 				funcCustom[id](ed->hVessel);
-#ifndef __linux__
 			} return TRUE;
-#else // __linux__
-			} return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_SCNEDITOR:
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int ctlid, int code, QWidget *hCtrl) {
+		switch (ctlid) {
+		case IDC_BACK:
+			SwitchTab (0);
+			return;
+		case IDC_ELEMENTS:
+			SwitchTab (4);
+			return;
+		case IDC_STATEVEC:
+			SwitchTab (5);
+			return;
+		case IDC_GROUND:
+			SwitchTab (6);
+			return;
+		case IDC_ORIENT:
+			SwitchTab (7);
+			return;
+		case IDC_ANGVEL:
+			SwitchTab (8);
+			return;
+		case IDC_PROPELLANT:
+			SwitchTab (9);
+			return;
+		case IDC_DOCKING:
+			SwitchTab (10);
+			return;
+		case IDC_EXTRA1:
+		case IDC_EXTRA2:
+		case IDC_EXTRA3:
+		case IDC_EXTRA4:
+		case IDC_EXTRA5:
+		case IDC_EXTRA6: {
+			int id = ctlid-IDC_EXTRA1;
+			if (CustomPage[id])
+				SwitchTab (CustomPage[id]);
+			else
+				funcCustom[id](ed->hVessel);
+			} return;
+		}
 	});
 	// WM_SCNEDITOR: requests of the vessel module through ScnEditorMsg, also while its secInit runs
 	SCNEDITORMSG msgproc = [](QWidget *hDlg, WPARAM wParam, LPARAM lParam) -> INT_PTR {
@@ -2788,323 +2763,267 @@ void EditorTab_Elements::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return TRUE;
+		case IDC_APPLY:
+			Apply ();
+			return TRUE;
+		case IDC_REFRESH:
+			Refresh ();
+			return TRUE;
+		case IDC_REF:
+			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
+				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
+				return TRUE;
+			}
+			break;
+		case IDC_FRM:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO1:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO1, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.a * lengthscale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO2:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO2, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.i * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO3:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO3, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.theta * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT4), cbuf);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO4:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO4, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.omegab * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT5), cbuf);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO5:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO5, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.L * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT6), cbuf);
+				return TRUE;
+			}
+			break;
+		case IDC_COMBO6:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				i = SendDlgItemMessage (hDlg, IDC_COMBO6, CB_GETCURSEL, 0, 0);
+				EnableWindow (GetDlgItem (hDlg, IDC_EDIT7), i != 0);
+				return TRUE;
+			}
+			break;
+		}
+		break;
+	case WM_NOTIFY:
+		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
+			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
+			switch (((NMHDR*)lParam)->idFrom) {
+			case IDC_SPIN1:
+				el.a *= (1.0 - nmud->iDelta*1e-4);
+				i = SendDlgItemMessage (hDlg, IDC_COMBO1, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.a * lengthscale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN2:
+				el.e *= (1.0 - nmud->iDelta*0.001);
+				if (el.e < 0.0) el.e = 0.0;
+				sprintf (cbuf, "%g", el.e);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN3:
+				el.i -= nmud->iDelta*RAD*0.1;
+				if      (el.i >  PI) el.i -= 2.0*PI;
+				else if (el.i < -PI) el.i += 2.0*PI;
+				i = SendDlgItemMessage (hDlg, IDC_COMBO2, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.i * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN4:
+				el.theta -= nmud->iDelta*RAD*0.1;
+				if      (el.theta >= 2.0*PI) el.theta -= 2.0*PI;
+				else if (el.theta <  0.0)    el.theta += 2.0*PI;
+				i = SendDlgItemMessage (hDlg, IDC_COMBO3, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.theta * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT4), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN5:
+				el.omegab -= nmud->iDelta*RAD*0.1;
+				if      (el.omegab >= 2.0*PI) el.omegab -= 2.0*PI;
+				else if (el.omegab <  0.0)    el.omegab += 2.0*PI;
+				i = SendDlgItemMessage (hDlg, IDC_COMBO4, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.omegab * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT5), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN6:
+				el.L -= nmud->iDelta*RAD*0.1;
+				if      (el.L >= 2.0*PI) el.L -= 2.0*PI;
+				else if (el.L <  0.0)    el.L += 2.0*PI;
+				i = SendDlgItemMessage (hDlg, IDC_COMBO5, CB_GETCURSEL, 0, 0);
+				sprintf (cbuf, "%g", el.L * anglescale[i]);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT6), cbuf);
+				Apply ();
+				return TRUE;
+			}
+		}
+		break;
+	}
+	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
 	// WM_COMMAND
 	oapiConnectDlgCommands (hDlg, [this, hDlg](int id, int code, QWidget *hCtrl) {
 		char cbuf[256];
 		int i;
 		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_REF:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
-				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
 				PostCommand (hDlg, IDC_REFRESH);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_FRM:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				PostCommand (hDlg, IDC_REFRESH);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO1:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO1, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO1)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.a * lengthscale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-				return TRUE;
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO2:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO2, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO2)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.i * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
-				return TRUE;
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO3:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO3, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO3)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.theta * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT4), cbuf);
-				return TRUE;
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT4, cbuf);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO4:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO4, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO4)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.omegab * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT5), cbuf);
-				return TRUE;
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT5, cbuf);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO5:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO5, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO5)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.L * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT6), cbuf);
-				return TRUE;
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT6, cbuf);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_COMBO6:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				i = SendDlgItemMessage (hDlg, IDC_COMBO6, CB_GETCURSEL, 0, 0);
-				EnableWindow (GetDlgItem (hDlg, IDC_EDIT7), i != 0);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO6)->currentIndex();
 				oapiResDlgItem (hDlg, IDC_EDIT7)->setEnabled (i != 0);
 				return;
-#endif // __linux__
 			}
 			break;
 		}
-#ifndef __linux__
-		break;
-	case WM_NOTIFY:
-		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
-			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-			switch (((NMHDR*)lParam)->idFrom) {
-#else // __linux__
 	});
 	// WM_NOTIFY
 	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
 			char cbuf[256];
 			int i;
 			switch (idFrom) {
-#endif // __linux__
 			case IDC_SPIN1:
-#ifndef __linux__
-				el.a *= (1.0 - nmud->iDelta*1e-4);
-				i = SendDlgItemMessage (hDlg, IDC_COMBO1, CB_GETCURSEL, 0, 0);
-#else // __linux__
 				el.a *= (1.0 - iDelta*1e-4);
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO1)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.a * lengthscale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN2:
-#ifndef __linux__
-				el.e *= (1.0 - nmud->iDelta*0.001);
-#else // __linux__
 				el.e *= (1.0 - iDelta*0.001);
-#endif // __linux__
 				if (el.e < 0.0) el.e = 0.0;
 				sprintf (cbuf, "%g", el.e);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN3:
-#ifndef __linux__
-				el.i -= nmud->iDelta*RAD*0.1;
-#else // __linux__
 				el.i -= iDelta*RAD*0.1;
-#endif // __linux__
 				if      (el.i >  PI) el.i -= 2.0*PI;
 				else if (el.i < -PI) el.i += 2.0*PI;
-#ifndef __linux__
-				i = SendDlgItemMessage (hDlg, IDC_COMBO2, CB_GETCURSEL, 0, 0);
-#else // __linux__
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO2)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.i * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN4:
-#ifndef __linux__
-				el.theta -= nmud->iDelta*RAD*0.1;
-#else // __linux__
 				el.theta -= iDelta*RAD*0.1;
-#endif // __linux__
 				if      (el.theta >= 2.0*PI) el.theta -= 2.0*PI;
 				else if (el.theta <  0.0)    el.theta += 2.0*PI;
-#ifndef __linux__
-				i = SendDlgItemMessage (hDlg, IDC_COMBO3, CB_GETCURSEL, 0, 0);
-#else // __linux__
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO3)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.theta * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT4), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT4, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN5:
-#ifndef __linux__
-				el.omegab -= nmud->iDelta*RAD*0.1;
-#else // __linux__
 				el.omegab -= iDelta*RAD*0.1;
-#endif // __linux__
 				if      (el.omegab >= 2.0*PI) el.omegab -= 2.0*PI;
 				else if (el.omegab <  0.0)    el.omegab += 2.0*PI;
-#ifndef __linux__
-				i = SendDlgItemMessage (hDlg, IDC_COMBO4, CB_GETCURSEL, 0, 0);
-#else // __linux__
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO4)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.omegab * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT5), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT5, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN6:
-#ifndef __linux__
-				el.L -= nmud->iDelta*RAD*0.1;
-#else // __linux__
 				el.L -= iDelta*RAD*0.1;
-#endif // __linux__
 				if      (el.L >= 2.0*PI) el.L -= 2.0*PI;
 				else if (el.L <  0.0)    el.L += 2.0*PI;
-#ifndef __linux__
-				i = SendDlgItemMessage (hDlg, IDC_COMBO5, CB_GETCURSEL, 0, 0);
-#else // __linux__
 				i = DlgItem<QComboBox> (hDlg, IDC_COMBO5)->currentIndex();
-#endif // __linux__
 				sprintf (cbuf, "%g", el.L * anglescale[i]);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT6), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT6, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			}
-#ifndef __linux__
-		}
-		break;
-	}
-	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -3222,6 +3141,106 @@ INT_PTR EditorTab_Statevec::TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return TRUE;
+		case IDC_APPLY:
+			Apply ();
+			return TRUE;
+		case IDC_REFRESH:
+			Refresh ();
+			return TRUE;
+		case IDC_REF:
+			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
+				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
+				return TRUE;
+			}
+			break;
+		case IDC_FRM:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
+				return TRUE;
+			}
+			break;
+		case IDC_CRD:
+			if (HIWORD (wParam) == CBN_SELCHANGE) {
+				DlgLabels ();
+				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
+				return TRUE;
+			}
+			break;
+		case IDC_STATECPY: {
+			OBJHANDLE hV = GetVesselFromList (IDC_STATECPY);
+			switch (HIWORD(wParam)) {
+			case LBN_SELCHANGE:
+				Refresh (hV);
+				break;
+			case LBN_DBLCLK:
+				Refresh (hV);
+				Apply ();
+				break;
+			}
+			} break;
+		}
+		break;
+	case WM_NOTIFY:
+		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
+			char cbuf[256];
+			int crd = SendDlgItemMessage (hTab, IDC_CRD, CB_GETCURSEL, 0, 0);
+			int prec, idx = 0;
+			double val, dv;
+			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
+			switch (((NMHDR*)lParam)->idFrom) {
+			case IDC_SPIN1:
+				idx = IDC_EDIT1; prec = 1; dv = -nmud->iDelta*1.0;
+				break;
+			case IDC_SPIN1A:
+				idx = IDC_EDIT1; prec = 1; dv = -nmud->iDelta*1000.0;
+				break;
+			case IDC_SPIN2:
+				idx = IDC_EDIT2; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.0001:1.0);
+				break;
+			case IDC_SPIN2A:
+				idx = IDC_EDIT2; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.1:1000.0);
+				break;
+			case IDC_SPIN3:
+				idx = IDC_EDIT3; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.0001:1.0);
+				break;
+			case IDC_SPIN3A:
+				idx = IDC_EDIT3; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.1:1000.0);
+				break;
+			case IDC_SPIN4:
+				idx = IDC_EDIT4; prec = 2; dv = -nmud->iDelta*0.1;
+				break;
+			case IDC_SPIN4A:
+				idx = IDC_EDIT4; prec = 2; dv = -nmud->iDelta*100.0;
+				break;
+			case IDC_SPIN5:
+				idx = IDC_EDIT5; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-5:0.1);
+				break;
+			case IDC_SPIN5A:
+				idx = IDC_EDIT5; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-2:100.0);
+				break;
+			case IDC_SPIN6:
+				idx = IDC_EDIT6; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-5:0.1);
+				break;
+			case IDC_SPIN6A:
+				idx = IDC_EDIT6; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-2:100.0);
+				break;
+			}
+			if (idx) {
+				GetWindowText (GetDlgItem (hDlg, idx), cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val += dv;
+				sprintf (cbuf, "%0.*f", prec, val);
+				SetWindowText (GetDlgItem (hDlg, idx), cbuf);
+				Apply ();
+				return TRUE;
+			}
+		}
+		break;
+	}
+	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
 	int crd = DlgItem<QComboBox> (hTab, IDC_CRD)->currentIndex();
 	oapiSetDlgItemText (hTab, IDC_STATIC1A, crd ? "radius" : "x");
@@ -3241,225 +3260,101 @@ void EditorTab_Statevec::TabProc (QWidget *hDlg)
 	// WM_COMMAND
 	oapiConnectDlgCommands (hDlg, [this, hDlg](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDC_REF:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
-				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
 				PostCommand (hDlg, IDC_REFRESH);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_FRM:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
-				return TRUE;
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
 				PostCommand (hDlg, IDC_REFRESH);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_CRD:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE) {
-#else // __linux__
 			if (code == RESN_SELCHANGE) {
-#endif // __linux__
 				DlgLabels ();
-#ifndef __linux__
-				PostMessage (hDlg, WM_COMMAND, IDC_REFRESH, 0);
-				return TRUE;
-#else // __linux__
 				PostCommand (hDlg, IDC_REFRESH);
 				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_STATECPY: {
 			OBJHANDLE hV = GetVesselFromList (IDC_STATECPY);
-#ifndef __linux__
-			switch (HIWORD(wParam)) {
-			case LBN_SELCHANGE:
-#else // __linux__
 			switch (code) {
 			case RESN_SELCHANGE:
-#endif // __linux__
 				Refresh (hV);
 				break;
-#ifndef __linux__
-			case LBN_DBLCLK:
-#else // __linux__
 			case RESN_DBLCLK:
-#endif // __linux__
 				Refresh (hV);
 				Apply ();
 				break;
 			}
 			} break;
 		}
-#ifndef __linux__
-		break;
-	case WM_NOTIFY:
-		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
-#else // __linux__
 	});
 	// WM_NOTIFY
 	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
-#ifndef __linux__
-			int crd = SendDlgItemMessage (hTab, IDC_CRD, CB_GETCURSEL, 0, 0);
-#else // __linux__
 			int crd = DlgItem<QComboBox> (hTab, IDC_CRD)->currentIndex();
-#endif // __linux__
 			int prec, idx = 0;
 			double val, dv;
-#ifndef __linux__
-			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-			switch (((NMHDR*)lParam)->idFrom) {
-#else // __linux__
 			switch (idFrom) {
-#endif // __linux__
 			case IDC_SPIN1:
-#ifndef __linux__
-				idx = IDC_EDIT1; prec = 1; dv = -nmud->iDelta*1.0;
-#else // __linux__
 				idx = IDC_EDIT1; prec = 1; dv = -iDelta*1.0;
-#endif // __linux__
 				break;
 			case IDC_SPIN1A:
-#ifndef __linux__
-				idx = IDC_EDIT1; prec = 1; dv = -nmud->iDelta*1000.0;
-#else // __linux__
 				idx = IDC_EDIT1; prec = 1; dv = -iDelta*1000.0;
-#endif // __linux__
 				break;
 			case IDC_SPIN2:
-#ifndef __linux__
-				idx = IDC_EDIT2; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.0001:1.0);
-#else // __linux__
 				idx = IDC_EDIT2; prec = (crd?6:1); dv = -iDelta*(crd?0.0001:1.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN2A:
-#ifndef __linux__
-				idx = IDC_EDIT2; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.1:1000.0);
-#else // __linux__
 				idx = IDC_EDIT2; prec = (crd?6:1); dv = -iDelta*(crd?0.1:1000.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN3:
-#ifndef __linux__
-				idx = IDC_EDIT3; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.0001:1.0);
-#else // __linux__
 				idx = IDC_EDIT3; prec = (crd?6:1); dv = -iDelta*(crd?0.0001:1.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN3A:
-#ifndef __linux__
-				idx = IDC_EDIT3; prec = (crd?6:1); dv = -nmud->iDelta*(crd?0.1:1000.0);
-#else // __linux__
 				idx = IDC_EDIT3; prec = (crd?6:1); dv = -iDelta*(crd?0.1:1000.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN4:
-#ifndef __linux__
-				idx = IDC_EDIT4; prec = 2; dv = -nmud->iDelta*0.1;
-#else // __linux__
 				idx = IDC_EDIT4; prec = 2; dv = -iDelta*0.1;
-#endif // __linux__
 				break;
 			case IDC_SPIN4A:
-#ifndef __linux__
-				idx = IDC_EDIT4; prec = 2; dv = -nmud->iDelta*100.0;
-#else // __linux__
 				idx = IDC_EDIT4; prec = 2; dv = -iDelta*100.0;
-#endif // __linux__
 				break;
 			case IDC_SPIN5:
-#ifndef __linux__
-				idx = IDC_EDIT5; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-5:0.1);
-#else // __linux__
 				idx = IDC_EDIT5; prec = (crd?7:2); dv = -iDelta*(crd?1e-5:0.1);
-#endif // __linux__
 				break;
 			case IDC_SPIN5A:
-#ifndef __linux__
-				idx = IDC_EDIT5; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-2:100.0);
-#else // __linux__
 				idx = IDC_EDIT5; prec = (crd?7:2); dv = -iDelta*(crd?1e-2:100.0);
-#endif // __linux__
 				break;
 			case IDC_SPIN6:
-#ifndef __linux__
-				idx = IDC_EDIT6; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-5:0.1);
-#else // __linux__
 				idx = IDC_EDIT6; prec = (crd?7:2); dv = -iDelta*(crd?1e-5:0.1);
-#endif // __linux__
 				break;
 			case IDC_SPIN6A:
-#ifndef __linux__
-				idx = IDC_EDIT6; prec = (crd?7:2); dv = -nmud->iDelta*(crd?1e-2:100.0);
-#else // __linux__
 				idx = IDC_EDIT6; prec = (crd?7:2); dv = -iDelta*(crd?1e-2:100.0);
-#endif // __linux__
 				break;
 			}
 			if (idx) {
-#ifndef __linux__
-				GetWindowText (GetDlgItem (hDlg, idx), cbuf, 256);
-#else // __linux__
 				oapiGetDlgItemText (hDlg, idx, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
 				val += dv;
 				sprintf (cbuf, "%0.*f", prec, val);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, idx), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, idx, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			}
-#ifndef __linux__
-		}
-		break;
-	}
-	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -3728,108 +3623,52 @@ void EditorTab_Landed::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this, hDlg](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
-#ifndef __linux__
 			if (lParam == 1) { // rescan bases
-#else // __linux__
-			if (hCtrl == (QWidget*)1) { // rescan bases (lParam == 1)
-#endif // __linux__
 				char cbuf[256];
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_REF), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_REF, cbuf, 256);
-#endif // __linux__
 				OBJHANDLE hRef = oapiGetGbodyByName (cbuf);
 				ScanBaseList (hDlg, IDC_BASE, hRef);
 			}
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REF:
-#ifndef __linux__
 			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
 				PostMessage (hDlg, WM_USER+0, 0, 0);
 				return TRUE;
-#else // __linux__
-			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
-				QCoreApplication::postEvent (hDlg, new QEvent (QEvent::Type (QEvent::User+0))); // PostMessage WM_USER+0
-				return;
-#endif // __linux__
 			}
 		case IDC_BASE:
-#ifndef __linux__
 			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
 				PostMessage (hDlg, WM_USER+1, 0, 0);
 				return TRUE;
-#else // __linux__
-			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
-				QCoreApplication::postEvent (hDlg, new QEvent (QEvent::Type (QEvent::User+1))); // PostMessage WM_USER+1
-				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_PAD:
-#ifndef __linux__
 			if (HIWORD (wParam) == CBN_SELCHANGE || HIWORD (wParam) == CBN_EDITCHANGE) {
-#else // __linux__
-			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
-#endif // __linux__
 				ed->SetBasePosition (hDlg);
-#ifndef __linux__
 				PostMessage (hDlg, WM_COMMAND, IDC_APPLY, 0);
 				return TRUE;
-#else // __linux__
-				PostCommand (hDlg, IDC_APPLY);
-				return;
-#endif // __linux__
 			}
 			break;
 		case IDC_STATECPY: {
 			OBJHANDLE hV = GetVesselFromList (IDC_STATECPY);
-#ifndef __linux__
 			switch (HIWORD(wParam)) {
 			case LBN_SELCHANGE:
-#else // __linux__
-			switch (code) {
-			case RESN_SELCHANGE:
-#endif // __linux__
 				Refresh (hV);
 				break;
-#ifndef __linux__
 			case LBN_DBLCLK:
-#else // __linux__
-			case RESN_DBLCLK:
-#endif // __linux__
 				Refresh (hV);
 				Apply ();
 				break;
 			}
 			} break;
 		}
-#ifndef __linux__
 		break;
 	case WM_USER+0: { // reference body changed
 		char cbuf[256];
@@ -3853,7 +3692,97 @@ void EditorTab_Landed::TabProc (QWidget *hDlg)
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
+			char cbuf[256];
+			double val;
+			int id = ((NMHDR*)lParam)->idFrom;
+			switch (id) {
+			case IDC_SPIN1:
+			case IDC_SPIN1A:
+				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= nmud->iDelta * (id == IDC_SPIN1 ? 0.00001 : 0.001);
+				if      (val < -180.0) val += 360.0;
+				else if (val > +180.0) val -= 360.0;
+				sprintf (cbuf, "%lf", val);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN2:
+			case IDC_SPIN2A:
+				GetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= nmud->iDelta * (id == IDC_SPIN2 ? 0.00001 : 0.001);
+				val = min (90.0, max (-90.0, val));
+				sprintf (cbuf, "%lf", val);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
+				Apply ();
+				return TRUE;
+			case IDC_SPIN3:
+			case IDC_SPIN3A:
+				GetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= nmud->iDelta * (id == IDC_SPIN3 ? 0.01 : 1.0);
+				if      (val <   0.0) val += 360.0;
+				else if (val > 360.0) val -= 360.0;
+				sprintf (cbuf, "%lf", val);
+				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
+				Apply ();
+				return TRUE;
+			}
+		}
+		break;
+	}
+	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this, hDlg](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return;
+		case IDC_APPLY:
+			Apply ();
+			return;
+		case IDC_REFRESH:
+			if (hCtrl == (QWidget*)1) { // rescan bases (lParam == 1)
+				char cbuf[256];
+				oapiGetDlgItemText (hDlg, IDC_REF, cbuf, 256);
+				OBJHANDLE hRef = oapiGetGbodyByName (cbuf);
+				ScanBaseList (hDlg, IDC_BASE, hRef);
+			}
+			Refresh ();
+			return;
+		case IDC_REF:
+			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
+				QCoreApplication::postEvent (hDlg, new QEvent (QEvent::Type (QEvent::User+0))); // PostMessage WM_USER+0
+				return;
+			}
+		case IDC_BASE:
+			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
+				QCoreApplication::postEvent (hDlg, new QEvent (QEvent::Type (QEvent::User+1))); // PostMessage WM_USER+1
+				return;
+			}
+			break;
+		case IDC_PAD:
+			if (code == RESN_SELCHANGE || code == RESN_EDITCHANGE) {
+				ed->SetBasePosition (hDlg);
+				PostCommand (hDlg, IDC_APPLY);
+				return;
+			}
+			break;
+		case IDC_STATECPY: {
+			OBJHANDLE hV = GetVesselFromList (IDC_STATECPY);
+			switch (code) {
+			case RESN_SELCHANGE:
+				Refresh (hV);
+				break;
+			case RESN_DBLCLK:
+				Refresh (hV);
+				Apply ();
+				break;
+			}
+			} break;
+		}
 	});
 	// WM_USER+0, WM_USER+1: posted as Qt user events
 	new DlgEvents (hDlg, [this, hDlg](QEvent *e) -> bool {
@@ -3882,102 +3811,43 @@ void EditorTab_Landed::TabProc (QWidget *hDlg)
 	});
 	// WM_NOTIFY
 	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
 			double val;
-#ifndef __linux__
-			int id = ((NMHDR*)lParam)->idFrom;
-#else // __linux__
 			int id = idFrom;
-#endif // __linux__
 			switch (id) {
 			case IDC_SPIN1:
 			case IDC_SPIN1A:
-#ifndef __linux__
-				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
-#else // __linux__
 				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
-				val -= nmud->iDelta * (id == IDC_SPIN1 ? 0.00001 : 0.001);
-#else // __linux__
 				val -= iDelta * (id == IDC_SPIN1 ? 0.00001 : 0.001);
-#endif // __linux__
 				if      (val < -180.0) val += 360.0;
 				else if (val > +180.0) val -= 360.0;
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN2:
 			case IDC_SPIN2A:
-#ifndef __linux__
-				GetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf, 256);
-#else // __linux__
 				oapiGetDlgItemText (hDlg, IDC_EDIT2, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
-				val -= nmud->iDelta * (id == IDC_SPIN2 ? 0.00001 : 0.001);
-#else // __linux__
 				val -= iDelta * (id == IDC_SPIN2 ? 0.00001 : 0.001);
-#endif // __linux__
 				val = min (90.0, max (-90.0, val));
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			case IDC_SPIN3:
 			case IDC_SPIN3A:
-#ifndef __linux__
-				GetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf, 256);
-#else // __linux__
 				oapiGetDlgItemText (hDlg, IDC_EDIT3, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
-				val -= nmud->iDelta * (id == IDC_SPIN3 ? 0.01 : 1.0);
-#else // __linux__
 				val -= iDelta * (id == IDC_SPIN3 ? 0.01 : 1.0);
-#endif // __linux__
 				if      (val <   0.0) val += 360.0;
 				else if (val > 360.0) val -= 360.0;
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
-				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
-#else // __linux__
 				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
-				return TRUE;
-#else // __linux__
 				return;
-#endif // __linux__
 			}
-#ifndef __linux__
-		}
-		break;
-	}
-	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -4196,148 +4066,125 @@ void EditorTab_Orientation::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-#else // __linux__
-	});
-	// WM_NOTIFY
-	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
 			double val;
-#ifndef __linux__
 			int id = ((NMHDR*)lParam)->idFrom;
-#else // __linux__
-			int id = idFrom;
-#endif // __linux__
 			switch (id) {
 			case IDC_SPIN1:
 			case IDC_SPIN1A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN1 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN1 ? 0.001 : 0.1);
-#endif // __linux__
 				if      (val < -180.0) val += 360.0;
 				else if (val > +180.0) val -= 360.0;
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN2:
 			case IDC_SPIN2A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT2, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
-#endif // __linux__
 				val = min (90.0, max (-90.0, val));
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN3:
 			case IDC_SPIN3A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT3, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
-#endif // __linux__
 				if      (val <   0.0) val += 360.0;
 				else if (val > 360.0) val -= 360.0;
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN4:
 			case IDC_SPIN5:
 			case IDC_SPIN6:
-#ifndef __linux__
 				Rotate (id-IDC_SPIN4, nmud->iDelta * -0.005);
 				return TRUE;
-#else // __linux__
-				Rotate (id-IDC_SPIN4, iDelta * -0.005);
-				return;
-#endif // __linux__
 			}
-#ifndef __linux__
 		}
 		break;
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return;
+		case IDC_REFRESH:
+			Refresh ();
+			return;
+		case IDC_APPLY:
+			Apply ();
+			return;
+		}
+	});
+	// WM_NOTIFY
+	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
+			char cbuf[256];
+			double val;
+			int id = idFrom;
+			switch (id) {
+			case IDC_SPIN1:
+			case IDC_SPIN1A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN1 ? 0.001 : 0.1);
+				if      (val < -180.0) val += 360.0;
+				else if (val > +180.0) val -= 360.0;
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
+				Apply ();
+				return;
+			case IDC_SPIN2:
+			case IDC_SPIN2A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT2, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
+				val = min (90.0, max (-90.0, val));
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
+				Apply ();
+				return;
+			case IDC_SPIN3:
+			case IDC_SPIN3A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT3, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
+				if      (val <   0.0) val += 360.0;
+				else if (val > 360.0) val -= 360.0;
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
+				Apply ();
+				return;
+			case IDC_SPIN4:
+			case IDC_SPIN5:
+			case IDC_SPIN6:
+				Rotate (id-IDC_SPIN4, iDelta * -0.005);
+				return;
+			}
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -4463,140 +4310,111 @@ void EditorTab_AngularVel::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_KILLROT:
 			Killrot ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-#else // __linux__
-	});
-	// WM_NOTIFY
-	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
 			double val;
-#ifndef __linux__
 			int id = ((NMHDR*)lParam)->idFrom;
-#else // __linux__
-			int id = idFrom;
-#endif // __linux__
 			switch (id) {
 			case IDC_SPIN1:
 			case IDC_SPIN1A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN4 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN4 ? 0.001 : 0.1);
-#endif // __linux__
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN2:
 			case IDC_SPIN2A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT2, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
-#endif // __linux__
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT2), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN3:
 			case IDC_SPIN3A:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT3, cbuf, 256);
-#endif // __linux__
 				sscanf (cbuf, "%lf", &val);
-#ifndef __linux__
 				val -= nmud->iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
-#else // __linux__
-				val -= iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
-#endif // __linux__
 				sprintf (cbuf, "%lf", val);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT3), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
-#endif // __linux__
 				Apply ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			}
-#ifndef __linux__
 		}
 		break;
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return;
+		case IDC_REFRESH:
+			Refresh ();
+			return;
+		case IDC_APPLY:
+			Apply ();
+			return;
+		case IDC_KILLROT:
+			Killrot ();
+			return;
+		}
+	});
+	// WM_NOTIFY
+	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
+			char cbuf[256];
+			double val;
+			int id = idFrom;
+			switch (id) {
+			case IDC_SPIN1:
+			case IDC_SPIN1A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN4 ? 0.001 : 0.1);
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
+				Apply ();
+				return;
+			case IDC_SPIN2:
+			case IDC_SPIN2A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT2, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN2 ? 0.001 : 0.1);
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT2, cbuf);
+				Apply ();
+				return;
+			case IDC_SPIN3:
+			case IDC_SPIN3A:
+				oapiGetDlgItemText (hDlg, IDC_EDIT3, cbuf, 256);
+				sscanf (cbuf, "%lf", &val);
+				val -= iDelta * (id == IDC_SPIN3 ? 0.001 : 0.1);
+				sprintf (cbuf, "%lf", val);
+				oapiSetDlgItemText (hDlg, IDC_EDIT3, cbuf);
+				Apply ();
+				return;
+			}
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -4705,63 +4523,29 @@ void EditorTab_Propellant::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_APPLY:
 			Apply ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EMPTY:
 			SetLevel (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_FULL:
 			SetLevel (1);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EMPTYALL:
 			SetLevel (0, true);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_FULLALL:
 			SetLevel (1, true);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EDIT2:
 		case IDC_EDIT3:
-#ifndef __linux__
 			if (HIWORD(wParam) == EN_CHANGE)
 				lastedit = LOWORD(wParam);
 			return TRUE;
@@ -4770,51 +4554,21 @@ void EditorTab_Propellant::TabProc (QWidget *hDlg)
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-#else // __linux__
-			if (code == RESN_CHANGE)
-				lastedit = id;
-			return;
-		}
-	});
-	// WM_NOTIFY
-	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
 			DWORD i, n;
-#ifndef __linux__
 			int id = ((NMHDR*)lParam)->idFrom;
-#else // __linux__
-			int id = idFrom;
-#endif // __linux__
 			switch (id) {
 			case IDC_SPIN1:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
-#endif // __linux__
 				i = sscanf (cbuf, "%d", &n);
 				if (!i || !n || n > ntank) n = 1;
-#ifndef __linux__
 				n += (nmud->iDelta < 0 ? 1 : -1);
-#else // __linux__
-				n += (iDelta < 0 ? 1 : -1);
-#endif // __linux__
 				n = max ((DWORD)1, min (ntank, n));
 				sprintf (cbuf, "%d", n);
-#ifndef __linux__
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
-				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Refresh ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			}
-#ifndef __linux__
 		}
 		break;
 	case WM_HSCROLL:
@@ -4826,7 +4580,61 @@ void EditorTab_Propellant::TabProc (QWidget *hDlg)
 			case SB_LINERIGHT:
 				SetLevel (HIWORD(wParam)*0.01);
 				return TRUE;
+			}
+			break;
+		}
+		break;
+	}
+	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return;
+		case IDC_REFRESH:
+			Refresh ();
+			return;
+		case IDC_APPLY:
+			Apply ();
+			return;
+		case IDC_EMPTY:
+			SetLevel (0);
+			return;
+		case IDC_FULL:
+			SetLevel (1);
+			return;
+		case IDC_EMPTYALL:
+			SetLevel (0, true);
+			return;
+		case IDC_FULLALL:
+			SetLevel (1, true);
+			return;
+		case IDC_EDIT2:
+		case IDC_EDIT3:
+			if (code == RESN_CHANGE)
+				lastedit = id;
+			return;
+		}
+	});
+	// WM_NOTIFY
+	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
+			char cbuf[256];
+			DWORD i, n;
+			int id = idFrom;
+			switch (id) {
+			case IDC_SPIN1:
+				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
+				i = sscanf (cbuf, "%d", &n);
+				if (!i || !n || n > ntank) n = 1;
+				n += (iDelta < 0 ? 1 : -1);
+				n = max ((DWORD)1, min (ntank, n));
+				sprintf (cbuf, "%d", n);
+				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
+				Refresh ();
+				return;
+			}
 	});
 	// WM_HSCROLL: IDC_PROPLEVEL
 	QObject::connect (DlgItem<GaugeCtrl> (hDlg, IDC_PROPLEVEL), &GaugeCtrl::scrolled, hDlg, [this](int request, int pos) {
@@ -4836,15 +4644,7 @@ void EditorTab_Propellant::TabProc (QWidget *hDlg)
 			case GAUGE_LINEINC:    // SB_LINERIGHT
 				SetLevel (pos*0.01);
 				return;
-#endif // __linux__
 			}
-#ifndef __linux__
-			break;
-		}
-		break;
-	}
-	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
-#else // __linux__
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__
@@ -5066,168 +4866,131 @@ void EditorTab_Docking::TabProc (QWidget *hDlg)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDC_BACK:
 			SwitchTab (3);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REFRESH:
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_DOCK:
 			Dock ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_UNDOCK:
 			Undock ();
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_IDS:
 			ToggleIDS();
 			Refresh ();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EDIT1:
-#ifndef __linux__
 			if (HIWORD (wParam) == EN_CHANGE)
-#else // __linux__
-			if (code == RESN_CHANGE)
-#endif // __linux__
 				if (DockNo()) Refresh();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_EDIT2:
-#ifndef __linux__
 			if (HIWORD (wParam) == EN_CHANGE)
-#else // __linux__
-			if (code == RESN_CHANGE)
-#endif // __linux__
 				IncIDSChannel (0);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_COMBO1:
-#ifndef __linux__
 			if (HIWORD (wParam) == CBN_SELCHANGE) {
-#else // __linux__
-			if (code == RESN_SELCHANGE) {
-#endif // __linux__
 				SetTargetDock (1);
 			}
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_NOTIFY:
 		if (((NMHDR*)lParam)->code == UDN_DELTAPOS) {
 			NMUPDOWN *nmud = (NMUPDOWN*)lParam;
-#else // __linux__
-	});
-	// WM_NOTIFY
-	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
-#endif // __linux__
 			char cbuf[256];
 			DWORD n;
-#ifndef __linux__
 			switch (((NMHDR*)lParam)->idFrom) {
-#else // __linux__
-			switch (idFrom) {
-#endif // __linux__
 			case IDC_SPIN1:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
-#endif // __linux__
 				if (!sscanf (cbuf, "%d", &n)) n = 1;
-#ifndef __linux__
 				sprintf (cbuf, "%d", n + (nmud->iDelta < 0 ? 1 : -1));
 				SetWindowText (GetDlgItem (hDlg, IDC_EDIT1), cbuf);
-#else // __linux__
-				sprintf (cbuf, "%d", n + (iDelta < 0 ? 1 : -1));
-				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
-#endif // __linux__
 				Refresh ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN2:
-#ifndef __linux__
 				IncIDSChannel (nmud->iDelta < 0 ? 1 : -1);
-#else // __linux__
-				IncIDSChannel (iDelta < 0 ? 1 : -1);
-#endif // __linux__
 				Refresh ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN2A:
-#ifndef __linux__
 				IncIDSChannel (nmud->iDelta < 0 ? 20 : -20);
-#else // __linux__
-				IncIDSChannel (iDelta < 0 ? 20 : -20);
-#endif // __linux__
 				Refresh ();
-#ifndef __linux__
 				return TRUE;
-#else // __linux__
-				return;
-#endif // __linux__
 			case IDC_SPIN3:
-#ifndef __linux__
 				GetWindowText (GetDlgItem (hDlg, IDC_EDIT4), cbuf, 256);
-#else // __linux__
-				oapiGetDlgItemText (hDlg, IDC_EDIT4, cbuf, 256);
-#endif // __linux__
 				if (!sscanf (cbuf, "%d", &n)) n = 1;
-#ifndef __linux__
 				SetTargetDock (n + (nmud->iDelta < 0 ? 1 : -1));
 				return TRUE;
-#else // __linux__
-				SetTargetDock (n + (iDelta < 0 ? 1 : -1));
-				return;
-#endif // __linux__
 			}
-#ifndef __linux__
 		}
 		break;
 	}
 	return ScnEditorTab::TabProc (hDlg, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [this](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDC_BACK:
+			SwitchTab (3);
+			return;
+		case IDC_REFRESH:
+			Refresh ();
+			return;
+		case IDC_DOCK:
+			Dock ();
+			return;
+		case IDC_UNDOCK:
+			Undock ();
+			Refresh ();
+			return;
+		case IDC_IDS:
+			ToggleIDS();
+			Refresh ();
+			return;
+		case IDC_EDIT1:
+			if (code == RESN_CHANGE)
+				if (DockNo()) Refresh();
+			return;
+		case IDC_EDIT2:
+			if (code == RESN_CHANGE)
+				IncIDSChannel (0);
+			return;
+		case IDC_COMBO1:
+			if (code == RESN_SELCHANGE) {
+				SetTargetDock (1);
+			}
+			return;
+		}
+	});
+	// WM_NOTIFY
+	oapiConnectDlgDeltaPos (hDlg, [this, hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
+			char cbuf[256];
+			DWORD n;
+			switch (idFrom) {
+			case IDC_SPIN1:
+				oapiGetDlgItemText (hDlg, IDC_EDIT1, cbuf, 256);
+				if (!sscanf (cbuf, "%d", &n)) n = 1;
+				sprintf (cbuf, "%d", n + (iDelta < 0 ? 1 : -1));
+				oapiSetDlgItemText (hDlg, IDC_EDIT1, cbuf);
+				Refresh ();
+				return;
+			case IDC_SPIN2:
+				IncIDSChannel (iDelta < 0 ? 1 : -1);
+				Refresh ();
+				return;
+			case IDC_SPIN2A:
+				IncIDSChannel (iDelta < 0 ? 20 : -20);
+				Refresh ();
+				return;
+			case IDC_SPIN3:
+				oapiGetDlgItemText (hDlg, IDC_EDIT4, cbuf, 256);
+				if (!sscanf (cbuf, "%d", &n)) n = 1;
+				SetTargetDock (n + (iDelta < 0 ? 1 : -1));
+				return;
+			}
 	});
 	ScnEditorTab::TabProc (hDlg);
 #endif // __linux__

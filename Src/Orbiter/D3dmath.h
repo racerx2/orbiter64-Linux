@@ -362,27 +362,31 @@ D3DMath_Normalise (oapi::FVECTOR3 &v)
 //-----------------------------------------------------------------------------
 // Quaternion functions
 //-----------------------------------------------------------------------------
-VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
 #ifndef __linux__
+VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                      D3DVECTOR& v, FLOAT fTheta );
 VOID D3DMath_RotationFromQuaternion( D3DVECTOR& v, FLOAT& fTheta,
+                                     FLOAT x, FLOAT y, FLOAT z, FLOAT w );
 #else // __linux__
+VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                      oapi::FVECTOR3& v, FLOAT fTheta );
 VOID D3DMath_RotationFromQuaternion( oapi::FVECTOR3& v, FLOAT& fTheta,
-#endif // __linux__
                                      FLOAT x, FLOAT y, FLOAT z, FLOAT w );
+#endif // __linux__
 VOID D3DMath_QuaternionFromAngles( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                    FLOAT fYaw, FLOAT fPitch, FLOAT fRoll );
 #ifndef __linux__
 VOID D3DMath_MatrixFromQuaternion( D3DMATRIX& mat, FLOAT x, FLOAT y, FLOAT z,
+                                   FLOAT w );
 #else // __linux__
 VOID D3DMath_MatrixFromQuaternion( oapi::FMATRIX4& mat, FLOAT x, FLOAT y, FLOAT z,
-#endif // __linux__
                                    FLOAT w );
-VOID D3DMath_QuaternionFromMatrix( FLOAT &x, FLOAT &y, FLOAT &z, FLOAT &w,
+#endif // __linux__
 #ifndef __linux__
+VOID D3DMath_QuaternionFromMatrix( FLOAT &x, FLOAT &y, FLOAT &z, FLOAT &w,
                                    D3DMATRIX& mat );
 #else // __linux__
+VOID D3DMath_QuaternionFromMatrix( FLOAT &x, FLOAT &y, FLOAT &z, FLOAT &w,
                                    oapi::FMATRIX4& mat );
 #endif // __linux__
 VOID D3DMath_QuaternionMultiply( FLOAT& Qx, FLOAT& Qy, FLOAT& Qz, FLOAT& Qw,

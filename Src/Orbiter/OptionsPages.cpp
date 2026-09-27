@@ -3077,20 +3077,21 @@ void OptionsPage_Planetarium::RescanMarkerList(QWidget *hPage)
 	if (!list.size()) return;
 
 	int n = 0;
+#ifndef __linux__
 	g_psys->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
-#ifndef __linux__
 		SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_ADDSTRING, 0, (LPARAM)entry.path().stem().string().c_str());
-#else // __linux__
-		DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
-#endif // __linux__
 		if (n < list.size() && list[n].active)
-#ifndef __linux__
 			SendDlgItemMessage(hPage, IDC_OPT_PLN_MKRLIST, LB_SETSEL, TRUE, n);
-#else // __linux__
-			DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->item(n)->setSelected(true);
-#endif // __linux__
 		n++;
 	});
+#else // __linux__
+	g_psys->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
+		DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
+		if (n < list.size() && list[n].active)
+			DlgItem<QListWidget>(hPage, IDC_OPT_PLN_MKRLIST)->item(n)->setSelected(true);
+		n++;
+	});
+#endif // __linux__
 }
 
 // ======================================================================
@@ -3344,20 +3345,21 @@ void OptionsPage_Labels::UpdateFeatureList(QWidget *hPage)
 		if (!nlist) return;
 
 		n = 0;
+#ifndef __linux__
 		planet->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
-#ifndef __linux__
 				SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_ADDSTRING, 0, (LPARAM)entry.path().stem().string().c_str());
-#else // __linux__
-				DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
-#endif // __linux__
 				if (n < nlist && list[n].active)
-#ifndef __linux__
 					SendDlgItemMessage(hPage, IDC_OPT_MKR_FEATURELIST, LB_SETSEL, TRUE, n);
-#else // __linux__
-					DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(n)->setSelected(true);
-#endif // __linux__
 				n++;
 			});
+#else // __linux__
+		planet->ForEach(FILETYPE_MARKER, [&](const fs::directory_entry& entry) {
+				DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->addItem(QString::fromUtf8(entry.path().stem().string().c_str()));
+				if (n < nlist && list[n].active)
+					DlgItem<QListWidget>(hPage, IDC_OPT_MKR_FEATURELIST)->item(n)->setSelected(true);
+				n++;
+			});
+#endif // __linux__
 	}
 	else {
 		int nlabel = planet->NumLabelLegend();

@@ -130,10 +130,11 @@ CelestialBody::CelestialBody (char *fname)
 	}
 
 	if (GetItemBool (ifs, "HasElements", bInitFromElements) && bInitFromElements) {
-		if (GetItemString (ifs, "ElReference", cbuf) &&
 #ifndef __linux__
+		if (GetItemString (ifs, "ElReference", cbuf) &&
 			!_stricmp (cbuf, "ParentEquator"))
 #else // __linux__
+		if (GetItemString (ifs, "ElReference", cbuf) &&
 			!strcasecmp (cbuf, "ParentEquator"))
 #endif // __linux__
 			elframe = ELFRAME_PARENTEQU;

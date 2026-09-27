@@ -155,37 +155,31 @@ void DGConfig::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDOK:
+			((DGConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
+			EndDialog (hWnd, 0);
+			return 0;
+		case IDCANCEL:
+			EndDialog (hWnd, 0);
+			return 0;
+		}
+		break;
+	}
+	return 0;
 #else // __linux__
 	// WM_INITDIALOG
 	((DGConfig*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			((DGConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
-			EndDialog (hWnd, 0);
-			return 0;
-#else // __linux__
 			((DGConfig*)context)->Apply (hWnd); // DWLP_USER: the item is the dialog context
 			qobject_cast<QDialog*> (hWnd)->done (0);
 			return;
-#endif // __linux__
 		case IDCANCEL:
-#ifndef __linux__
-			EndDialog (hWnd, 0);
-			return 0;
-#else // __linux__
 			qobject_cast<QDialog*> (hWnd)->done (0);
 			return;
-#endif // __linux__
 		}
-#ifndef __linux__
-		break;
-	}
-	return 0;
-#else // __linux__
 	});
 #endif // __linux__
 }

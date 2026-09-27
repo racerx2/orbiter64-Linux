@@ -604,10 +604,11 @@ protected:
 #endif // __linux__
 	void Setup ();
 
-	void SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res,
 #ifndef __linux__
+	void SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res,
 		const D3DVECTOR &pos, const D3DVECTOR &ofs);
 #else // __linux__
+	void SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res,
 		const oapi::FVECTOR3 &pos, const oapi::FVECTOR3 &ofs);
 #endif // __linux__
 	// Place cabin, defined by vertices 'ref' at position 'pos' (relative

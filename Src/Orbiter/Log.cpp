@@ -436,6 +436,9 @@ void PrintModules()
 
 				delete[]Data;
 			}
+		}
+	}
+	CloseHandle(hProcess);
 #else // __linux__
 	// EnumProcessModules counterpart: every loaded ELF object; ELF has no VS_VERSIONINFO, so path and mapped size only
 	dl_iterate_phdr ([](struct dl_phdr_info *info, size_t, void *) -> int {
@@ -446,12 +449,7 @@ void PrintModules()
 			if (ph.p_type != PT_LOAD) continue;
 			if (ph.p_vaddr < lo) lo = ph.p_vaddr;
 			if (ph.p_vaddr + ph.p_memsz > hi) hi = ph.p_vaddr + ph.p_memsz;
-#endif // __linux__
 		}
-#ifndef __linux__
-	}
-	CloseHandle(hProcess);
-#else // __linux__
 		LogOut("Module linked [%s]  Size=%u", info->dlpi_name, (unsigned)(hi > lo ? hi - lo : 0));
 		return 0;
 	}, NULL);

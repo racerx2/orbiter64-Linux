@@ -361,10 +361,11 @@ int D3DMath_VertexMatrixMultiply( NTVERTEX& vDest, const NTVERTEX& vSrc,
 
 #ifndef __linux__
     if( SUCCEEDED( hr = D3DMath_VectorMatrixMultiply( *pDestVec, *pSrcVec,
+                                                      mat ) ) )
 #else // __linux__
     if( !( hr = D3DMath_VectorMatrixMultiply( *pDestVec, *pSrcVec,
-#endif // __linux__
                                                       mat ) ) )
+#endif // __linux__
     {
 #ifndef __linux__
         pSrcVec  = (D3DVECTOR*)&vSrc.nx;
@@ -385,10 +386,11 @@ int D3DMath_VertexMatrixMultiply( NTVERTEX& vDest, const NTVERTEX& vSrc,
 // Name: D3DMath_QuaternionFromRotation()
 // Desc: Converts a normalized axis and angle to a unit quaternion.
 //-----------------------------------------------------------------------------
-VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
 #ifndef __linux__
+VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                      D3DVECTOR& v, FLOAT fTheta )
 #else // __linux__
+VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                      oapi::FVECTOR3& v, FLOAT fTheta )
 #endif // __linux__
 {
@@ -407,10 +409,11 @@ VOID D3DMath_QuaternionFromRotation( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
 //-----------------------------------------------------------------------------
 #ifndef __linux__
 VOID D3DMath_RotationFromQuaternion( D3DVECTOR& v, FLOAT& fTheta,
+                                     FLOAT x, FLOAT y, FLOAT z, FLOAT w )
 #else // __linux__
 VOID D3DMath_RotationFromQuaternion( oapi::FVECTOR3& v, FLOAT& fTheta,
-#endif // __linux__
                                      FLOAT x, FLOAT y, FLOAT z, FLOAT w )
+#endif // __linux__
                                       
 {
     fTheta = (FLOAT)( acos(w) * 2 );
@@ -452,10 +455,11 @@ VOID D3DMath_QuaternionFromAngles( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
 //-----------------------------------------------------------------------------
 #ifndef __linux__
 VOID D3DMath_MatrixFromQuaternion( D3DMATRIX& mat, FLOAT x, FLOAT y, FLOAT z,
+                                   FLOAT w )
 #else // __linux__
 VOID D3DMath_MatrixFromQuaternion( oapi::FMATRIX4& mat, FLOAT x, FLOAT y, FLOAT z,
-#endif // __linux__
                                    FLOAT w )
+#endif // __linux__
 {
     FLOAT xx = x*x; FLOAT yy = y*y; FLOAT zz = z*z;
     FLOAT xy = x*y; FLOAT xz = x*z; FLOAT yz = y*z;
@@ -503,10 +507,11 @@ VOID D3DMath_MatrixFromQuaternion( oapi::FMATRIX4& mat, FLOAT x, FLOAT y, FLOAT 
 // Name: D3DMath_QuaternionFromMatrix()
 // Desc: Converts a rotation matrix into a unit quaternion.
 //-----------------------------------------------------------------------------
-VOID D3DMath_QuaternionFromMatrix( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
 #ifndef __linux__
+VOID D3DMath_QuaternionFromMatrix( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                    D3DMATRIX& mat )
 #else // __linux__
+VOID D3DMath_QuaternionFromMatrix( FLOAT& x, FLOAT& y, FLOAT& z, FLOAT& w,
                                    oapi::FMATRIX4& mat )
 #endif // __linux__
 {

@@ -560,16 +560,7 @@ void orbiter::LaunchpadDialog::OnInitDialog (QWidget *hWnd)
 		if (pCfg->CfgDemoPrm.bDemo && timerid) {
 			KillTimer (hWnd, 1);
 			timerid = 0;
-#else // __linux__
-	// WM_TIMER: demo mode auto-launch
-	timer = new QTimer (hWnd);
-	QObject::connect (timer, &QTimer::timeout, hWnd, [this]() {
-		if (difftime (time (NULL), time0) > pCfg->CfgDemoPrm.LPIdleTime) { // auto-launch a demo
-			if (SelectDemoScenario ())
-				QMetaObject::invokeMethod (hDlg, [this]() { OnCommand (IDLAUNCH); }, Qt::QueuedConnection);
-#endif // __linux__
 		}
-#ifndef __linux__
 		PostQuitMessage (0);
 		return TRUE;
 	case WM_SIZE:
@@ -581,6 +572,13 @@ void orbiter::LaunchpadDialog::OnInitDialog (QWidget *hWnd)
 				UpdateConfig ();
 				pApp->Launch (cbuf);
 #else // __linux__
+	// WM_TIMER: demo mode auto-launch
+	timer = new QTimer (hWnd);
+	QObject::connect (timer, &QTimer::timeout, hWnd, [this]() {
+		if (difftime (time (NULL), time0) > pCfg->CfgDemoPrm.LPIdleTime) { // auto-launch a demo
+			if (SelectDemoScenario ())
+				QMetaObject::invokeMethod (hDlg, [this]() { OnCommand (IDLAUNCH); }, Qt::QueuedConnection);
+		}
 	});
 }
 

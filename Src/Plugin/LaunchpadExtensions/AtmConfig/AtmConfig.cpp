@@ -438,67 +438,53 @@ void AtmConfig::DlgProc (QWidget *hWnd, void *context)
 		break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDOK:
+			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
+			//EndDialog (hWnd, 0);
+			return 0;
+		case IDCANCEL:
+			EndDialog (hWnd, 0);
+			return 0;
+		case IDC_BUTTON1:
+			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
+			return 0;
+		case IDC_COMBO1:
+			if (HIWORD (wParam) == CBN_SELCHANGE)
+				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ModelChanged (hWnd);
+			return 0;
+		case IDC_COMBO2:
+			if (HIWORD (wParam) == CBN_SELCHANGE)
+				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->CelbodyChanged (hWnd);
+			return 0;
+		}
+		break;
+	}
+	return 0;
 #else // __linux__
 	// WM_INITDIALOG: the class instance is the context, kept by the handler below (DWLP_USER)
 		((AtmConfig*)context)->InitDialog (hWnd);
 	// WM_COMMAND
 	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
 		switch (id) {
-#endif // __linux__
 		case IDOK:
-#ifndef __linux__
-			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
-#else // __linux__
 			((AtmConfig*)context)->Apply (hWnd);
-#endif // __linux__
 			//EndDialog (hWnd, 0);
-#ifndef __linux__
-			return 0;
-#else // __linux__
 			return;
-#endif // __linux__
 		case IDCANCEL:
-#ifndef __linux__
-			EndDialog (hWnd, 0);
-			return 0;
-#else // __linux__
 			qobject_cast<QDialog*> (hWnd)->done (0);
 			return;
-#endif // __linux__
 		case IDC_BUTTON1:
-#ifndef __linux__
-			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
-#else // __linux__
 			((AtmConfig*)context)->OpenHelp (hWnd);
 			return;
-#endif // __linux__
 		case IDC_COMBO1:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE)
-				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ModelChanged (hWnd);
-			return 0;
-#else // __linux__
 			if (code == RESN_SELCHANGE)
 				((AtmConfig*)context)->ModelChanged (hWnd);
 			return;
-#endif // __linux__
 		case IDC_COMBO2:
-#ifndef __linux__
-			if (HIWORD (wParam) == CBN_SELCHANGE)
-				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->CelbodyChanged (hWnd);
-			return 0;
-#else // __linux__
 			if (code == RESN_SELCHANGE)
 				((AtmConfig*)context)->CelbodyChanged (hWnd);
 			return;
-#endif // __linux__
 		}
-#ifndef __linux__
-		break;
-	}
-	return 0;
-#else // __linux__
 	});
 #endif // __linux__
 }

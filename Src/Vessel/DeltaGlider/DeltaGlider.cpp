@@ -1894,137 +1894,119 @@ void EdPg1Proc (QWidget *hTab, void *context)
 	switch (uMsg) {
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDHELP:
 			g_hc.topic = (char*)"/SE_Anim.htm";
 			oapiOpenHelp (&g_hc);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_GEAR_UP:
 			GetDG(hTab)->SubsysGear()->RaiseGear();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_GEAR_DOWN:
 			GetDG(hTab)->SubsysGear()->LowerGear();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_RETRO_CLOSE:
 			GetDG(hTab)->SubsysMainRetro()->CloseRetroCover();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_RETRO_OPEN:
 			GetDG(hTab)->SubsysMainRetro()->OpenRetroCover();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_OLOCK_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseOuterAirlock();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_OLOCK_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenOuterAirlock();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_ILOCK_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseInnerAirlock();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_ILOCK_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenInnerAirlock();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_NCONE_CLOSE:
 			GetDG(hTab)->SubsysDocking()->CloseNcone();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_NCONE_OPEN:
 			GetDG(hTab)->SubsysDocking()->OpenNcone();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_LADDER_RETRACT:
 			GetDG(hTab)->SubsysDocking()->RetractLadder();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_LADDER_EXTEND:
 			GetDG(hTab)->SubsysDocking()->ExtendLadder();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_HATCH_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseHatch();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_HATCH_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenHatch();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_RADIATOR_RETRACT:
 			GetDG(hTab)->SubsysThermal()->CloseRadiator();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_RADIATOR_EXTEND:
 			GetDG(hTab)->SubsysThermal()->OpenRadiator();
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	}
 	return FALSE;
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDHELP:
+			g_hc.topic = (char*)"/SE_Anim.htm";
+			oapiOpenHelp (&g_hc);
+			return;
+		case IDC_GEAR_UP:
+			GetDG(hTab)->SubsysGear()->RaiseGear();
+			return;
+		case IDC_GEAR_DOWN:
+			GetDG(hTab)->SubsysGear()->LowerGear();
+			return;
+		case IDC_RETRO_CLOSE:
+			GetDG(hTab)->SubsysMainRetro()->CloseRetroCover();
+			return;
+		case IDC_RETRO_OPEN:
+			GetDG(hTab)->SubsysMainRetro()->OpenRetroCover();
+			return;
+		case IDC_OLOCK_CLOSE:
+			GetDG(hTab)->SubsysPressure()->CloseOuterAirlock();
+			return;
+		case IDC_OLOCK_OPEN:
+			GetDG(hTab)->SubsysPressure()->OpenOuterAirlock();
+			return;
+		case IDC_ILOCK_CLOSE:
+			GetDG(hTab)->SubsysPressure()->CloseInnerAirlock();
+			return;
+		case IDC_ILOCK_OPEN:
+			GetDG(hTab)->SubsysPressure()->OpenInnerAirlock();
+			return;
+		case IDC_NCONE_CLOSE:
+			GetDG(hTab)->SubsysDocking()->CloseNcone();
+			return;
+		case IDC_NCONE_OPEN:
+			GetDG(hTab)->SubsysDocking()->OpenNcone();
+			return;
+		case IDC_LADDER_RETRACT:
+			GetDG(hTab)->SubsysDocking()->RetractLadder();
+			return;
+		case IDC_LADDER_EXTEND:
+			GetDG(hTab)->SubsysDocking()->ExtendLadder();
+			return;
+		case IDC_HATCH_CLOSE:
+			GetDG(hTab)->SubsysPressure()->CloseHatch();
+			return;
+		case IDC_HATCH_OPEN:
+			GetDG(hTab)->SubsysPressure()->OpenHatch();
+			return;
+		case IDC_RADIATOR_RETRACT:
+			GetDG(hTab)->SubsysThermal()->CloseRadiator();
+			return;
+		case IDC_RADIATOR_EXTEND:
+			GetDG(hTab)->SubsysThermal()->OpenRadiator();
+			return;
+		}
 	});
 #endif // __linux__
 }
@@ -2066,6 +2048,23 @@ void EdPg2Proc (QWidget *hTab, void *context)
 		} break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
+		case IDC_CHECK1:
+		case IDC_CHECK2:
+		case IDC_CHECK3:
+		case IDC_CHECK4: {
+			char cbuf[256];
+			i = SendDlgItemMessage (hTab, LOWORD(wParam), BM_GETCHECK, 0, 0);
+			dg = GetDG(hTab);
+			dg->psngr[LOWORD(wParam)-IDC_CHECK1] = (i ? true:false);
+			dg->SetPassengerVisuals();
+			dg->SetEmptyMass();
+			snprintf (cbuf, sizeof(cbuf) - 1, "%0.2f kg", dg->GetMass());
+			SetWindowText (GetDlgItem (hTab, IDC_MASS), cbuf);
+			} break;
+		}
+		break;
+	}
+	return FALSE;
 #else // __linux__
 		oapiSetDlgItemText (hTab, IDC_MASS, cbuf);
 	}
@@ -2074,38 +2073,20 @@ void EdPg2Proc (QWidget *hTab, void *context)
 		DeltaGlider *dg;
 		int i;
 		switch (id) {
-#endif // __linux__
 		case IDC_CHECK1:
 		case IDC_CHECK2:
 		case IDC_CHECK3:
 		case IDC_CHECK4: {
 			char cbuf[256];
-#ifndef __linux__
-			i = SendDlgItemMessage (hTab, LOWORD(wParam), BM_GETCHECK, 0, 0);
-#else // __linux__
 			i = DlgItem<QAbstractButton> (hTab, id)->isChecked();
-#endif // __linux__
 			dg = GetDG(hTab);
-#ifndef __linux__
-			dg->psngr[LOWORD(wParam)-IDC_CHECK1] = (i ? true:false);
-#else // __linux__
 			dg->psngr[id-IDC_CHECK1] = (i ? true:false);
-#endif // __linux__
 			dg->SetPassengerVisuals();
 			dg->SetEmptyMass();
 			snprintf (cbuf, sizeof(cbuf) - 1, "%0.2f kg", dg->GetMass());
-#ifndef __linux__
-			SetWindowText (GetDlgItem (hTab, IDC_MASS), cbuf);
-#else // __linux__
 			oapiSetDlgItemText (hTab, IDC_MASS, cbuf);
-#endif // __linux__
 			} break;
 		}
-#ifndef __linux__
-		break;
-	}
-	return FALSE;
-#else // __linux__
 	});
 #endif // __linux__
 }
@@ -2143,24 +2124,12 @@ void EdPg3Proc (QWidget *hTab, void *context)
 		} break;
 	case WM_COMMAND:
 		switch (LOWORD (wParam)) {
-#else // __linux__
-	}
-	// WM_COMMAND
-	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
-		DeltaGlider *dg;
-		switch (id) {
-#endif // __linux__
 		case IDC_REPAIR:
 			dg = GetDG(hTab);
 			dg->RepairDamage ();
 			UpdateDamage (hTab, dg);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	case WM_HSCROLL:
 		dg = GetDG(hTab);
@@ -2179,7 +2148,22 @@ void EdPg3Proc (QWidget *hTab, void *context)
 				dg->ApplyDamage ();
 				UpdateDamage (hTab, dg);
 				return TRUE;
+			}
+			break;
+		}
+		break;
 #else // __linux__
+	}
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		DeltaGlider *dg;
+		switch (id) {
+		case IDC_REPAIR:
+			dg = GetDG(hTab);
+			dg->RepairDamage ();
+			UpdateDamage (hTab, dg);
+			return;
+		}
 	});
 	// WM_HSCROLL: GaugeCtrl::scrolled of both sliders
 	for (int id: {IDC_LEFTWING_SLIDER, IDC_RIGHTWING_SLIDER}) {
@@ -2201,13 +2185,7 @@ void EdPg3Proc (QWidget *hTab, void *context)
 					return;
 				}
 				break;
-#endif // __linux__
 			}
-#ifndef __linux__
-			break;
-		}
-		break;
-#else // __linux__
 		});
 #endif // __linux__
 	}
@@ -2273,31 +2251,27 @@ void Damage_DlgProc (QWidget *hWnd, void *context)
 		return FALSE;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
-#else // __linux__
-	// WM_COMMAND
-	oapiConnectDlgCommands (hWnd, [hWnd, dg](int id, int code, QWidget *hCtrl) {
-		switch (id) {
-#endif // __linux__
 		case IDCANCEL:
 			oapiCloseDialog (hWnd);
-#ifndef __linux__
 			return TRUE;
-#else // __linux__
-			return;
-#endif // __linux__
 		case IDC_REPAIR:
 			dg->RepairDamage();
-#ifndef __linux__
 			return 0;
-#else // __linux__
-			return;
-#endif // __linux__
 		}
-#ifndef __linux__
 		break;
 	}
 	return oapiDefDialogProc (hWnd, uMsg, wParam, lParam);
 #else // __linux__
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, dg](int id, int code, QWidget *hCtrl) {
+		switch (id) {
+		case IDCANCEL:
+			oapiCloseDialog (hWnd);
+			return;
+		case IDC_REPAIR:
+			dg->RepairDamage();
+			return;
+		}
 	});
 #endif // __linux__
 }

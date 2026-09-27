@@ -313,41 +313,38 @@ void MsgProc (QWidget *hDlg, void *context)
 		case IDC_MESHSPIN:
 			if (((LPNMHDR)lParam)->code == UDN_DELTAPOS) {
 				int m = ((LPNMUPDOWN)lParam)->iPos + ((LPNMUPDOWN)lParam)->iDelta;
+				m = min ((int)g_nmesh-1, max (0, m));
+				if (m != g_imesh) ChangeMesh (m);
+				RefreshDialog (hDlg);
+			}
+			return 0;
+		case IDC_GROUPSPIN:
+			if (((LPNMHDR)lParam)->code == UDN_DELTAPOS) {
+				int g = ((LPNMUPDOWN)lParam)->iPos + ((LPNMUPDOWN)lParam)->iDelta;
+				g = min ((int)g_ngrp-1, max (0, g));
+				if (g != g_igrp) ChangeGroup (g);
+			}
+			return 0;
+		}
+		break;
+	case WM_COMMAND:
+		switch (LOWORD (wParam)) {
 #else // __linux__
 	// WM_NOTIFY
 	oapiConnectDlgDeltaPos (hDlg, [hDlg](int idFrom, int iPos, int iDelta) { // UDN_DELTAPOS
 		switch (idFrom) {
 		case IDC_MESHSPIN: {
 				int m = iPos + iDelta;
-#endif // __linux__
 				m = min ((int)g_nmesh-1, max (0, m));
 				if (m != g_imesh) ChangeMesh (m);
 				RefreshDialog (hDlg);
-#ifndef __linux__
-			}
-			return 0;
-		case IDC_GROUPSPIN:
-			if (((LPNMHDR)lParam)->code == UDN_DELTAPOS) {
-				int g = ((LPNMUPDOWN)lParam)->iPos + ((LPNMUPDOWN)lParam)->iDelta;
-#else // __linux__
 			} return;
 		case IDC_GROUPSPIN: {
 				int g = iPos + iDelta;
-#endif // __linux__
 				g = min ((int)g_ngrp-1, max (0, g));
 				if (g != g_igrp) ChangeGroup (g);
-#ifndef __linux__
-			}
-			return 0;
-#else // __linux__
 			} return;
-#endif // __linux__
 		}
-#ifndef __linux__
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
-#else // __linux__
 	});
 	// WM_COMMAND
 	auto command = [hDlg](int id, int code, QWidget *hCtrl) {

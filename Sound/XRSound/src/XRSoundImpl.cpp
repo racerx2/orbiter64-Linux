@@ -80,10 +80,11 @@ bool XRSoundImpl::Initialize(VESSEL *pVessel)
 
 #ifndef __linux__
                 StringCchPrintf(messageBuf, sizeof(messageBuf), "[XRSound INFO] %s '%s' built with XRSound API version %.2f", 
+                    pEngineType, pVesselOrModuleName, XRSOUND_ENGINE_VERSION);
 #else // __linux__
                 snprintf(messageBuf, sizeof(messageBuf), "[XRSound INFO] %s '%s' built with XRSound API version %.2f", 
-#endif // __linux__
                     pEngineType, pVesselOrModuleName, XRSOUND_ENGINE_VERSION);
+#endif // __linux__
                 oapiWriteLog(messageBuf);
             }
 
@@ -92,10 +93,11 @@ bool XRSoundImpl::Initialize(VESSEL *pVessel)
                 // user is running with an older XRSound.dll version than this vessel was linked with
 #ifndef __linux__
                 StringCchPrintf(messageBuf, sizeof(messageBuf), "[XRSOUND WARNING] XRSound.dll version %0.2f is installed, but an active Orbiter vessel or module was built with XRSound version %.2f.  Please install the latest XRSound version from https://www.alteaaerospace.com.",
+                    dllVersion, XRSOUND_ENGINE_VERSION);
 #else // __linux__
                 snprintf(messageBuf, sizeof(messageBuf), "[XRSOUND WARNING] XRSound.dll version %0.2f is installed, but an active Orbiter vessel or module was built with XRSound version %.2f.  Please install the latest XRSound version from https://www.alteaaerospace.com.",
-#endif // __linux__
                     dllVersion, XRSOUND_ENGINE_VERSION);
+#endif // __linux__
                 oapiWriteLog(messageBuf);
             }
         }

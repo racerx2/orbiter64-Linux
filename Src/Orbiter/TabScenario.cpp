@@ -1012,6 +1012,15 @@ void orbiter::ScenarioTab::SaveProc (QWidget *hWnd, ScenarioTab *pTab)
 				MessageBox (hWnd, "Error writing scenario file.", "Save Error", MB_OK|MB_ICONEXCLAMATION);
 				return TRUE;
 			}
+			delete []desc;
+			desc = NULL;
+			// fall through
+		case IDCANCEL:
+			EndDialog (hWnd, TRUE);
+			return TRUE;
+		}
+	}
+    return FALSE;
 #else // __linux__
 	QDialog *dlg = qobject_cast<QDialog*> (hWnd);
 
@@ -1036,22 +1045,9 @@ void orbiter::ScenarioTab::SaveProc (QWidget *hWnd, ScenarioTab *pTab)
 		}
 		if (res == 1) {
 			QMessageBox::warning (hWnd, "Save Error", "Error writing scenario file.");
-#endif // __linux__
 			delete []desc;
-#ifndef __linux__
-			desc = NULL;
-			// fall through
-		case IDCANCEL:
-			EndDialog (hWnd, TRUE);
-			return TRUE;
-#else // __linux__
 			return;
-#endif // __linux__
 		}
-#ifndef __linux__
-	}
-    return FALSE;
-#else // __linux__
 		delete []desc;
 		desc = NULL;
 		dlg->accept(); // EndDialog

@@ -3,7 +3,7 @@
 #include <QtPlugin>
 
 #ifdef STATIC
-Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin);
+Q_IMPORT_PLUGIN(QXcbIntegrationPlugin); // static Windows platform plugin -> xcb
 #endif
 
 int main(int argc, char *argv[])

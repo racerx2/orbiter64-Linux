@@ -62,7 +62,7 @@ private:
 	QString ModeString() const;
 	std::pair<int, int> ElevNodeFromPixCoord(int canvasIdx, int x, int y);
 	void editElevation(int canvasIdx, int x, int y);
-	void setupTreeManagers(std::string &root);
+	void setupTreeManagers(const std::string &root); // const: g++ binds no temporary to a non-const reference
 	void releaseTreeManagers();
 
 private slots:

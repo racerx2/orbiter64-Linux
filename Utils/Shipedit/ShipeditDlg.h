@@ -14,11 +14,11 @@
 /////////////////////////////////////////////////////////////////////////////
 // CShipeditDlg dialog
 
-class CShipeditDlg : public CDialog
+class CShipeditDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	CShipeditDlg(CShipeditApp *app, CWnd* pParent = NULL);	// standard constructor
+	CShipeditDlg(CShipeditApp *app, QWidget* pParent = NULL);	// standard constructor
 	void Refresh ();
 	void RefreshCalc ();
 
@@ -31,27 +31,26 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CShipeditDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);	// DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
 protected:
-	HICON m_hIcon;
+	QIcon m_hIcon;
 	CShipeditApp *m_app;
 
 	// Generated message map functions
 	//{{AFX_MSG(CShipeditDlg)
 	virtual BOOL OnInitDialog();
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnPaint();
-	afx_msg HCURSOR OnQueryDragIcon();
-	afx_msg void OnCalcstart();
-	afx_msg void OnCalcstop();
-	afx_msg void OnExit();
-	afx_msg void OnClose();
-	afx_msg void OnCheck();
+	void OnSysCommand(UINT nID, LPARAM lParam);
+	// OnPaint, OnQueryDragIcon left out: the window manager draws the minimised window's icon (setWindowIcon)
+	void OnCalcstart();
+	void OnCalcstop();
+	void OnExit();
+	virtual void OnClose();
+	void OnCheck();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(int nID, int nCode); // DECLARE_MESSAGE_MAP: the map is a WM_COMMAND switch
 };
 
 //{{AFX_INSERT_LOCATION}}

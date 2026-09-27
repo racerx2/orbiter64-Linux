@@ -5,47 +5,54 @@
 //
 
 #include <fstream>
-#include "stdafx.h"
+#include <sstream>
+#include <clocale>
+#include "StdAfx.h"
 #include "Shipedit.h"
 #include "ShipeditDlg.h"
-#include "TransformDlg.h"
+#include "transformdlg.h"
+#include <QAbstractEventDispatcher>
+#include <QFile>
+#include <QFileDialog>
+#include <QThread>
 
 using namespace std;
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#undef THIS_FILE
-static char THIS_FILE[] = __FILE__;
-#endif
+// DEBUG_NEW (_DEBUG) left out: MFC's debug allocator
 
 // prototypes
 void srand2();
 double rand2 ();
-bool inside (int ntri, const TriParam *pp, const D3DVECTOR &pos);
-bool xsect (int axis, int ntri, const TriParam *pp, const D3DVECTOR &pos);
-bool intersect (const D3DVECTOR &pos, const D3DVECTOR &dir, const TriParam &pp, D3DVECTOR &X, float &t, bool half);
-bool in_tri (const D3DVECTOR &X, const TriParam &pp);
-bool in_tri_proj (const D3DVECTOR &X, const TriParam &pp, int dir_idx);
+bool inside (int ntri, const TriParam *pp, const oapi::FVECTOR3 &pos);
+bool xsect (int axis, int ntri, const TriParam *pp, const oapi::FVECTOR3 &pos);
+bool intersect (const oapi::FVECTOR3 &pos, const oapi::FVECTOR3 &dir, const TriParam &pp, oapi::FVECTOR3 &X, float &t, bool half);
+bool in_tri (const oapi::FVECTOR3 &X, const TriParam &pp);
+bool in_tri_proj (const oapi::FVECTOR3 &X, const TriParam &pp, int dir_idx);
 void setup_grid (VOXGRID &g, int level);
 
 /////////////////////////////////////////////////////////////////////////////
 // CShipeditApp
 
-BEGIN_MESSAGE_MAP(CShipeditApp, CWinApp)
+// message map: menu commands the main dialog passes on (CDialog::OnCmdMsg routes them to the app last)
+BOOL CShipeditApp::OnCommand (int nID)
+{
 	//{{AFX_MSG_MAP(CShipeditApp)
-	ON_COMMAND(MID_LOAD, OnLoad)
-	ON_COMMAND(MID_SAVEAS, OnSaveas)
-	ON_COMMAND(MID_TRANSLATE, OnTranslate)
-	ON_COMMAND(MID_ROTATE, OnRotate)
-	ON_COMMAND(MID_ZEROLEVEL, OnZerolevel)
-	ON_COMMAND(MID_VOXINT, OnVoxint)
-	ON_COMMAND(MID_MERGEGRP, OnMergegrp)
-	ON_COMMAND(MID_CALCNORMAL, OnCalcnormal)
-	ON_COMMAND(MID_SCALE, OnScale)
-	ON_COMMAND(MID_MIRROR, OnMirror)
+	switch (nID) { // ON_COMMAND
+	case MID_LOAD:       OnLoad();       return TRUE;
+	case MID_SAVEAS:     OnSaveas();     return TRUE;
+	case MID_TRANSLATE:  OnTranslate();  return TRUE;
+	case MID_ROTATE:     OnRotate();     return TRUE;
+	case MID_ZEROLEVEL:  OnZerolevel();  return TRUE;
+	case MID_VOXINT:     OnVoxint();     return TRUE;
+	case MID_MERGEGRP:   OnMergegrp();   return TRUE;
+	case MID_CALCNORMAL: OnCalcnormal(); return TRUE;
+	case MID_SCALE:      OnScale();      return TRUE;
+	case MID_MIRROR:     OnMirror();     return TRUE;
+	}
 	//}}AFX_MSG_MAP
-	ON_COMMAND(ID_HELP, CWinApp::OnHelp)
-END_MESSAGE_MAP()
+	// ON_COMMAND(ID_HELP, CWinApp::OnHelp) left out: it opens the app's WinHelp file, and Shipedit has none
+	return FALSE;
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CShipeditApp construction
@@ -69,6 +76,8 @@ BOOL CShipeditApp::InitInstance()
 	m_pMainDlg = new CShipeditDlg (this);
 	m_pMainWnd = m_pMainDlg;
 	m_pMainDlg->Create (IDD_SHIPEDIT_DIALOG);
+	if (m_pMainDlg->hDlg) // MFC ends the message loop when the main window is destroyed
+		QObject::connect (m_pMainDlg->hDlg.data(), &QObject::destroyed, qApp, &QCoreApplication::quit);
 
 	ngrp = nvtx = nidx = ntri = 0;
 	flushcount = 0;
@@ -79,12 +88,36 @@ BOOL CShipeditApp::InitInstance()
 
 int CShipeditApp::ExitInstance()
 {
-	MessageBeep (-1);
+	QApplication::beep ();
 	delete m_pMainDlg;
 	if (nvtx) delete []vtx;
 	if (nidx) delete []idx;
 	if (ntri) delete []pp;
 	return 0;
+}
+
+// not upstream: CWinThread::Run: message loop calling OnIdle whenever it would wait (not in modal loops), then ExitInstance
+int CShipeditApp::Run ()
+{
+	LONG lIdleCount = 0;
+	QAbstractEventDispatcher *disp = QAbstractEventDispatcher::instance ();
+	QMetaObject::Connection idle = QObject::connect (disp, &QAbstractEventDispatcher::aboutToBlock, qApp, [this, disp, &lIdleCount]() {
+		if (QThread::currentThread()->loopLevel() > 1) return; // RunModalLoop doesn't call CWinApp::OnIdle
+		if (OnIdle (lIdleCount++)) disp->wakeUp();
+	});
+	QApplication::exec ();
+	QObject::disconnect (idle);
+	return ExitInstance ();
+}
+
+// not upstream: main() stands in for MFC's WinMain (AfxWinMain): InitInstance, then Run
+int main (int argc, char *argv[])
+{
+	QApplication app (argc, argv);
+	setlocale (LC_ALL, "C"); // Qt takes the environment locale; the number texts need "C" as on Windows
+	if (!theApp.InitInstance ())
+		return theApp.ExitInstance ();
+	return theApp.Run ();
 }
 
 void CShipeditApp::OnLoad() 
@@ -95,13 +128,16 @@ void CShipeditApp::OnLoad()
 		if (dlg.DoModal() != IDOK) return;
 		addmode = dlg.m_AddMode;
 	}
-	CFileDialog dlg (TRUE, "*.msh", NULL, OFN_FILEMUSTEXIST,
-		"Mesh files (*.msh)|*.msh|All files (*.*)|*.*||",
-		m_pMainWnd);
-	if (dlg.DoModal() == IDOK) {
-		CString path = dlg.GetPathName();
-		ifstream ifs (path);
-		if (ifs) {
+	QFileDialog dlg (m_pMainWnd->hDlg, "Open", QString(), "Mesh files (*.msh);;All files (*)"); // *.*: names with a dot only on Linux
+	dlg.setFileMode (QFileDialog::ExistingFile); // OFN_FILEMUSTEXIST
+	dlg.setDefaultSuffix ("msh");
+	if (dlg.exec() == QDialog::Accepted) {
+		string path = QFile::encodeName (dlg.selectedFiles().value (0)).toStdString();
+		ifstream ifs0 (path);
+		if (ifs0) {
+			stringstream ifs; // not upstream: a Windows text stream reads CRLF as LF, a Linux one keeps the '\r'
+			for (string ln; getline (ifs0, ln); ifs << ln << '\n')
+				if (!ln.empty() && ln.back() == '\r') ln.pop_back();
 			if (addmode) {
 				Mesh mesh2;
 				ifs >> mesh2;
@@ -116,11 +152,11 @@ void CShipeditApp::OnLoad()
 
 void CShipeditApp::OnSaveas() 
 {
-	CFileDialog dlg (FALSE, "*.msh", NULL, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT,
-		"Mesh files (*.msh)|*.msh|All files (*.*)|*.*||",
-		m_pMainWnd);
-	if (dlg.DoModal() == IDOK) {
-		CString path = dlg.GetPathName();
+	QFileDialog dlg (m_pMainWnd->hDlg, "Save As", QString(), "Mesh files (*.msh);;All files (*)");
+	dlg.setAcceptMode (QFileDialog::AcceptSave); // OFN_OVERWRITEPROMPT: QFileDialog asks; OFN_HIDEREADONLY: no read-only box
+	dlg.setDefaultSuffix ("msh");
+	if (dlg.exec() == QDialog::Accepted) {
+		string path = QFile::encodeName (dlg.selectedFiles().value (0)).toStdString();
 		ofstream ofs (path);
 		if (ofs) ofs << mesh;
 	}
@@ -210,7 +246,7 @@ void CShipeditApp::InitMesh ()
 #endif
 
 	for (g = 0; g < ngrp; g++) {
-		D3DVERTEX *gvtx;
+		NTVERTEX *gvtx;
 		WORD *gidx;
 		DWORD gnvtx, gnidx;
 		mesh.GetGroup (g, gvtx, gnvtx, gidx, gnidx);
@@ -266,13 +302,13 @@ void CShipeditApp::InitMesh ()
 			
 	}
 	ntri = nidx/3;
-	vtx = new D3DVERTEX[nvtx];
+	vtx = new NTVERTEX[nvtx];
 	idx = new WORD[nidx];
 	pp  = new TriParam[ntri];
 
 	nvtx = nidx = 0;
 	for (g = 0; g < ngrp; g++) {
-		D3DVERTEX *gvtx;
+		NTVERTEX *gvtx;
 		WORD *gidx;
 		DWORD gnvtx, gnidx;
 		mesh.GetGroup (g, gvtx, gnvtx, gidx, gnidx);
@@ -347,7 +383,7 @@ void CShipeditApp::ProcessPackage ()
 	Matrix J_tmp;
 
 	for (i = n = 0; i < 1000; i++) {
-		D3DVECTOR pos;
+		oapi::FVECTOR3 pos;
 		pos.x = (float)rand2() * (bbmax.x-bbmin.x) + bbmin.x;
 		pos.y = (float)rand2() * (bbmax.y-bbmin.y) + bbmin.y;
 		pos.z = (float)rand2() * (bbmax.z-bbmin.z) + bbmin.z;
@@ -378,7 +414,7 @@ void CShipeditApp::ProcessPackage ()
 	for (i = 0; i < 9; i++) J.data[i] = (J_base.data[i]+J_add.data[i])/(double)nvol;
 
 	for (i = 0; i < 1000; i++) {
-		D3DVECTOR pos;
+		oapi::FVECTOR3 pos;
 		pos.x = (float)rand2() * (bbmax.x-bbmin.x) + bbmin.x;
 		pos.y = (float)rand2() * (bbmax.y-bbmin.y) + bbmin.y;
 		pos.z = (float)rand2() * (bbmax.z-bbmin.z) + bbmin.z;
@@ -408,9 +444,9 @@ void CShipeditApp::setup_grid (VOXGRID &g, int level)
 
 bool CShipeditApp::scan_gridline (VOXGRID &g, int x, int y, int z, int dir_idx, int ntri, const TriParam *pp)
 {
-	static D3DVECTOR d[6] = {{1,0,0},{0,1,0},{0,0,1},{-1,0,0},{0,-1,0},{0,0,-1}};
-	D3DVECTOR &dir = d[dir_idx];
-	D3DVECTOR pos, X;
+	static oapi::FVECTOR3 d[6] = {{1,0,0},{0,1,0},{0,0,1},{-1,0,0},{0,-1,0},{0,0,-1}};
+	oapi::FVECTOR3 &dir = d[dir_idx];
+	oapi::FVECTOR3 pos, X;
 	float t, tmin = 1e10;
 	int i;
 	bool isinter = false;
@@ -567,7 +603,7 @@ void CShipeditApp::analyse_grid (VOXGRID &g, double &vol, Vector &com, Vector &c
 
 BOOL CShipeditApp::OnIdle (LONG lCount)
 {
-	CWinApp::OnIdle (lCount);
+	// CWinApp::OnIdle left out: MFC's own idle work (command UI updates, temporary handle maps)
 	if (bBackgroundOp)
 		ProcessPackage ();
 	return bBackgroundOp;
@@ -576,10 +612,10 @@ BOOL CShipeditApp::OnIdle (LONG lCount)
 // ============================================================
 // Local utility functions
 
-bool inside (int ntri, const TriParam *pp, const D3DVECTOR &pos)
+bool inside (int ntri, const TriParam *pp, const oapi::FVECTOR3 &pos)
 {
 	int i, nx = 0;
-	D3DVECTOR dir, X;
+	oapi::FVECTOR3 dir, X;
 	float t;
 
 	// find a search direction
@@ -596,9 +632,9 @@ bool inside (int ntri, const TriParam *pp, const D3DVECTOR &pos)
 	return nx & 1; // odd number of intersections
 }
 
-bool xsect (int axis, int ntri, const TriParam *pp, const D3DVECTOR &pos)
+bool xsect (int axis, int ntri, const TriParam *pp, const oapi::FVECTOR3 &pos)
 {
-	D3DVECTOR X, dir[3] = {{1,0,0}, {0,1,0}, {0,0,1}};
+	oapi::FVECTOR3 X, dir[3] = {{1,0,0}, {0,1,0}, {0,0,1}};
 	float t;
 	for (int i = 0; i < ntri; i++) {
 		if (!intersect (pos, dir[axis], pp[i], X, t, false)) continue;
@@ -607,7 +643,7 @@ bool xsect (int axis, int ntri, const TriParam *pp, const D3DVECTOR &pos)
 	return false;
 }
 
-bool intersect (const D3DVECTOR &pos, const D3DVECTOR &dir, const TriParam &pp, D3DVECTOR &X, float &t, bool half)
+bool intersect (const oapi::FVECTOR3 &pos, const oapi::FVECTOR3 &dir, const TriParam &pp, oapi::FVECTOR3 &X, float &t, bool half)
 {
 	const float EPS = 1e-8f;
 	float den = pp.a*dir.x + pp.b*dir.y + pp.c*dir.z;
@@ -621,7 +657,7 @@ bool intersect (const D3DVECTOR &pos, const D3DVECTOR &dir, const TriParam &pp, 
 	return true;
 }
 
-bool in_tri (const D3DVECTOR &X, const TriParam &pp)
+bool in_tri (const oapi::FVECTOR3 &X, const TriParam &pp)
 {
 	double a, b, den;
 	double x1, x2, x3, xp, y1, y2, y3, yp;
@@ -660,7 +696,7 @@ bool in_tri (const D3DVECTOR &X, const TriParam &pp)
 	return true;
 }
 
-bool in_tri_proj (const D3DVECTOR &X, const TriParam &pp, int dir_idx)
+bool in_tri_proj (const oapi::FVECTOR3 &X, const TriParam &pp, int dir_idx)
 {
 	double x1, x2, x3, xp, y1, y2, y3, yp;
 
@@ -728,7 +764,7 @@ void srand2()
 double rand2 ()
 {
 	static const double irmax = 1.0/(double)RAND_MAX;
-	int ridx = (rand()*64)/RAND_MAX;
+	int ridx = (int)(((long long)rand()*64)/((long long)RAND_MAX+1)); // RAND_MAX is 2^31-1 on Linux; +1: ridx < 64
 	int r    = rtable[ridx];
 	rtable[ridx] = rand();
 	return (double)r*irmax;
@@ -739,8 +775,8 @@ double rand2 ()
 // GridintDlg dialog
 
 
-GridintDlg::GridintDlg(CShipeditApp *_app, CWnd* pParent /*=NULL*/)
-: CDialog(GridintDlg::IDD, pParent), app(_app)
+GridintDlg::GridintDlg(CShipeditApp *_app, QWidget* pParent /*=NULL*/)
+: ResDlg(GridintDlg::IDD, pParent), app(_app)
 {
 	//{{AFX_DATA_INIT(GridintDlg)
 	m_GridDim = 10;
@@ -748,22 +784,25 @@ GridintDlg::GridintDlg(CShipeditApp *_app, CWnd* pParent /*=NULL*/)
 }
 
 
-void GridintDlg::DoDataExchange(CDataExchange* pDX)
+void GridintDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(GridintDlg)
-	DDX_Text(pDX, IDC_GRIDINT_DIM, m_GridDim);
-	DDV_MinMaxInt(pDX, m_GridDim, 10, 1000);
+	ExchangeText(bSaveAndValidate, IDC_GRIDINT_DIM, m_GridDim);
+	ValidateMinMaxInt(bSaveAndValidate, m_GridDim, 10, 1000);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(GridintDlg, CDialog)
+// message map: WM_COMMAND from the controls, connected in ResDlg (oapiConnectDlgCommands)
+BOOL GridintDlg::OnCommand(int nID, int nCode)
+{
 	//{{AFX_MSG_MAP(GridintDlg)
-	ON_BN_CLICKED(IDC_GRIDINT_START, OnGridintStart)
-	ON_EN_CHANGE(IDC_GRIDINT_DIM, OnChangeGridintDim)
+	if (nID == IDC_GRIDINT_START && nCode == RESN_CLICKED) { OnGridintStart(); return TRUE; } // ON_BN_CLICKED
+	if (nID == IDC_GRIDINT_DIM && nCode == RESN_CHANGE) { OnChangeGridintDim(); return TRUE; } // ON_EN_CHANGE
 	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	return ResDlg::OnCommand(nID, nCode);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // GridintDlg message handlers
@@ -776,7 +815,7 @@ void GridintDlg::OnGridintStart()
 
 	UpdateData();
 	sprintf (cbuf, "Running (d=%d)", m_GridDim);
-	GetDlgItem (IDC_GRIDINT_MSG)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_MSG), cbuf);
 
 	app->setup_grid (g, m_GridDim);
 	for (x = z = 0; x < g.gridx; x++) {
@@ -800,7 +839,7 @@ void GridintDlg::OnGridintStart()
 
 //#ifdef UNDEF
 	// use this to find boundary point for arbitrary ray
-	D3DVECTOR pos = {-4.8f, app->bbmin.y, -4.69f}, dir = {0,1,0}, X;
+	oapi::FVECTOR3 pos = {-4.8f, app->bbmin.y, -4.69f}, dir = {0,1,0}, X;
 	float t, tmin = 1e10;
 	for (DWORD i = 0; i < app->ntri; i++) {
 		if (intersect (pos, dir, app->pp[i], X, t, true)) {
@@ -818,42 +857,42 @@ void GridintDlg::OnGridintStart()
 	Matrix pmi;
 	app->analyse_grid (g, vol, com, cs, pmi);
 	sprintf (cbuf, "%0.2f", vol);
-	GetDlgItem (IDC_GRIDINT_VOL)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_VOL), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", com.x, com.y, com.z);
-	GetDlgItem (IDC_GRIDINT_COM)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_COM), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", cs.x, cs.y, cs.z);
-	GetDlgItem (IDC_GRIDINT_CS)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_CS), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", pmi.m11, pmi.m12, pmi.m13);
-	GetDlgItem (IDC_GRIDINT_PMI1)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_PMI1), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", pmi.m21, pmi.m22, pmi.m23);
-	GetDlgItem (IDC_GRIDINT_PMI2)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_PMI2), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", pmi.m31, pmi.m32, pmi.m33);
-	GetDlgItem (IDC_GRIDINT_PMI3)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_PMI3), cbuf);
 
 	delete []g.grid;
 	sprintf (cbuf, "Ready (d=%d)", m_GridDim);
-	GetDlgItem (IDC_GRIDINT_MSG)->SetWindowText (cbuf);
-	MessageBeep (-1);
+	oapiSetDlgText (GetDlgItem (IDC_GRIDINT_MSG), cbuf);
+	QApplication::beep ();
 }
 
 void GridintDlg::OnChangeGridintDim() 
 {
 	char cbuf[256];
 	double dim;
-	GetDlgItem (IDC_GRIDINT_DIM)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_GRIDINT_DIM), cbuf, 256);
 	if (sscanf (cbuf, "%lf", &dim) && dim >= 0) {
 		double mem = dim*dim*dim;
 		if (mem > 1e6) sprintf (cbuf, "(%0.1f MByte)", mem*1e-6);
 		else           sprintf (cbuf, "(%0.0f KByte)", mem*1e-3);
-		GetDlgItem (IDC_GRIDINT_MEM)->SetWindowText (cbuf);
+		oapiSetDlgText (GetDlgItem (IDC_GRIDINT_MEM), cbuf);
 	}
 }
 /////////////////////////////////////////////////////////////////////////////
 // AddMeshDlg dialog
 
 
-AddMeshDlg::AddMeshDlg(CWnd* pParent /*=NULL*/)
-	: CDialog(AddMeshDlg::IDD, pParent)
+AddMeshDlg::AddMeshDlg(QWidget* pParent /*=NULL*/)
+	: ResDlg(AddMeshDlg::IDD, pParent)
 {
 	//{{AFX_DATA_INIT(AddMeshDlg)
 	m_AddMode = 0;
@@ -861,20 +900,16 @@ AddMeshDlg::AddMeshDlg(CWnd* pParent /*=NULL*/)
 }
 
 
-void AddMeshDlg::DoDataExchange(CDataExchange* pDX)
+void AddMeshDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(AddMeshDlg)
-	DDX_Radio(pDX, IDC_RADIO1, m_AddMode);
+	ExchangeRadio(bSaveAndValidate, IDC_RADIO1, m_AddMode);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(AddMeshDlg, CDialog)
-	//{{AFX_MSG_MAP(AddMeshDlg)
-		// NOTE: the ClassWizard will add message map macros here
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(AddMeshDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // AddMeshDlg message handlers

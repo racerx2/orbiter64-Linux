@@ -1,4 +1,5 @@
-#include <windows.h>
+#include "OrbiterPlatform.h" // windows.h left out: DWORD/WORD/BYTE
+#include <cstring>
 #include <iostream>
 #include "ddsread.h"
 

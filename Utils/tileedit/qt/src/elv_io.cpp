@@ -1,4 +1,6 @@
-#include <windows.h>
+#include "OrbiterPlatform.h" // windows.h left out: UINT8/INT16/BYTE
+#include <climits>
+#include <cstring>
 #include <vector>
 #include <algorithm>
 #define _USE_MATH_DEFINES
@@ -451,7 +453,7 @@ void elvwrite_png(const char *fname, const ElevData &edata, double vmin, double 
 		for (int iw = 0; iw < w; iw++) {
 			double v = edata.data[iw + ih*w];
 			double vmap = (v - vmin)*scale;
-			vmap = max(0.0, min(v16max, vmap));
+			vmap = std::max(0.0, std::min(v16max, vmap));
 			buf[idx++] = (unsigned short)vmap;
 		}
 	}

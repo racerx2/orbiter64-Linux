@@ -298,8 +298,8 @@ void DlgElevExportColorbar::paintEvent(QPaintEvent *event)
 			painter.drawRect(r);
 			painter.setBrush(Qt::NoBrush);
 		}
-		double smin = min(m_dmin, m_vmin);
-		double smax = max(m_dmax, m_vmax);
+		double smin = std::min(m_dmin, m_vmin);
+		double smax = std::max(m_dmax, m_vmax);
 		if (m_dmin < m_vmin) {
 			r.setLeft((int)((m_vmin - smin) / (smax - smin) * w));
 		}
@@ -311,8 +311,8 @@ void DlgElevExportColorbar::paintEvent(QPaintEvent *event)
 	painter.drawRect(r);
 
 	if (m_paintDataRange) {
-		int xmin = max(0, min(w, (int)(w * (m_dmin - m_vmin) / (m_vmax - m_vmin))));
-		int xmax = max(0, min(w, (int)(w * (m_dmax - m_vmin) / (m_vmax - m_vmin))));
+		int xmin = std::max(0, std::min(w, (int)(w * (m_dmin - m_vmin) / (m_vmax - m_vmin))));
+		int xmax = std::max(0, std::min(w, (int)(w * (m_dmax - m_vmin) / (m_vmax - m_vmin))));
 		painter.setPen(QColor(255, 0, 0));
 		painter.drawRect(xmin, 0, xmax - xmin, h);
 	}

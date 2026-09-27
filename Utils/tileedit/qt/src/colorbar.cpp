@@ -2,6 +2,8 @@
 #include "cmap.h"
 #include "QPainter"
 #include "QResizeEvent"
+#include <cfloat>
+#include <algorithm>
 
 Colorbar::Colorbar(QWidget *parent)
 	: QWidget(parent)
@@ -161,7 +163,7 @@ void ColorbarOverlay::paintEvent(QPaintEvent *event)
 
 	if (m_mode == TILEMODE_ELEVATION || m_mode == TILEMODE_ELEVMOD) {
 		if (m_val != DBL_MAX) {
-			int x = max(1, min(w - 2, (m_val - m_vmin) / (m_vmax - m_vmin) * w));
+			int x = std::max(1.0, std::min((double)(w - 2), (m_val - m_vmin) / (m_vmax - m_vmin) * w)); // windows.h min/max macros mixed int and double
 			painter.setPen(m_penIndicator0);
 			painter.drawLine(x, 0, x, cbh - 1);
 			painter.setPen(m_penIndicator1);
@@ -173,13 +175,13 @@ void ColorbarOverlay::paintEvent(QPaintEvent *event)
 		painter.drawText(0, h-2, cbuf);
 		sprintf(cbuf, "%+0.1lf m", m_vmax);
 		QString qs(cbuf);
-		painter.drawText(w - fm.width(qs), h-2, qs);
+		painter.drawText(w - fm.horizontalAdvance(qs), h-2, qs);
 		if (m_val != DBL_MAX)
 			sprintf(cbuf, "%+0.1lf m", m_val);
 		else
 			strcpy(cbuf, "N/A");
 		QString qv(cbuf);
-		painter.drawText((w - fm.width(qv)) / 2, h-2, qv);
+		painter.drawText((w - fm.horizontalAdvance(qv)) / 2, h-2, qv);
 	}
 	else if (m_mode == TILEMODE_SURFACE || m_mode == TILEMODE_NIGHTLIGHT) {
 		int y0 = 0, y1 = cbh / 3, y2 = (cbh * 2) / 3, y3 = cbh;
@@ -200,28 +202,28 @@ void ColorbarOverlay::paintEvent(QPaintEvent *event)
 		QString qsmin = QString::number(0);
 		painter.drawText(0, h-2, qsmin);
 		QString qsmax = QString::number(255);
-		painter.drawText(w - fm.width(qsmax), h-2, qsmax);
+		painter.drawText(w - fm.horizontalAdvance(qsmax), h-2, qsmax);
 
 		sprintf(cbuf, "%d / %d / %d", m_r, m_g, m_b);
 		QString qrgb(cbuf);
-		int x0 = (w - fm.width(qrgb)) / 2;
+		int x0 = (w - fm.horizontalAdvance(qrgb)) / 2;
 		painter.setPen(QPen("red"));
 		sprintf(cbuf, "%d", m_r);
 		QString qr(cbuf);
 		painter.drawText(x0, h - 2, qr);
-		x0 += fm.width(qr);
+		x0 += fm.horizontalAdvance(qr);
 		painter.setPen(QPen("black"));
 		QString qdash(" / ");
 		painter.drawText(x0, h - 2, qdash);
-		x0 += fm.width(qdash);
+		x0 += fm.horizontalAdvance(qdash);
 		painter.setPen(QPen("green"));
 		sprintf(cbuf, "%d", m_g);
 		QString qg(cbuf);
 		painter.drawText(x0, h - 2, qg);
-		x0 += fm.width(qg);
+		x0 += fm.horizontalAdvance(qg);
 		painter.setPen(QPen("black"));
 		painter.drawText(x0, h - 2, qdash);
-		x0 += fm.width(qdash);
+		x0 += fm.horizontalAdvance(qdash);
 		painter.setPen(QPen("blue"));
 		sprintf(cbuf, "%d", m_b);
 		QString qb(cbuf);
@@ -241,6 +243,6 @@ void ColorbarOverlay::paintEvent(QPaintEvent *event)
 
 		QString s(isWater ? "Water (specular)" : "Land (diffuse)");
 		painter.setPen(QPen("black"));
-		painter.drawText((w - fm.width(s)) / 2, h - 2, s);
+		painter.drawText((w - fm.horizontalAdvance(s)) / 2, h - 2, s);
 	}
 }

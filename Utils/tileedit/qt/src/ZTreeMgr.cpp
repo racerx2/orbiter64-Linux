@@ -1,5 +1,6 @@
 #include "ZTreeMgr.h"
 #include "zlib.h"
+#include <cstring> // came with windows.h: memcmp/strlen/strcpy
 
 // =======================================================================
 // File header for compressed tree files
@@ -37,7 +38,7 @@ bool TreeFileHeader::fread(FILE *f)
 		return false;
 	::fread(&flags, sizeof(DWORD), 1, f);
 	::fread(&dataOfs, sizeof(DWORD), 1, f);
-	::fread(&dataLength, sizeof(__int64), 1, f);
+	::fread(&dataLength, sizeof(int64_t), 1, f);
 	::fread(&nodeCount, sizeof(DWORD), 1, f);
 	::fread(&rootPos1, sizeof(DWORD), 1, f);
 	::fread(&rootPos2, sizeof(DWORD), 1, f);
@@ -115,8 +116,8 @@ ZTreeMgr::~ZTreeMgr()
 bool ZTreeMgr::OpenArchive()
 {
 	const char *name[6] = { "Surf", "Mask", "Elev", "Elev_mod", "Label", "Cloud" };
-	char fname[256];
-	sprintf (fname, "%s\\Archive\\%s.tree", path, name[layer]);
+	char fname[1024]; // was 256: Linux paths aren't capped at MAX_PATH
+	sprintf (fname, "%s/Archive/%s.tree", path, name[layer]);
 	treef = fopen(fname, "rb");
 	if (!treef) return false;
 
@@ -131,7 +132,7 @@ bool ZTreeMgr::OpenArchive()
 	rootPos3 = tfh.rootPos3;
 	for (int i = 0; i < 2; i++)
 		rootPos4[i] = tfh.rootPos4[i];
-	dofs = (__int64)tfh.dataOfs;
+	dofs = (int64_t)tfh.dataOfs;
 
 	if (!toc.fread(tfh.nodeCount, treef)) {
 		fclose(treef);
@@ -171,7 +172,7 @@ DWORD ZTreeMgr::ReadData(DWORD idx, BYTE **outp) const
 	if (!esize) // node doesn't have data, but has descendants with data
 		return 0;
 
-	if (_fseeki64(treef, toc[idx].pos+dofs, SEEK_SET))
+	if (fseeko(treef, toc[idx].pos+dofs, SEEK_SET))
 		return 0;
 
 	DWORD zsize = NodeSizeDeflated(idx);
@@ -195,7 +196,7 @@ DWORD ZTreeMgr::ReadData(DWORD idx, BYTE **outp) const
 
 DWORD ZTreeMgr::Inflate(const BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp) const
 {
-	DWORD ndata = noutp;
+	uLongf ndata = noutp; // zlib's uLongf is 64-bit on Linux, 32-bit (= DWORD) on Windows
 	if (uncompress (outp, &ndata, inp, ninp) != Z_OK)
 		return 0;
 	return ndata;

@@ -3,9 +3,13 @@
 
 #include <iostream>
 #include <string>
-#include <windows.h>
-#include <direct.h>
-#include <Shlwapi.h>
+#include <cstdio>
+#include <cstring>
+#include <strings.h>
+#include "OrbiterPlatform.h" // windows.h left out: BYTE/DWORD/BOOL
+#include <sys/stat.h> // direct.h: _mkdir -> mkdir
+#include <dirent.h>   // Shlwapi.h left out: PathFileExists -> access, FindFirstFile -> readdir
+#include <unistd.h>
 #include <zlib.h>
 
 #define TREE_DEFLATE 1
@@ -69,18 +73,18 @@ private:
 MemTree::MemTree(const char *rootpath, const char *layer)
 {
 	root1 = root2 = root3 = root4[0] = root4[1] = 0;
-	sprintf(path, "%s\\%s", rootpath, layer);
-	if (!stricmp(layer, "Surf"))
+	sprintf(path, "%s/%s", rootpath, layer);
+	if (!strcasecmp(layer, "Surf"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Mask"))
+	else if (!strcasecmp(layer, "Mask"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Cloud"))
+	else if (!strcasecmp(layer, "Cloud"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Elev"))
+	else if (!strcasecmp(layer, "Elev"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Elev_mod"))
+	else if (!strcasecmp(layer, "Elev_mod"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Label"))
+	else if (!strcasecmp(layer, "Label"))
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 }
@@ -117,37 +121,47 @@ void MemTree::AddLevels(int minlvl, int maxlvl)
 
 // -----------------------------------------------------------------------------
 
+// not upstream: readdir filtered by a "*.<ext>" pattern (case-sensitive, like the access/fopen of the tile that follow)
+static dirent *readdir_ext(DIR *h, const char *ext)
+{
+	for (dirent *fdata; (fdata = readdir(h)); ) {
+		const char *dot = strrchr(fdata->d_name, '.');
+		if (dot ? !strcmp(dot+1, ext) : !ext[0]) return fdata;
+	}
+	return 0;
+}
+
+// -----------------------------------------------------------------------------
+
 void MemTree::AddLevel(int lvl)
 {
 	char lvlpath[256];
-	sprintf(lvlpath, "%s\\%02d", path, lvl);
-	if (PathFileExists(lvlpath)) {
-		WIN32_FIND_DATA fdata, fdata2;
-		strcat(lvlpath, "\\*");
-		HANDLE h = FindFirstFile(lvlpath, &fdata);
-		BOOL ok = (h != INVALID_HANDLE_VALUE);
+	sprintf(lvlpath, "%s/%02d", path, lvl);
+	if (access(lvlpath, F_OK) == 0) {
+		dirent *fdata, *fdata2;
+		DIR *h = opendir(lvlpath); // FindFirstFile/FindNextFile -> opendir/readdir
+		BOOL ok = (h && (fdata = readdir(h)));
 		while (ok) {
-			bool match = (strlen(fdata.cFileName) == 6);
+			bool match = (strlen(fdata->d_name) == 6);
 			for (int i = 0; i < 6; i++)
-				match = match && fdata.cFileName[i] >= '0' && fdata.cFileName[i] <= '9';
+				match = match && fdata->d_name[i] >= '0' && fdata->d_name[i] <= '9';
 			if (match) {
 				int ilat, ilng;
-				sscanf(fdata.cFileName, "%d", &ilat);
+				sscanf(fdata->d_name, "%d", &ilat);
 				char latpath[256];
-				strcpy(latpath, lvlpath); strcpy(latpath+strlen(latpath)-1, fdata.cFileName);
-				strcat(latpath, "\\*."); strcat(latpath, ext);
-				HANDLE h2 = FindFirstFile(latpath, &fdata2);
-				BOOL ok2 = (h2 != INVALID_HANDLE_VALUE);
+				strcpy(latpath, lvlpath); strcat(latpath, "/"); strcat(latpath, fdata->d_name);
+				DIR *h2 = opendir(latpath); // "*.<ext>" pattern: readdir_ext
+				BOOL ok2 = (h2 && (fdata2 = readdir_ext(h2, ext)));
 				while (ok2) {
-					sscanf(fdata2.cFileName, "%d", &ilng);
+					sscanf(fdata2->d_name, "%d", &ilng);
 					InsertNode(lvl, ilat, ilng);
-					ok2 = FindNextFile(h2, &fdata2);
+					ok2 = ((fdata2 = readdir_ext(h2, ext)) != 0);
 				}
-				FindClose(h2);
+				if (h2) closedir(h2);
 			}
-			ok = FindNextFile(h, &fdata);
+			ok = ((fdata = readdir(h)) != 0);
 		}
-		FindClose (h);
+		if (h) closedir (h);
 	}
 }
 
@@ -236,7 +250,7 @@ MemTreeNode *MemTree::FindNode(int lvl, int ilat, int ilng)
 // Table of contents entry for a tree node
 
 struct TOCEntry {
-	__int64 pos;     // file position of compressed data block (from end of TOC)
+	int64_t pos;     // file position of compressed data block (from end of TOC)
 	DWORD size;      // uncompressed data size
 	DWORD child[4];  // array positions of the children ((DWORD)-1=no child)
 
@@ -246,6 +260,7 @@ struct TOCEntry {
 		for (int i = 0; i < 4; i++) child[i] = -1;
 	}
 };
+static_assert(sizeof(TOCEntry) == 32, "TOCEntry: .tree file layout"); // not upstream: MSVC layout check
 
 //==============================================================================
 // Tree file table of contents
@@ -257,7 +272,7 @@ public:
 	~TreeTOC();
 	TOCEntry &operator[](int idx);
 	DWORD length() const { return header.ntoc; }
-	__int64 DataSize() const { return header.totlength; }
+	int64_t DataSize() const { return header.totlength; }
 	size_t fwrite(FILE *f);
 	size_t fread(FILE *f);
 	void WriteData(FILE *f);
@@ -274,13 +289,14 @@ private:
 		DWORD size;         // header size [BYTE]
 		DWORD flags;		// bit flags
 		DWORD dataOfs;      // file offset of start of data block (header + TOC)
-		__int64 totlength;  // total deflated data size
+		int64_t totlength;  // total deflated data size
 		DWORD ntoc;         // number of tree nodes
 		DWORD rootPos1;     // array index of level 1 tilWriteSubtreeDatae ((DWORD)-1 for not present)
 		DWORD rootPos2;     // array index of level 2 tile ((DWORD)-1 for not present)
 		DWORD rootPos3;     // array index of level 3 tile ((DWORD)-1 for not present)
 		DWORD rootPos4[2];  // array indices of level 4 tiles (quadtree roots; (DWORD)-1 for not present)
 	} header;
+	static_assert(sizeof(Header) == 48, "Header: .tree file layout"); // not upstream: MSVC layout check
 
 	TOCEntry *toc;      // array of tree nodes
 
@@ -299,17 +315,17 @@ TreeTOC::TreeTOC(const char *_root, const char *_layer, const MemTree *tree): mt
 	root = new char[strlen(_root)+1]; strcpy(root, _root);
 	layer = new char[strlen(_layer)+1]; strcpy(layer, _layer);
 
-	if (!stricmp(layer, "Surf"))
+	if (!strcasecmp(layer, "Surf"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Mask"))
+	else if (!strcasecmp(layer, "Mask"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Cloud"))
+	else if (!strcasecmp(layer, "Cloud"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Elev"))
+	else if (!strcasecmp(layer, "Elev"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Elev_mod"))
+	else if (!strcasecmp(layer, "Elev_mod"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Label"))
+	else if (!strcasecmp(layer, "Label"))
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 
@@ -342,17 +358,17 @@ TreeTOC::TreeTOC(const char *_root, const char *_layer): mtree(0)
 	root = new char[strlen(_root)+1]; strcpy(root, _root);
 	layer = new char[strlen(_layer)+1]; strcpy(layer, _layer);
 
-	if (!stricmp(layer, "Surf"))
+	if (!strcasecmp(layer, "Surf"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Mask"))
+	else if (!strcasecmp(layer, "Mask"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Cloud"))
+	else if (!strcasecmp(layer, "Cloud"))
 		strcpy(ext, "dds");
-	else if (!stricmp(layer, "Elev"))
+	else if (!strcasecmp(layer, "Elev"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Elev_mod"))
+	else if (!strcasecmp(layer, "Elev_mod"))
 		strcpy(ext, "elv");
-	else if (!stricmp(layer, "Label"))
+	else if (!strcasecmp(layer, "Label"))
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 
@@ -400,19 +416,19 @@ int TreeTOC::AddSubtree(const MemTreeNode *node)
 		int idx = header.ntoc;
 		if (exist_file(root, layer, ext, lvl, ilat, ilng)) {
 			char path[256];
-			LARGE_INTEGER sz;
+			struct { DWORD LowPart; } sz; // LARGE_INTEGER left out: only its low part is used
 			DWORD ndata;
-			sprintf(path, "%s\\%s\\%02d\\%06d\\%06d.%s", root, layer, lvl, ilat, ilng, ext);
-			HANDLE hFile = CreateFile(path, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-			GetFileSizeEx(hFile, &sz);
+			sprintf(path, "%s/%s/%02d/%06d/%06d.%s", root, layer, lvl, ilat, ilng, ext);
+			FILE *hFile = fopen(path, "rb"); // CreateFile/GetFileSizeEx/ReadFile/CloseHandle -> stdio
+			struct stat st; sz.LowPart = (hFile && !fstat(fileno(hFile), &st)) ? (DWORD)st.st_size : 0;
 			if (sz.LowPart > nbuf) { // grow data buffer
 				BYTE *tmp = new BYTE[nbuf = sz.LowPart];
 				delete[]buf;
 				buf = tmp;
 			}
 			DWORD nread;
-			ReadFile(hFile, buf, sz.LowPart, &nread, NULL);
-			CloseHandle(hFile);
+			nread = hFile ? (DWORD)::fread(buf, 1, sz.LowPart, hFile) : 0;
+			if (hFile) fclose(hFile);
 			if (nread < sz.LowPart) {
 				std::cerr << "Unexpected end of file" << std::endl;
 				exit(1);
@@ -501,19 +517,19 @@ void TreeTOC::WriteSubtreeData(const MemTreeNode *node, FILE *f)
 		int ilng = node->ilng;
 		if (exist_file(root, layer, ext, lvl, ilat, ilng)) {
 			char path[256];
-			LARGE_INTEGER sz;
+			struct { DWORD LowPart; } sz; // LARGE_INTEGER left out: only its low part is used
 			DWORD ndata;
-			sprintf(path, "%s\\%s\\%02d\\%06d\\%06d.%s", root, layer, lvl, ilat, ilng, ext);
-			HANDLE hFile = CreateFile(path, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-			GetFileSizeEx(hFile, &sz);
+			sprintf(path, "%s/%s/%02d/%06d/%06d.%s", root, layer, lvl, ilat, ilng, ext);
+			FILE *hFile = fopen(path, "rb"); // CreateFile/GetFileSizeEx/ReadFile/CloseHandle -> stdio
+			struct stat st; sz.LowPart = (hFile && !fstat(fileno(hFile), &st)) ? (DWORD)st.st_size : 0;
 			if (sz.LowPart > nbuf) { // grow data buffer
 				BYTE *tmp = new BYTE[nbuf = sz.LowPart];
 				delete[]buf;
 				buf = tmp;
 			}
 			DWORD nread;
-			ReadFile(hFile, buf, sz.LowPart, &nread, NULL);
-			CloseHandle(hFile);
+			nread = hFile ? (DWORD)::fread(buf, 1, sz.LowPart, hFile) : 0;
+			if (hFile) fclose(hFile);
 			if (nread < sz.LowPart) {
 				std::cerr << "Unexpected end of file" << std::endl;
 				exit(1);
@@ -562,20 +578,20 @@ void TreeTOC::ExtractSubtreeData (DWORD idx, int lvl, int ilat, int ilng, FILE *
 	DWORD zsize = (DWORD)((idx < header.ntoc-1 ? toc[idx+1].pos : header.totlength) - entry->pos);
 	BYTE *zbuf = new BYTE[zsize];
 
-	_fseeki64(f, (__int64)header.dataOfs + entry->pos, SEEK_SET);
+	fseeko(f, (int64_t)header.dataOfs + entry->pos, SEEK_SET);
 	int nread = ::fread(zbuf, 1, zsize, f);
 
 	BYTE *ebuf = new BYTE[esize];
 	inflate_node_data(zbuf, zsize, ebuf, esize);
 
 	char fname[256];
-	sprintf (fname, "%s\\%s", root, layer);
-	_mkdir(fname);
-	sprintf (fname+strlen(fname), "\\%02d", lvl);
-	_mkdir(fname);
-	sprintf (fname+strlen(fname), "\\%06d", ilat);
-	_mkdir(fname);
-	sprintf (fname+strlen(fname), "\\%06d.%s", ilng, ext);
+	sprintf (fname, "%s/%s", root, layer);
+	mkdir(fname, 0777);
+	sprintf (fname+strlen(fname), "/%02d", lvl);
+	mkdir(fname, 0777);
+	sprintf (fname+strlen(fname), "/%06d", ilat);
+	mkdir(fname, 0777);
+	sprintf (fname+strlen(fname), "/%06d.%s", ilng, ext);
 	std::cout << "inflating " << fname << std::endl;
 	FILE *fout = fopen(fname, "wb");
 	::fwrite(ebuf, esize, 1, fout);
@@ -608,7 +624,7 @@ int main(int narg, char *arg[])
 		std::cerr << "\nUsage: texpack <Planet-tree-root> <Layer> [<Flags>]" << std::endl;
 		std::cerr << "\n<Planet-tree-root>:" << std::endl;
 		std::cerr << "  Path to planet textures, e.g." << std::endl;
-		std::cerr << "  c:\\Orbiter\\Textures\\Earth" << std::endl;
+		std::cerr << "  ~/Orbiter/Textures/Earth" << std::endl;
 		std::cerr << "\n<Layer>:" << std::endl;
 		std::cerr << "  Surf     pack surface layer tiles" << std::endl;
 		std::cerr << "  Mask     pack water mask and night light texture tiles" << std::endl;
@@ -655,9 +671,9 @@ int main(int narg, char *arg[])
 		TreeTOC toc(root, layer, &tree);
 
 		char outf[256];
-		sprintf(outf, "%s\\Archive", root);
-		_mkdir(outf);
-		sprintf(outf+strlen(outf), "\\%s.tree", layer);
+		sprintf(outf, "%s/Archive", root);
+		mkdir(outf, 0777);
+		sprintf(outf+strlen(outf), "/%s.tree", layer);
 		FILE *f = fopen(outf, "wb");
 
 		// write table of contents
@@ -674,7 +690,7 @@ int main(int narg, char *arg[])
 
 		TreeTOC toc(root, layer);
 		char fname[256];
-		sprintf(fname, "%s\\Archive\\%s.tree", root, layer);
+		sprintf(fname, "%s/Archive/%s.tree", root, layer);
 		FILE *f = fopen(fname, "rb");
 		toc.fread(f);
 		toc.ExtractData(f, maxlevel);
@@ -691,8 +707,8 @@ int main(int narg, char *arg[])
 bool exist_file(const char *root, const char *layer, const char *ext, int lvl, int ilat, int ilng)
 {
 	char path[256];
-	sprintf(path, "%s\\%s\\%02d\\%06d\\%06d.%s", root, layer, lvl, ilat, ilng, ext);
-	return PathFileExists(path) == TRUE;
+	sprintf(path, "%s/%s/%02d/%06d/%06d.%s", root, layer, lvl, ilat, ilng, ext);
+	return access(path, F_OK) == 0; // PathFileExists
 }
 
 DWORD deflate_node_data(BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp)
@@ -726,7 +742,7 @@ DWORD deflate_node_data(BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp)
 
 DWORD inflate_node_data(BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp)
 {
-	DWORD ndata = noutp;
+	uLongf ndata = noutp; // zlib's uLongf is 64-bit on LP64
 	if (uncompress(outp, &ndata, inp, ninp) != Z_OK)
 		return 0;
 #ifdef UNDEF

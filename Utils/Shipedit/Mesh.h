@@ -9,9 +9,10 @@
 #ifndef __MESH_H
 #define __MESH_H
 
-#include <d3d.h>
-#include <d3dtypes.h>
+// d3d.h/d3dtypes.h left out: the Direct3D 7 data types become the SDK's own (NTVERTEX, MATERIAL, FVECTOR3, float)
 #include <iostream>
+#include "OrbiterAPI.h"
+#include "DrawAPI.h"
 
 typedef char Str256[256];
 
@@ -41,7 +42,7 @@ public:
 // mesh group descriptor
 
 typedef struct {	
-	D3DVERTEX *Vtx;
+	NTVERTEX *Vtx;
 	WORD      *Idx;
 	DWORD     nVtx;
 	DWORD     nIdx;
@@ -61,7 +62,7 @@ public:
 	Mesh ();
 	// Create an empty mesh
 
-	Mesh (D3DVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
+	Mesh (NTVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
 		DWORD matidx = SPEC_DEFAULT, DWORD texidx = SPEC_DEFAULT);
 	// Create a single-group mesh
 
@@ -79,11 +80,11 @@ public:
 	DWORD nGroup() const { return nGrp; }
 	// Number of groups
 
-	bool GetGroup (DWORD grp, D3DVERTEX *&vtx, DWORD &nvtx, WORD *&idx, DWORD &nidx);
+	bool GetGroup (DWORD grp, NTVERTEX *&vtx, DWORD &nvtx, WORD *&idx, DWORD &nidx);
 	// Return pointer to vertex and index list for group grp
 	// Return value is false if grp index is out of range
 
-	int AddGroup (D3DVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
+	int AddGroup (NTVERTEX *vtx, DWORD nvtx, WORD *idx, DWORD nidx,
 		DWORD mtrl_idx = -1, DWORD tex_idx = -1, WORD zbias = 0);
 	// Add new group to the mesh and return its group index
 	// The lists are handled by the mesh and should not be released by
@@ -98,28 +99,28 @@ public:
 	// Merge "mesh" into "this", by adding all groups of "mesh"
 	// Currently this does not use the materials and textures of "mesh"
 
-	int AddMaterial (D3DMATERIAL7 &mtrl);
+	int AddMaterial (MATERIAL &mtrl);
 	// Add new material to the mesh and return its list index
 
-	void ScaleGroup (DWORD grp, D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
-	void Scale (D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
+	void ScaleGroup (DWORD grp, float sx, float sy, float sz);
+	void Scale (float sx, float sy, float sz);
 	// scale an individual group or the whole mesh
 
-	void TranslateGroup (DWORD grp, D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
-	void Translate (D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
+	void TranslateGroup (DWORD grp, float dx, float dy, float dz);
+	void Translate (float dx, float dy, float dz);
 	// translate an individual group or the whole mesh
 
 	enum RotAxis { ROTATE_X, ROTATE_Y, ROTATE_Z };
-	void RotateGroup (DWORD grp, RotAxis axis, D3DVALUE angle);
-	void Rotate (RotAxis axis, D3DVALUE angle);
+	void RotateGroup (DWORD grp, RotAxis axis, float angle);
+	void Rotate (RotAxis axis, float angle);
 	// rotate the mesh 'angle' rad around a coordiate axis
 
 	enum MirrorDir { MIRROR_X, MIRROR_Y, MIRROR_Z };
 	void MirrorGroup (DWORD grp, MirrorDir dir);
 	void Mirror (MirrorDir dir);
 
-	void TexScaleGroup (DWORD grp, D3DVALUE su, D3DVALUE sv);
-	void TexScale (D3DVALUE su, D3DVALUE sv);
+	void TexScaleGroup (DWORD grp, float su, float sv);
+	void TexScale (float su, float sv);
 	// scale the texture coordinates of an individual group or the whole mesh
 
 	void CalcNormals (DWORD grp, bool missingonly);
@@ -157,15 +158,15 @@ private:
 	GroupSpec *Grp;     // list of group specs	
 
 	DWORD nMtrl;        // number of materials
-	D3DMATERIAL7 *Mtrl; // list of materials used by the mesh
+	MATERIAL *Mtrl;     // list of materials used by the mesh
 	char **Matname;     // list of material names
 
 	DWORD nTex;         // number of textures
 	char **Texname;     // list of texture names
 
 	bool GrpSetup;      // true if the following arrays are allocated
-	D3DVECTOR *GrpCnt;  // list of barycentres for each group (local coords)
-	D3DVALUE *GrpRad;   // list of max. radii for each group
+	oapi::FVECTOR3 *GrpCnt; // list of barycentres for each group (local coords)
+	float *GrpRad;      // list of max. radii for each group
 	DWORD *GrpVis;      // visibility flags for each group
 };
 

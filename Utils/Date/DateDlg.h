@@ -14,11 +14,11 @@
 /////////////////////////////////////////////////////////////////////////////
 // CDateDlg dialog
 
-class CDateDlg : public CDialog
+class CDateDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	CDateDlg(CWnd* pParent = NULL);	// standard constructor
+	CDateDlg(QWidget* pParent = NULL);	// standard constructor
 	void UpdateUT (void);
 	void UpdateMJD (void);
 	void UpdateJD (void);
@@ -33,39 +33,38 @@ public:
 // Dialog Data
 	//{{AFX_DATA(CDateDlg)
 	enum { IDD = IDD_DATE_DIALOG };
-	CString	m_MJD;
+	std::string	m_MJD;
 	//}}AFX_DATA
 
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CDateDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);	// DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
 protected:
-	HICON m_hIcon;
+	QIcon m_hIcon;
 	double mjd;
 	struct tm date;
 
 	// Generated message map functions
 	//{{AFX_MSG(CDateDlg)
 	virtual BOOL OnInitDialog();
-	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnPaint();
-	afx_msg HCURSOR OnQueryDragIcon();
-	afx_msg void OnChangeMjd();
-	afx_msg void OnChangeUtDay();
-	afx_msg void OnChangeUtMonth();
-	afx_msg void OnChangeUtYear();
-	afx_msg void OnChangeUtHour();
-	afx_msg void OnChangeUtMin();
-	afx_msg void OnChangeUtSec();
-	afx_msg void OnChangeJd();
-	afx_msg void OnChangeJc();
-	afx_msg void OnChangeEpoch();
+	void OnSysCommand(UINT nID, LPARAM lParam);
+	// OnPaint, OnQueryDragIcon left out: the window manager draws the minimised window's icon (setWindowIcon)
+	void OnChangeMjd();
+	void OnChangeUtDay();
+	void OnChangeUtMonth();
+	void OnChangeUtYear();
+	void OnChangeUtHour();
+	void OnChangeUtMin();
+	void OnChangeUtSec();
+	void OnChangeJd();
+	void OnChangeJc();
+	void OnChangeEpoch();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(int nID, int nCode); // DECLARE_MESSAGE_MAP: the map is a WM_COMMAND switch
 };
 
 //{{AFX_INSERT_LOCATION}}

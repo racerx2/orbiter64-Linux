@@ -1,10 +1,12 @@
 #ifndef TILE_H
 #define TILE_H
 
-#include <windows.h>
+#include "OrbiterPlatform.h" // windows.h left out: DWORD
 #include <vector>
 #include "ddsread.h"
 #include "ZTreeMgr.h"
+
+class TileBlock; // g++: a friend declaration doesn't declare the name (MSVC does)
 
 #define TILE_SURFSTRIDE 512
 

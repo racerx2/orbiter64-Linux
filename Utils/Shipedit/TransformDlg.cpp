@@ -4,15 +4,12 @@
 // TransformDlg.cpp : implementation file
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Shipedit.h"
-#include "TransformDlg.h"
+#include "transformdlg.h"
+#include <cstring>
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#undef THIS_FILE
-static char THIS_FILE[] = __FILE__;
-#endif
+// DEBUG_NEW (_DEBUG) left out: MFC's debug allocator
 
 extern CShipeditApp theApp;
 
@@ -20,8 +17,8 @@ extern CShipeditApp theApp;
 // TranslateDlg dialog
 
 
-TranslateDlg::TranslateDlg(Mesh *_mesh, CWnd* pParent)
-: CDialog(TranslateDlg::IDD, pParent), mesh(_mesh)
+TranslateDlg::TranslateDlg(Mesh *_mesh, QWidget* pParent)
+: ResDlg(TranslateDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(TranslateDlg)
 	m_Translatex = 0.0f;
@@ -31,21 +28,18 @@ TranslateDlg::TranslateDlg(Mesh *_mesh, CWnd* pParent)
 }
 
 
-void TranslateDlg::DoDataExchange(CDataExchange* pDX)
+void TranslateDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(TranslateDlg)
-	DDX_Text(pDX, IDC_TRANSLATEX, m_Translatex);
-	DDX_Text(pDX, IDC_TRANSLATEY, m_Translatey);
-	DDX_Text(pDX, IDC_TRANSLATEZ, m_Translatez);
+	ExchangeText(bSaveAndValidate, IDC_TRANSLATEX, m_Translatex);
+	ExchangeText(bSaveAndValidate, IDC_TRANSLATEY, m_Translatey);
+	ExchangeText(bSaveAndValidate, IDC_TRANSLATEZ, m_Translatez);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(TranslateDlg, CDialog)
-	//{{AFX_MSG_MAP(TranslateDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(TranslateDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // TranslateDlg message handlers
@@ -54,14 +48,14 @@ void TranslateDlg::OnOK()
 {
 	UpdateData();
 	mesh->Translate (m_Translatex, m_Translatey, m_Translatez);
-	CDialog::OnOK();
+	ResDlg::OnOK();
 }
 /////////////////////////////////////////////////////////////////////////////
 // RotateDlg dialog
 
 
-RotateDlg::RotateDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(RotateDlg::IDD, pParent), mesh(_mesh)
+RotateDlg::RotateDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(RotateDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(RotateDlg)
 	m_Rotx = 0.0;
@@ -71,27 +65,32 @@ RotateDlg::RotateDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
 }
 
 
-void RotateDlg::DoDataExchange(CDataExchange* pDX)
+void RotateDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(RotateDlg)
-	DDX_Text(pDX, IDC_ROTX, m_Rotx);
-	DDV_MinMaxDouble(pDX, m_Rotx, -360., 360.);
-	DDX_Text(pDX, IDC_ROTY, m_Roty);
-	DDV_MinMaxDouble(pDX, m_Roty, -360., 360.);
-	DDX_Text(pDX, IDC_ROTZ, m_Rotz);
-	DDV_MinMaxDouble(pDX, m_Rotz, -360., 360.);
+	ExchangeText(bSaveAndValidate, IDC_ROTX, m_Rotx);
+	ValidateMinMaxDouble(bSaveAndValidate, m_Rotx, -360., 360.);
+	ExchangeText(bSaveAndValidate, IDC_ROTY, m_Roty);
+	ValidateMinMaxDouble(bSaveAndValidate, m_Roty, -360., 360.);
+	ExchangeText(bSaveAndValidate, IDC_ROTZ, m_Rotz);
+	ValidateMinMaxDouble(bSaveAndValidate, m_Rotz, -360., 360.);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(RotateDlg, CDialog)
+// message map: WM_COMMAND from the controls, connected in ResDlg (oapiConnectDlgCommands)
+BOOL RotateDlg::OnCommand(int nID, int nCode)
+{
 	//{{AFX_MSG_MAP(RotateDlg)
-	ON_BN_CLICKED(IDC_DO_ROTX, OnDoRotx)
-	ON_BN_CLICKED(IDC_DO_ROTY, OnDoRoty)
-	ON_BN_CLICKED(IDC_DO_ROTZ, OnDoRotz)
+	if (nCode == RESN_CLICKED) switch (nID) { // ON_BN_CLICKED
+	case IDC_DO_ROTX:  OnDoRotx(); return TRUE;
+	case IDC_DO_ROTY:  OnDoRoty(); return TRUE;
+	case IDC_DO_ROTZ:  OnDoRotz(); return TRUE;
+	}
 	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	return ResDlg::OnCommand(nID, nCode);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // RotateDlg message handlers
@@ -117,8 +116,8 @@ void RotateDlg::OnDoRotz()
 // ScaleDlg dialog
 
 
-ScaleDlg::ScaleDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(ScaleDlg::IDD, pParent), mesh(_mesh)
+ScaleDlg::ScaleDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(ScaleDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(ScaleDlg)
 	m_ScaleX = 1.0;
@@ -128,21 +127,18 @@ ScaleDlg::ScaleDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
 }
 
 
-void ScaleDlg::DoDataExchange(CDataExchange* pDX)
+void ScaleDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(ScaleDlg)
-	DDX_Text(pDX, IDC_SCALEX, m_ScaleX);
-	DDX_Text(pDX, IDC_SCALEY, m_ScaleY);
-	DDX_Text(pDX, IDC_SCALEZ, m_ScaleZ);
+	ExchangeText(bSaveAndValidate, IDC_SCALEX, m_ScaleX);
+	ExchangeText(bSaveAndValidate, IDC_SCALEY, m_ScaleY);
+	ExchangeText(bSaveAndValidate, IDC_SCALEZ, m_ScaleZ);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(ScaleDlg, CDialog)
-	//{{AFX_MSG_MAP(ScaleDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(ScaleDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // ScaleDlg message handlers
@@ -151,14 +147,14 @@ void ScaleDlg::OnOK()
 {
 	UpdateData();
 	mesh->Scale ((float)m_ScaleX, (float)m_ScaleY, (float)m_ScaleZ);
-	CDialog::OnOK();
+	ResDlg::OnOK();
 }
 /////////////////////////////////////////////////////////////////////////////
 // ZerolevelDlg dialog
 
 
-ZerolevelDlg::ZerolevelDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(ZerolevelDlg::IDD, pParent), mesh(_mesh)
+ZerolevelDlg::ZerolevelDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(ZerolevelDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(ZerolevelDlg)
 	m_Zlevel = 1e-5f;
@@ -169,23 +165,20 @@ ZerolevelDlg::ZerolevelDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
 }
 
 
-void ZerolevelDlg::DoDataExchange(CDataExchange* pDX)
+void ZerolevelDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(ZerolevelDlg)
-	DDX_Text(pDX, IDC_ZEROLEVEL, m_Zlevel);
-	DDV_MinMaxFloat(pDX, m_Zlevel, 0.f, 1.f);
-	DDX_Check(pDX, IDC_ZERO_VTX, m_ResetVtx);
-	DDX_Check(pDX, IDC_ZERO_NML, m_ResetNml);
-	DDX_Check(pDX, IDC_ZERO_TEX, m_ResetTex);
+	ExchangeText(bSaveAndValidate, IDC_ZEROLEVEL, m_Zlevel);
+	ValidateMinMaxFloat(bSaveAndValidate, m_Zlevel, 0.f, 1.f);
+	ExchangeCheck(bSaveAndValidate, IDC_ZERO_VTX, m_ResetVtx);
+	ExchangeCheck(bSaveAndValidate, IDC_ZERO_NML, m_ResetNml);
+	ExchangeCheck(bSaveAndValidate, IDC_ZERO_TEX, m_ResetTex);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(ZerolevelDlg, CDialog)
-	//{{AFX_MSG_MAP(ZerolevelDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(ZerolevelDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // ZerolevelDlg message handlers
@@ -198,50 +191,47 @@ void ZerolevelDlg::OnOK()
 	if (m_ResetNml) which |= 2;
 	if (m_ResetTex) which |= 4;
 	mesh->ZeroThreshold (m_Zlevel, which);
-	CDialog::OnOK();
+	ResDlg::OnOK();
 }
 /////////////////////////////////////////////////////////////////////////////
 // MergeDlg dialog
 
 
-MergeDlg::MergeDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(MergeDlg::IDD, pParent), mesh(_mesh)
+MergeDlg::MergeDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(MergeDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(MergeDlg)
 	m_Grp1 = 1;
 	m_Grp2 = 1;
-	m_Label1 = _T("");
-	m_Label2 = _T("");
+	m_Label1 = "";
+	m_Label2 = "";
 	//}}AFX_DATA_INIT
 }
 
 
-void MergeDlg::DoDataExchange(CDataExchange* pDX)
+void MergeDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
 	UINT maxgrp = (UINT)mesh->nGroup(), maxgrp1 = maxgrp+1;
 	char cbuf1[32], cbuf2[32];
 	sprintf (cbuf1, "Merge group (1-%d)", maxgrp);
 	sprintf (cbuf2, "with group (1-%d)", maxgrp);
-	m_Label1 = _T(cbuf1);
-	m_Label2 = _T(cbuf2);
-	CDialog::DoDataExchange(pDX);
+	m_Label1 = cbuf1;
+	m_Label2 = cbuf2;
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(MergeDlg)
-	DDX_Text(pDX, IDC_MERGE_GRP1, m_Grp1);
-	DDV_MinMaxUInt(pDX, m_Grp1, 1, maxgrp1);
-	DDX_Text(pDX, IDC_MERGE_GRP2, m_Grp2);
-	DDV_MinMaxUInt(pDX, m_Grp2, 1, maxgrp1);
-	DDX_Text(pDX, IDC_MERGE_LABEL1, m_Label1);
-	DDV_MaxChars(pDX, m_Label1, 32);
-	DDX_Text(pDX, IDC_MERGE_LABEL2, m_Label2);
-	DDV_MaxChars(pDX, m_Label2, 32);
+	ExchangeText(bSaveAndValidate, IDC_MERGE_GRP1, m_Grp1);
+	ValidateMinMaxUInt(bSaveAndValidate, m_Grp1, 1, maxgrp1);
+	ExchangeText(bSaveAndValidate, IDC_MERGE_GRP2, m_Grp2);
+	ValidateMinMaxUInt(bSaveAndValidate, m_Grp2, 1, maxgrp1);
+	ExchangeText(bSaveAndValidate, IDC_MERGE_LABEL1, m_Label1);
+	ValidateMaxChars(bSaveAndValidate, m_Label1, 32);
+	ExchangeText(bSaveAndValidate, IDC_MERGE_LABEL2, m_Label2);
+	ValidateMaxChars(bSaveAndValidate, m_Label2, 32);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(MergeDlg, CDialog)
-	//{{AFX_MSG_MAP(MergeDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(MergeDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // MergeDlg message handlers
@@ -251,17 +241,17 @@ void MergeDlg::OnOK()
 	UpdateData();
 	if (m_Grp1 != m_Grp2) {
 		DWORD grp1 = m_Grp1-1, grp2 = m_Grp2-1;
-		D3DVERTEX *vtx1, *vtx2, *vtx;
+		NTVERTEX *vtx1, *vtx2, *vtx;
 		WORD *idx1, *idx2, *idx;
 		DWORD i, nvtx1, nvtx2, nidx1, nidx2, nvtx, nidx;
 		mesh->GetGroup (grp1, vtx1, nvtx1, idx1, nidx1);
 		mesh->GetGroup (grp2, vtx2, nvtx2, idx2, nidx2);
 		nvtx = nvtx1 + nvtx2;
 		nidx = nidx1 + nidx2;
-		vtx = new D3DVERTEX[nvtx];
+		vtx = new NTVERTEX[nvtx];
 		idx = new WORD[nidx];
-		memcpy (vtx, vtx1, nvtx1*sizeof(D3DVERTEX));
-		memcpy (vtx+nvtx1, vtx2, nvtx2*sizeof(D3DVERTEX));
+		memcpy (vtx, vtx1, nvtx1*sizeof(NTVERTEX));
+		memcpy (vtx+nvtx1, vtx2, nvtx2*sizeof(NTVERTEX));
 		memcpy (idx, idx1, nidx1*sizeof(WORD));
 		memcpy (idx+nidx1, idx2, nidx2*sizeof(WORD));
 		// adjust indices
@@ -272,14 +262,14 @@ void MergeDlg::OnOK()
 		mesh->AddGroup (vtx, nvtx, idx, nidx);
 	}
 
-	CDialog::OnOK();
+	ResDlg::OnOK();
 }
 /////////////////////////////////////////////////////////////////////////////
 // NormalDlg dialog
 
 
-NormalDlg::NormalDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(NormalDlg::IDD, pParent), mesh(_mesh)
+NormalDlg::NormalDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(NormalDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(NormalDlg)
 	m_Selgrp = 0;
@@ -289,41 +279,46 @@ NormalDlg::NormalDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
 }
 
 
-void NormalDlg::DoDataExchange(CDataExchange* pDX)
+void NormalDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
 	UINT maxgrp = (UINT)mesh->nGroup(), maxgrp1 = maxgrp+1;
 	char cbuf[32];
 	sprintf (cbuf, "Only for group (1-%d)", maxgrp);
-	GetDlgItem(IDC_NML_SELONE)->SetWindowText (cbuf);
-	CDialog::DoDataExchange(pDX);
+	oapiSetDlgText (GetDlgItem (IDC_NML_SELONE), cbuf);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(NormalDlg)
-	DDX_Radio(pDX, IDC_NML_SELALL, m_Selgrp);
-	DDX_Radio(pDX, IDC_NML_VTXALL, m_Selvtx);
-	DDX_Text(pDX, IDC_NML_SELGRP, m_Group);
-	DDV_MinMaxUInt(pDX, m_Group, 1, maxgrp);
+	ExchangeRadio(bSaveAndValidate, IDC_NML_SELALL, m_Selgrp);
+	ExchangeRadio(bSaveAndValidate, IDC_NML_VTXALL, m_Selvtx);
+	ExchangeText(bSaveAndValidate, IDC_NML_SELGRP, m_Group);
+	ValidateMinMaxUInt(bSaveAndValidate, m_Group, 1, maxgrp);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(NormalDlg, CDialog)
+// message map: WM_COMMAND from the controls, connected in ResDlg (oapiConnectDlgCommands)
+BOOL NormalDlg::OnCommand(int nID, int nCode)
+{
 	//{{AFX_MSG_MAP(NormalDlg)
-	ON_BN_CLICKED(IDC_NML_SELALL, OnNmlSelall)
-	ON_BN_CLICKED(IDC_NML_SELONE, OnNmlSelone)
-	ON_BN_CLICKED(ID_NMLAPPLY, OnNmlapply)
+	if (nCode == RESN_CLICKED) switch (nID) { // ON_BN_CLICKED
+	case IDC_NML_SELALL:  OnNmlSelall(); return TRUE;
+	case IDC_NML_SELONE:  OnNmlSelone(); return TRUE;
+	case ID_NMLAPPLY:     OnNmlapply(); return TRUE;
+	}
 	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	return ResDlg::OnCommand(nID, nCode);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // NormalDlg message handlers
 
 void NormalDlg::OnNmlSelall() 
 {
-	GetDlgItem (IDC_NML_SELGRP)->EnableWindow (FALSE);
+	GetDlgItem (IDC_NML_SELGRP)->setEnabled (FALSE);
 }
 
 void NormalDlg::OnNmlSelone() 
 {
-	GetDlgItem (IDC_NML_SELGRP)->EnableWindow (TRUE);
+	GetDlgItem (IDC_NML_SELGRP)->setEnabled (TRUE);
 }
 
 void NormalDlg::OnNmlapply() 
@@ -344,8 +339,8 @@ void NormalDlg::OnNmlapply()
 // MirrorDlg dialog
 
 
-MirrorDlg::MirrorDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
-	: CDialog(MirrorDlg::IDD, pParent), mesh(_mesh)
+MirrorDlg::MirrorDlg(Mesh *_mesh, QWidget* pParent /*=NULL*/)
+	: ResDlg(MirrorDlg::IDD, pParent), mesh(_mesh)
 {
 	//{{AFX_DATA_INIT(MirrorDlg)
 	m_MirrorX = 0;
@@ -353,19 +348,16 @@ MirrorDlg::MirrorDlg(Mesh *_mesh, CWnd* pParent /*=NULL*/)
 }
 
 
-void MirrorDlg::DoDataExchange(CDataExchange* pDX)
+void MirrorDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(MirrorDlg)
-	DDX_Radio(pDX, IDC_MIRRORX, m_MirrorX);
+	ExchangeRadio(bSaveAndValidate, IDC_MIRRORX, m_MirrorX);
 	//}}AFX_DATA_MAP
 }
 
 
-BEGIN_MESSAGE_MAP(MirrorDlg, CDialog)
-	//{{AFX_MSG_MAP(MirrorDlg)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(MirrorDlg): no entries, ResDlg::OnCommand calls OnOK/OnCancel
 
 /////////////////////////////////////////////////////////////////////////////
 // MirrorDlg message handlers
@@ -378,5 +370,5 @@ void MirrorDlg::OnOK()
 	case 1: mesh->Mirror (Mesh::MIRROR_Y); break;
 	case 2: mesh->Mirror (Mesh::MIRROR_Z); break;
 	}
-	CDialog::OnOK();
+	ResDlg::OnOK();
 }

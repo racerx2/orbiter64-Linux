@@ -4,6 +4,7 @@
 #include "cmap.h"
 #include <iostream>
 #include <algorithm>
+#include <cstring> // came with windows.h: memcpy
 #define _USE_MATH_DEFINES
 #include <math.h>
 

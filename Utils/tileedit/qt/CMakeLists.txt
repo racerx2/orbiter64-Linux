@@ -7,11 +7,10 @@ project (tileedit VERSION 2021.1)
 
 set(FASTDXT_LIB $<TARGET_FILE:fastdxt>)
 
-find_package(Qt5 QUIET COMPONENTS Widgets Core Gui
-	HINTS ${QTDIR}
-)
+# Qt6 replaces Qt5; QTDIR hint left out: it came from the ExternalProject, Qt 6 is a system package
+find_package(Qt6 QUIET COMPONENTS Widgets Core Gui)
 
-if(Qt5_FOUND)
+if(Qt6_FOUND)
 	add_subdirectory(extern/fastdxt)
 	add_subdirectory(src)
 endif()

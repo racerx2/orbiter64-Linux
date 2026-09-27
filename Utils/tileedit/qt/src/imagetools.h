@@ -2,7 +2,7 @@
 #define IMAGETOOLS_H
 
 #include <vector>
-#include <windows.h>
+#include "OrbiterPlatform.h" // windows.h left out: DWORD
 
 struct Image {
 	std::vector<DWORD> data;

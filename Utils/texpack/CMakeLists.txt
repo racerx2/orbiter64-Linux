@@ -6,8 +6,12 @@ add_executable(texpack
 )
 
 target_link_libraries(texpack
-	Shlwapi.lib
+	# Shlwapi.lib left out: PathFileExists/FindFirstFile -> access/readdir
 	zlib
+)
+
+target_include_directories(texpack
+	PRIVATE ${ORBITER_SOURCE_SDK_INCLUDE_DIR} # not upstream: OrbiterPlatform.h for the windows.h integer types
 )
 
 set_target_properties(texpack

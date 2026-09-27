@@ -15,11 +15,11 @@
 /////////////////////////////////////////////////////////////////////////////
 // TranslateDlg dialog
 
-class TranslateDlg : public CDialog
+class TranslateDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	TranslateDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	TranslateDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(TranslateDlg)
@@ -34,7 +34,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(TranslateDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -45,17 +45,17 @@ protected:
 	//{{AFX_MSG(TranslateDlg)
 	virtual void OnOK();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// DECLARE_MESSAGE_MAP: no entries
 };
 
 /////////////////////////////////////////////////////////////////////////////
 // RotateDlg dialog
 
-class RotateDlg : public CDialog
+class RotateDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	RotateDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	RotateDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(RotateDlg)
@@ -70,7 +70,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(RotateDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -79,20 +79,20 @@ protected:
 
 	// Generated message map functions
 	//{{AFX_MSG(RotateDlg)
-	afx_msg void OnDoRotx();
-	afx_msg void OnDoRoty();
-	afx_msg void OnDoRotz();
+	void OnDoRotx();
+	void OnDoRoty();
+	void OnDoRotz();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(int nID, int nCode); // DECLARE_MESSAGE_MAP: the map is a WM_COMMAND switch
 };
 /////////////////////////////////////////////////////////////////////////////
 // ScaleDlg dialog
 
-class ScaleDlg : public CDialog
+class ScaleDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	ScaleDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	ScaleDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(ScaleDlg)
@@ -107,7 +107,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(ScaleDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -118,16 +118,16 @@ protected:
 	//{{AFX_MSG(ScaleDlg)
 	virtual void OnOK();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// DECLARE_MESSAGE_MAP: no entries
 };
 /////////////////////////////////////////////////////////////////////////////
 // ZerolevelDlg dialog
 
-class ZerolevelDlg : public CDialog
+class ZerolevelDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	ZerolevelDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	ZerolevelDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(ZerolevelDlg)
@@ -143,7 +143,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(ZerolevelDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -154,24 +154,24 @@ protected:
 	//{{AFX_MSG(ZerolevelDlg)
 	virtual void OnOK();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// DECLARE_MESSAGE_MAP: no entries
 };
 /////////////////////////////////////////////////////////////////////////////
 // MergeDlg dialog
 
-class MergeDlg : public CDialog
+class MergeDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	MergeDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	MergeDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(MergeDlg)
 	enum { IDD = IDD_MERGEGRP };
 	UINT	m_Grp1;
 	UINT	m_Grp2;
-	CString	m_Label1;
-	CString	m_Label2;
+	std::string	m_Label1;
+	std::string	m_Label2;
 	//}}AFX_DATA
 
 
@@ -179,7 +179,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(MergeDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -190,16 +190,16 @@ protected:
 	//{{AFX_MSG(MergeDlg)
 	virtual void OnOK();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// DECLARE_MESSAGE_MAP: no entries
 };
 /////////////////////////////////////////////////////////////////////////////
 // NormalDlg dialog
 
-class NormalDlg : public CDialog
+class NormalDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	NormalDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	NormalDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(NormalDlg)
@@ -214,7 +214,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(NormalDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -223,20 +223,20 @@ protected:
 
 	// Generated message map functions
 	//{{AFX_MSG(NormalDlg)
-	afx_msg void OnNmlSelall();
-	afx_msg void OnNmlSelone();
-	afx_msg void OnNmlapply();
+	void OnNmlSelall();
+	void OnNmlSelone();
+	void OnNmlapply();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(int nID, int nCode); // DECLARE_MESSAGE_MAP: the map is a WM_COMMAND switch
 };
 /////////////////////////////////////////////////////////////////////////////
 // MirrorDlg dialog
 
-class MirrorDlg : public CDialog
+class MirrorDlg : public ResDlg // CDialog: ResDlg (StdAfx.h)
 {
 // Construction
 public:
-	MirrorDlg(Mesh *_mesh, CWnd* pParent = NULL);   // standard constructor
+	MirrorDlg(Mesh *_mesh, QWidget* pParent = NULL);   // standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(MirrorDlg)
@@ -249,7 +249,7 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(MirrorDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
@@ -260,7 +260,7 @@ protected:
 	//{{AFX_MSG(MirrorDlg)
 	virtual void OnOK();
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+	// DECLARE_MESSAGE_MAP: no entries
 };
 
 //{{AFX_INSERT_LOCATION}}

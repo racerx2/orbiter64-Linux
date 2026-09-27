@@ -4,23 +4,22 @@
 // DateDlg.cpp : implementation file
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Date.h"
 #include "DateDlg.h"
 #include "Convert.h"
+#include <QAction>
+#include <cassert>
+#include <cstring>
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#undef THIS_FILE
-static char THIS_FILE[] = __FILE__;
-#endif
+// DEBUG_NEW (_DEBUG) left out: MFC's debug allocator
 
 static bool bIgnore = false;
 
 /////////////////////////////////////////////////////////////////////////////
 // CAboutDlg dialog used for App About
 
-class CAboutDlg : public CDialog
+class CAboutDlg : public ResDlg
 {
 public:
 	CAboutDlg();
@@ -33,101 +32,104 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CAboutDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
 protected:
 	//{{AFX_MSG(CAboutDlg)
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
 };
 
-CAboutDlg::CAboutDlg() : CDialog(CAboutDlg::IDD)
+CAboutDlg::CAboutDlg() : ResDlg(CAboutDlg::IDD)
 {
 	//{{AFX_DATA_INIT(CAboutDlg)
 	//}}AFX_DATA_INIT
 }
 
-void CAboutDlg::DoDataExchange(CDataExchange* pDX)
+void CAboutDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(CAboutDlg)
 	//}}AFX_DATA_MAP
 }
 
-BEGIN_MESSAGE_MAP(CAboutDlg, CDialog)
-	//{{AFX_MSG_MAP(CAboutDlg)
-		// No message handlers
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(CAboutDlg): no message handlers, ResDlg::OnCommand ends the dialog on IDOK
 
 /////////////////////////////////////////////////////////////////////////////
 // CDateDlg dialog
 
-CDateDlg::CDateDlg(CWnd* pParent /*=NULL*/)
-	: CDialog(CDateDlg::IDD, pParent)
+CDateDlg::CDateDlg(QWidget* pParent /*=NULL*/)
+	: ResDlg(CDateDlg::IDD, pParent)
 {
 	//{{AFX_DATA_INIT(CDateDlg)
-	m_MJD = _T("");
+	m_MJD = "";
 	//}}AFX_DATA_INIT
-	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+	m_hIcon = ResDlg::LoadIcon(IDR_MAINFRAME);
 }
 
-void CDateDlg::DoDataExchange(CDataExchange* pDX)
+void CDateDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(CDateDlg)
-	DDX_Text(pDX, IDC_MJD, m_MJD);
-	DDV_MaxChars(pDX, m_MJD, 32);
+	ExchangeText(bSaveAndValidate, IDC_MJD, m_MJD);
+	ValidateMaxChars(bSaveAndValidate, m_MJD, 32);
 	//}}AFX_DATA_MAP
 }
 
-BEGIN_MESSAGE_MAP(CDateDlg, CDialog)
+// message map: WM_COMMAND notifications of the controls, connected in ResDlg (oapiConnectDlgCommands)
+BOOL CDateDlg::OnCommand(int nID, int nCode)
+{
 	//{{AFX_MSG_MAP(CDateDlg)
-	ON_WM_SYSCOMMAND()
-	ON_WM_PAINT()
-	ON_WM_QUERYDRAGICON()
-	ON_EN_CHANGE(IDC_MJD, OnChangeMjd)
-	ON_EN_CHANGE(IDC_UT_DAY, OnChangeUtDay)
-	ON_EN_CHANGE(IDC_UT_MONTH, OnChangeUtMonth)
-	ON_EN_CHANGE(IDC_UT_YEAR, OnChangeUtYear)
-	ON_EN_CHANGE(IDC_UT_HOUR, OnChangeUtHour)
-	ON_EN_CHANGE(IDC_UT_MIN, OnChangeUtMin)
-	ON_EN_CHANGE(IDC_UT_SEC, OnChangeUtSec)
-	ON_EN_CHANGE(IDC_JD, OnChangeJd)
-	ON_EN_CHANGE(IDC_JC, OnChangeJc)
-	ON_EN_CHANGE(IDC_EPOCH, OnChangeEpoch)
+	// ON_WM_SYSCOMMAND: OnInitDialog connects the About entry of the context menu
+	// ON_WM_PAINT, ON_WM_QUERYDRAGICON left out (see DateDlg.h)
+	if (nCode == RESN_CHANGE) switch (nID) { // ON_EN_CHANGE
+	case IDC_MJD:      OnChangeMjd();     return TRUE;
+	case IDC_UT_DAY:   OnChangeUtDay();   return TRUE;
+	case IDC_UT_MONTH: OnChangeUtMonth(); return TRUE;
+	case IDC_UT_YEAR:  OnChangeUtYear();  return TRUE;
+	case IDC_UT_HOUR:  OnChangeUtHour();  return TRUE;
+	case IDC_UT_MIN:   OnChangeUtMin();   return TRUE;
+	case IDC_UT_SEC:   OnChangeUtSec();   return TRUE;
+	case IDC_JD:       OnChangeJd();      return TRUE;
+	case IDC_JC:       OnChangeJc();      return TRUE;
+	case IDC_EPOCH:    OnChangeEpoch();   return TRUE;
+	}
 	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	return ResDlg::OnCommand(nID, nCode);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CDateDlg message handlers
 
 BOOL CDateDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	ResDlg::OnInitDialog();
 
 	// Add "About..." menu item to system menu.
 
 	// IDM_ABOUTBOX must be in the system command range.
-	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
-	ASSERT(IDM_ABOUTBOX < 0xF000);
+	assert((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
+	assert(IDM_ABOUTBOX < 0xF000);
 
-	CMenu* pSysMenu = GetSystemMenu(FALSE);
+	QWidget* pSysMenu = hDlg; // the title bar menu is the window manager's: the entry goes to the dialog's context menu
 	if (pSysMenu != NULL)
 	{
-		CString strAboutMenu;
-		strAboutMenu.LoadString(IDS_ABOUTBOX);
-		if (!strAboutMenu.IsEmpty())
+		char strAboutMenu[256];
+		oapiLoadResString(nullptr, IDS_ABOUTBOX, strAboutMenu, 256);
+		if (strAboutMenu[0])
 		{
-			pSysMenu->AppendMenu(MF_SEPARATOR);
-			pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
+			QAction* pSep = new QAction(pSysMenu);
+			pSep->setSeparator(true);
+			pSysMenu->addAction(pSep); // MF_SEPARATOR
+			QAction* pAbout = new QAction(QString::fromUtf8(strAboutMenu), pSysMenu);
+			QObject::connect(pAbout, &QAction::triggered, pSysMenu, [this]() { OnSysCommand(IDM_ABOUTBOX, 0); });
+			pSysMenu->addAction(pAbout); // MF_STRING, IDM_ABOUTBOX
+			pSysMenu->setContextMenuPolicy(Qt::ActionsContextMenu);
 		}
 	}
 
-	SetIcon(m_hIcon, TRUE);			// Set big icon
-	SetIcon(m_hIcon, FALSE);		// Set small icon
+	hDlg->setWindowIcon(m_hIcon);	// Set big and small icon
 	
 	SetMJD (MJD (time (NULL)), true);
 	// initialise to current system time
@@ -144,7 +146,7 @@ void CDateDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 	else
 	{
-		CDialog::OnSysCommand(nID, lParam);
+		// CDialog::OnSysCommand left out: the other system commands belong to the window manager
 	}
 }
 
@@ -152,35 +154,7 @@ void CDateDlg::OnSysCommand(UINT nID, LPARAM lParam)
 //  to draw the icon.  For MFC applications using the document/view model,
 //  this is automatically done for you by the framework.
 
-void CDateDlg::OnPaint() 
-{
-	if (IsIconic())
-	{
-		CPaintDC dc(this); // device context for painting
-
-		SendMessage(WM_ICONERASEBKGND, (WPARAM) dc.GetSafeHdc(), 0);
-
-		// Center icon in client rectangle
-		int cxIcon = GetSystemMetrics(SM_CXICON);
-		int cyIcon = GetSystemMetrics(SM_CYICON);
-		CRect rect;
-		GetClientRect(&rect);
-		int x = (rect.Width() - cxIcon + 1) / 2;
-		int y = (rect.Height() - cyIcon + 1) / 2;
-
-		// Draw the icon
-		dc.DrawIcon(x, y, m_hIcon);
-	}
-	else
-	{
-		CDialog::OnPaint();
-	}
-}
-
-HCURSOR CDateDlg::OnQueryDragIcon()
-{
-	return (HCURSOR) m_hIcon;
-}
+// OnPaint, OnQueryDragIcon left out: the window manager draws the minimised window's icon
 
 void CDateDlg::UpdateUT (void)
 {
@@ -188,32 +162,32 @@ void CDateDlg::UpdateUT (void)
 
 	sprintf (cbuf, "%02d", date.tm_mday);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_DAY)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_DAY), cbuf);
 	bIgnore = false;
 
 	sprintf (cbuf, "%02d", date.tm_mon);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_MONTH)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_MONTH), cbuf);
 	bIgnore = false;
 
 	sprintf (cbuf, "%04d", date.tm_year+1900);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_YEAR)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_YEAR), cbuf);
 	bIgnore = false;
 
 	sprintf (cbuf, "%02d", date.tm_hour);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_HOUR)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_HOUR), cbuf);
 	bIgnore = false;
 
 	sprintf (cbuf, "%02d", date.tm_min);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_MIN)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_MIN), cbuf);
 	bIgnore = false;
 
 	sprintf (cbuf, "%02d", date.tm_sec);
 	bIgnore = true;
-	GetDlgItem (IDC_UT_SEC)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_UT_SEC), cbuf);
 	bIgnore = false;
 }
 
@@ -222,7 +196,7 @@ void CDateDlg::UpdateMJD (void)
 	char cbuf[256];
 	sprintf (cbuf, "%0.6f", mjd);
 	bIgnore = true;
-	GetDlgItem (IDC_MJD)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_MJD), cbuf);
 	bIgnore = false;
 }
 
@@ -231,7 +205,7 @@ void CDateDlg::UpdateJD (void)
 	char cbuf[256];
 	sprintf (cbuf, "%0.6f", mjd + 2400000.5);
 	bIgnore = true;
-	GetDlgItem (IDC_JD)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_JD), cbuf);
 	bIgnore = false;
 }
 
@@ -240,7 +214,7 @@ void CDateDlg::UpdateJC (void)
 	char cbuf[256];
 	sprintf (cbuf, "%0.10f", MJD2JC(mjd));
 	bIgnore = true;
-	GetDlgItem (IDC_JC)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_JC), cbuf);
 	bIgnore = false;
 }
 
@@ -249,7 +223,7 @@ void CDateDlg::UpdateEpoch (void)
 	char cbuf[256];
 	sprintf (cbuf, "%0.8f", MJD2Jepoch (mjd));
 	bIgnore = true;
-	GetDlgItem (IDC_EPOCH)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_EPOCH), cbuf);
 	bIgnore = false;
 }
 
@@ -316,7 +290,7 @@ void CDateDlg::OnChangeMjd()
 	if (bIgnore) return;
 	char cbuf[256];
 	double new_mjd;
-	GetDlgItem (IDC_MJD)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_MJD), cbuf, 256);
 	if (sscanf (cbuf, "%lf", &new_mjd) == 1 && fabs (new_mjd-mjd) > 1e-6)
 		SetMJD (new_mjd);
 }
@@ -326,7 +300,7 @@ void CDateDlg::OnChangeJd()
 	if (bIgnore) return;
 	char cbuf[256];
 	double new_jd;
-	GetDlgItem (IDC_JD)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_JD), cbuf, 256);
 	if (sscanf (cbuf, "%lf", &new_jd) == 1)
 		SetJD (new_jd);
 }
@@ -336,7 +310,7 @@ void CDateDlg::OnChangeJc()
 	if (bIgnore) return;
 	char cbuf[256];
 	double new_jc;
-	GetDlgItem (IDC_JC)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_JC), cbuf, 256);
 	if (sscanf (cbuf, "%lf", &new_jc) == 1)
 		SetJC (new_jc);
 }
@@ -346,7 +320,7 @@ void CDateDlg::OnChangeEpoch()
 	if (bIgnore) return;
 	char cbuf[256];
 	double new_epoch;
-	GetDlgItem (IDC_EPOCH)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_EPOCH), cbuf, 256);
 	if (sscanf (cbuf, "%lf", &new_epoch) == 1)
 		SetEpoch (new_epoch);
 }
@@ -357,7 +331,7 @@ void CDateDlg::OnChangeUtDay()
 	char cbuf[256];
 	int day;
 
-	GetDlgItem (IDC_UT_DAY)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_DAY), cbuf, 256);
 	if (sscanf (cbuf, "%d", &day) == 1 && day != date.tm_mday && day >= 1 && day <= 31) {
 		date.tm_mday = day;
 		SetUT (&date);
@@ -370,7 +344,7 @@ void CDateDlg::OnChangeUtMonth()
 	char cbuf[256];
 	int month;
 
-	GetDlgItem (IDC_UT_MONTH)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_MONTH), cbuf, 256);
 	if (sscanf (cbuf, "%d", &month) == 1 && month != date.tm_mon && month >= 1 && month <= 12) {
 		date.tm_mon = month;
 		SetUT (&date);
@@ -383,7 +357,7 @@ void CDateDlg::OnChangeUtYear()
 	char cbuf[256];
 	int year;
 
-	GetDlgItem (IDC_UT_YEAR)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_YEAR), cbuf, 256);
 	if ((sscanf (cbuf, "%d", &year) == 1) && ((year -= 1900) != date.tm_year)) {
 		date.tm_year = year;
 		SetUT (&date);
@@ -396,7 +370,7 @@ void CDateDlg::OnChangeUtHour()
 	char cbuf[256];
 	int hour;
 
-	GetDlgItem (IDC_UT_HOUR)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_HOUR), cbuf, 256);
 	if (sscanf (cbuf, "%d", &hour) == 1 && hour != date.tm_hour) {
 		date.tm_hour = hour;
 		SetUT (&date);
@@ -409,7 +383,7 @@ void CDateDlg::OnChangeUtMin()
 	char cbuf[256];
 	int min;
 
-	GetDlgItem (IDC_UT_MIN)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_MIN), cbuf, 256);
 	if (sscanf (cbuf, "%d", &min) == 1 && min != date.tm_min) {
 		date.tm_min = min;
 		SetUT (&date);
@@ -422,7 +396,7 @@ void CDateDlg::OnChangeUtSec()
 	char cbuf[256];
 	int sec;
 
-	GetDlgItem (IDC_UT_SEC)->GetWindowText (cbuf, 256);
+	oapiGetDlgText (GetDlgItem (IDC_UT_SEC), cbuf, 256);
 	if (sscanf (cbuf, "%d", &sec) == 1 && sec != date.tm_sec) {
 		date.tm_sec = sec;
 		SetUT (&date);

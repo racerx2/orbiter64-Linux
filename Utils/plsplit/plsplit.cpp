@@ -9,21 +9,35 @@
 
 #include <iostream>
 #include <iomanip>
+#include <vector>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <io.h>
-#include <conio.h>
+#include <stdarg.h>
+#include <errno.h>
+// io.h left out: nothing of it is used
+#include <termios.h>  // conio.h: _kbhit/_getch -> termios
 #include <fcntl.h>
-#include <process.h>
-#include <direct.h>
-#include <windows.h>
+#include <spawn.h>    // process.h: _spawnl -> posix_spawn
+#include <sys/wait.h>
+#include <unistd.h>   // direct.h: _getcwd -> getcwd
+#include "OrbiterPlatform.h" // windows.h left out: BYTE/WORD/DWORD/LONG/UINT
 #include <math.h>
-#include <ddraw.h>
-#include <shlobj.h>
-#include <wincodec.h>
+// ddraw.h left out: nothing of it is used
+#include <sys/stat.h> // shlobj.h: SHCreateDirectoryEx -> mkdir per level
+#include <png.h>      // wincodec.h: WIC PNG decoder -> libpng
 
 using namespace std;
+
+// not upstream: wingdi.h BMP file structures (the file header is 2-byte packed as in wingdi.h)
+#pragma pack(push, 2)
+struct BITMAPFILEHEADER { WORD bfType; DWORD bfSize; WORD bfReserved1; WORD bfReserved2; DWORD bfOffBits; };
+#pragma pack(pop)
+struct BITMAPINFOHEADER { DWORD biSize; LONG biWidth; LONG biHeight; WORD biPlanes; WORD biBitCount; DWORD biCompression; DWORD biSizeImage; LONG biXPelsPerMeter; LONG biYPelsPerMeter; DWORD biClrUsed; DWORD biClrImportant; };
+struct RGBQUAD { BYTE rgbBlue; BYTE rgbGreen; BYTE rgbRed; BYTE rgbReserved; };
+struct BITMAPINFO { BITMAPINFOHEADER bmiHeader; RGBQUAD bmiColors[1]; };
+const DWORD BI_RGB = 0;
+static_assert (sizeof(BITMAPFILEHEADER) == 14 && sizeof(BITMAPINFOHEADER) == 40, "file layout");
 
 typedef union { // Coour triplet in BGR format (since 24-bit BMP files store them in this order)
 	BYTE data[3];
@@ -38,13 +52,13 @@ bool operator!= (const BGR &c1, const BGR &c2)
 typedef BYTE Alpha;
 
 int PS = 512; // patch size: size of patch textures
-const char *dxtex = ".\\dxtex.exe";
+const char *dxtex = "./dxtex"; // DxTex.exe -> dxtex (Utils/plsplit/dxtex.cpp), run from the working folder as upstream
 
 char g_cwd[256];
 double g_tol = 0.0;        // tolerance for suppressing opaque/transparent pixels in a tile
 int g_nsuppressed = 0;     // number of opacity/transparency suppressed tiles
 
-IWICImagingFactory *g_pIWICFactory;
+// IWICImagingFactory left out: libpng (ReadPNG) needs no factory object
 
 void ReadBMP_header (char *fname, LONG &mapw, LONG &maph, WORD &bpp);
 // Read image width, height, and bit depth from BMP file
@@ -63,7 +77,7 @@ DWORD WriteDDS (BGR *img, Alpha *aimg, LONG imgw, LONG imgh, const char *root,
 
 void SetOutputHeader (BITMAPFILEHEADER &bmfh, BITMAPINFOHEADER &bmih, LONG w, LONG h);
 
-void FatalError (char *msg);
+void FatalError (const char *msg); // const: ISO C++ forbids string literals as char*
 void InitProgress (int ntot, int len);
 void SetProgress (int p);
 void IncProgress ();
@@ -73,22 +87,45 @@ bool MakePath (const char *fname);
 void SplitBitmap ();
 void SplitBitmap_cloud ();
 
+extern char **environ;
+
+// not upstream: process.h _spawnl (_P_WAIT, ...) counterpart; returns the exit code, -1 if the program could not run
+static intptr_t spawnl_wait (const char *path, const char *arg0, ...)
+{
+	vector<char*> argv;
+	va_list ap;
+	va_start (ap, arg0);
+	for (const char *a = arg0; a; a = va_arg (ap, const char*)) argv.push_back ((char*)a);
+	va_end (ap);
+	argv.push_back (0);
+	pid_t pid;
+	int status;
+	if (posix_spawn (&pid, path, 0, 0, argv.data(), environ) || waitpid (pid, &status, 0) < 0) return -1;
+	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+// not upstream: conio.h "while (_kbhit()) _getch(); while (!_kbhit());" counterpart: drop typed-ahead keys, wait for a key
+static void waitkey ()
+{
+	termios t0, t1;
+	if (tcgetattr (STDIN_FILENO, &t0)) return; // stdin is not a terminal: no key to wait for
+	t1 = t0;
+	t1.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr (STDIN_FILENO, TCSANOW, &t1);
+	tcflush (STDIN_FILENO, TCIFLUSH);
+	char c;
+	if (read (STDIN_FILENO, &c, 1) < 0) c = 0;
+	tcsetattr (STDIN_FILENO, TCSANOW, &t0);
+}
+
 // ==============================================================================
 
 int main (int argc, char *argv[])
 {
-	if (!_getcwd (g_cwd, 256)) FatalError ("Cannot get working directory");
-	strcat (g_cwd, "\\");
+	if (!getcwd (g_cwd, 256)) FatalError ("Cannot get working directory");
+	strcat (g_cwd, "/");
 
-    // Create WIC factory for formatted image output
-    HRESULT hr = CoCreateInstance (
-        CLSID_WICImagingFactory,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&g_pIWICFactory)
-    );
-	if (hr != S_OK)
-		g_pIWICFactory = NULL;
+    // WIC factory left out: ReadPNG decodes with libpng, which needs no factory
 		
 	char cmd;
 
@@ -257,29 +294,27 @@ Alpha *ReadBMPAlpha (char *fname, LONG &mapw, LONG &maph, WORD &bpp)
 
 BGR *ReadPNG (char *fname, LONG &mapw, LONG &maph, WORD &bpp)
 {
-	HRESULT hr;
-	wchar_t wfname[256];
-	mbstowcs (wfname, fname, 256);
-	IWICBitmapDecoder *pIDecoder;
-    IWICBitmapFrameDecode *pFrame = NULL;
+	bool hr; // WIC decoder -> libpng simplified API; HRESULT -> success flag
+	// wide file name left out: libpng takes the char path
+	png_image image; // IWICBitmapDecoder/IWICBitmapFrameDecode -> png_image
 	BGR *img = NULL;
 
-	hr = g_pIWICFactory->CreateDecoderFromFilename (wfname, NULL, GENERIC_READ,
-		WICDecodeMetadataCacheOnDemand, &pIDecoder);
+	memset (&image, 0, sizeof(image));
+	image.version = PNG_IMAGE_VERSION;
+	hr = png_image_begin_read_from_file (&image, fname) != 0;
 
-    if (SUCCEEDED(hr)) {
-       hr = pIDecoder->GetFrame(0, &pFrame);
-    }
+    // GetFrame left out: a PNG holds a single frame
 
-	if (SUCCEEDED(hr)) {
+	if (hr) {
 		UINT mapw, maph;
-		pFrame->GetSize (&mapw, &maph);
+		mapw = image.width; maph = image.height;
 		UINT imgsize = mapw*maph;
 		img = new BGR[imgsize];
-		pFrame->CopyPixels (NULL, mapw*3, imgsize*3, (BYTE*)img);
+		image.format = PNG_FORMAT_BGR; // CopyPixels: 24-bit BGR rows, top down
+		png_image_finish_read (&image, NULL, (BYTE*)img, mapw*3, NULL);
 	}
 
-	pIDecoder->Release();
+	png_image_free (&image);
 
 	return img;
 }
@@ -311,12 +346,11 @@ void SetOutputHeader (BITMAPFILEHEADER &bmfh, BITMAPINFOHEADER &bmih, LONG w, LO
 
 // ==============================================================================
 
-void FatalError (char *msg)
+void FatalError (const char *msg)
 {
 	cerr << endl << "pltex ERROR: " << msg << endl;
 	cerr << "Press a key to terminate." << endl;
-	while (_kbhit()) _getch();
-	while (!_kbhit());
+	waitkey (); // _kbhit/_getch loops
 	exit (1);
 }
 
@@ -362,16 +396,18 @@ bool MakePath (const char *fname)
 	char cbuf[256];
 	size_t i, len = strlen(fname);
 	for (i = len; i > 0; i--)
-		if (fname[i-1] == '\\') break;
+		if (fname[i-1] == '/') break;
 	if (!i) return false;
-	if (fname[0] != '\\' && fname[1] != ':') {
-		GetCurrentDirectory (256, cbuf);
+	if (fname[0] != '/') { // relative path (no drive letters on Linux)
+		if (!getcwd (cbuf, 256)) return false;
 		len = strlen(cbuf);
-		cbuf[len++] = '\\';
+		cbuf[len++] = '/';
 	} else len = 0;
-	strncpy_s (cbuf+len, 256-len, fname, i);
-	int res = SHCreateDirectoryEx (NULL, cbuf, NULL);
-	return res == ERROR_SUCCESS;
+	snprintf (cbuf+len, 256-len, "%.*s", (int)i, fname); // strncpy_s
+	int res = 0; // SHCreateDirectoryEx: mkdir each level; an existing target gives EEXIST (ERROR_ALREADY_EXISTS)
+	for (char *p = cbuf+1; *p; p++)
+		if (*p == '/') { *p = '\0'; res = mkdir (cbuf, 0777) ? errno : 0; *p = '/'; if (res && res != EEXIST) break; }
+	return res == 0;
 }
 
 // ==============================================================================
@@ -428,7 +464,7 @@ DWORD WriteDDS (BGR *img, Alpha *aimg, LONG imgw, LONG imgh, const char *root, c
 	const char *bmpname  = "tmp.bmp";
 	const char *abmpname = "tmp_a.bmp";
 	char ddsname[256];
-	sprintf (ddsname, "%s\\%s\\%02d\\%06d\\%06d.dds", root, layer, lvl, ilat, ilng);
+	sprintf (ddsname, "%s/%s/%02d/%06d/%06d.dds", root, layer, lvl, ilat, ilng);
 	MakePath (ddsname);
 	cout << "Writing  patch  " << ddsname << endl;
 
@@ -481,9 +517,9 @@ DWORD WriteDDS (BGR *img, Alpha *aimg, LONG imgw, LONG imgh, const char *root, c
 		}
 		fclose (bmpf);
 
-		res = _spawnl (_P_WAIT, dxtex, dxtex, bmpname, "-a", abmpname, mipmap ? "-m" : "", binary_alpha ? "DXT1" : "DXT5", ddsname, NULL);
+		res = spawnl_wait (dxtex, dxtex, bmpname, "-a", abmpname, mipmap ? "-m" : "", binary_alpha ? "DXT1" : "DXT5", ddsname, NULL);
 	} else {
-		res = _spawnl (_P_WAIT, dxtex, dxtex, bmpname, mipmap ? "-m" : "", "DXT1", ddsname, NULL);
+		res = spawnl_wait (dxtex, dxtex, bmpname, mipmap ? "-m" : "", "DXT1", ddsname, NULL);
 	}
 	if (res != 0) FatalError ("Executing dxtex failed.");
 
@@ -656,7 +692,7 @@ void SplitBitmap ()
 					nwritten++;
 				} else {
 					char cbuf[256];
-					sprintf (cbuf, "%s\\%s\\%02d\\%06d\\%06d.dds", root, "Mask", level, ilat0+py, ilng0+px);
+					sprintf (cbuf, "%s/%s/%02d/%06d/%06d.dds", root, "Mask", level, ilat0+py, ilng0+px);
 					cout << "Skipping patch  " << cbuf << endl;
 					nskipped++;
 				}
@@ -666,7 +702,7 @@ void SplitBitmap ()
 				nwritten++;
 			} else {
 				char cbuf[256];
-				sprintf (cbuf, "%s\\%s\\%02d\\%06d\\%06d.dds", root, "Surf", level, ilat0+py, ilng0+px);
+				sprintf (cbuf, "%s/%s/%02d/%06d/%06d.dds", root, "Surf", level, ilat0+py, ilng0+px);
 				cout << "Skipping patch  " << cbuf << endl;
 				nskipped++;
 			}

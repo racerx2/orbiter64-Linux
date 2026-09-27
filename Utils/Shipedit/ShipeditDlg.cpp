@@ -4,20 +4,19 @@
 // ShipeditDlg.cpp : implementation file
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Shipedit.h"
 #include "ShipeditDlg.h"
+#include <QAction>
+#include <QMessageBox>
+#include <cassert>
 
-#ifdef _DEBUG
-#define new DEBUG_NEW
-#undef THIS_FILE
-static char THIS_FILE[] = __FILE__;
-#endif
+// DEBUG_NEW (_DEBUG) left out: MFC's debug allocator
 
 /////////////////////////////////////////////////////////////////////////////
 // CAboutDlg dialog used for App About
 
-class CAboutDlg : public CDialog
+class CAboutDlg : public ResDlg
 {
 public:
 	CAboutDlg();
@@ -30,96 +29,103 @@ public:
 	// ClassWizard generated virtual function overrides
 	//{{AFX_VIRTUAL(CAboutDlg)
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	virtual void DoDataExchange(BOOL bSaveAndValidate);    // DDX/DDV support
 	//}}AFX_VIRTUAL
 
 // Implementation
 protected:
 	//{{AFX_MSG(CAboutDlg)
 	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
 };
 
-CAboutDlg::CAboutDlg() : CDialog(CAboutDlg::IDD)
+CAboutDlg::CAboutDlg() : ResDlg(CAboutDlg::IDD)
 {
 	//{{AFX_DATA_INIT(CAboutDlg)
 	//}}AFX_DATA_INIT
 }
 
-void CAboutDlg::DoDataExchange(CDataExchange* pDX)
+void CAboutDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(CAboutDlg)
 	//}}AFX_DATA_MAP
 }
 
-BEGIN_MESSAGE_MAP(CAboutDlg, CDialog)
-	//{{AFX_MSG_MAP(CAboutDlg)
-		// No message handlers
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+// BEGIN_MESSAGE_MAP(CAboutDlg): no message handlers, ResDlg::OnCommand ends the dialog on IDOK
 
 /////////////////////////////////////////////////////////////////////////////
 // CShipeditDlg dialog
 
-CShipeditDlg::CShipeditDlg(CShipeditApp *app, CWnd* pParent /*=NULL*/)
-	: CDialog(CShipeditDlg::IDD, pParent)
+CShipeditDlg::CShipeditDlg(CShipeditApp *app, QWidget* pParent /*=NULL*/)
+	: ResDlg(CShipeditDlg::IDD, pParent)
 {
 	//{{AFX_DATA_INIT(CShipeditDlg)
 		// NOTE: the ClassWizard will add member initialization here
 	//}}AFX_DATA_INIT
-	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+	m_hIcon = ResDlg::LoadIcon(IDR_MAINFRAME);
 	m_app = app;
 }
 
-void CShipeditDlg::DoDataExchange(CDataExchange* pDX)
+void CShipeditDlg::DoDataExchange(BOOL bSaveAndValidate)
 {
-	CDialog::DoDataExchange(pDX);
+	ResDlg::DoDataExchange(bSaveAndValidate);
 	//{{AFX_DATA_MAP(CShipeditDlg)
 		// NOTE: the ClassWizard will add DDX and DDV calls here
 	//}}AFX_DATA_MAP
 }
 
-BEGIN_MESSAGE_MAP(CShipeditDlg, CDialog)
+// message map: menu commands (the menu bar of OnInitDialog); what the dialog doesn't handle goes to the app (CDialog::OnCmdMsg)
+BOOL CShipeditDlg::OnCommand(int nID, int nCode)
+{
 	//{{AFX_MSG_MAP(CShipeditDlg)
-	ON_WM_SYSCOMMAND()
-	ON_WM_PAINT()
-	ON_WM_QUERYDRAGICON()
-	ON_COMMAND(MID_CALCSTART, OnCalcstart)
-	ON_COMMAND(MID_CALCSTOP, OnCalcstop)
-	ON_COMMAND(MID_EXIT, OnExit)
-	ON_WM_CLOSE()
-	ON_COMMAND(MID_CHECK, OnCheck)
+	// ON_WM_SYSCOMMAND: OnInitDialog connects the About entry of the context menu
+	// ON_WM_PAINT, ON_WM_QUERYDRAGICON left out (see ShipeditDlg.h)
+	// ON_WM_CLOSE: ResDlg calls OnClose on the window's close event
+	if (nCode == RESN_CLICKED) switch (nID) { // ON_COMMAND
+	case MID_CALCSTART: OnCalcstart(); return TRUE;
+	case MID_CALCSTOP:  OnCalcstop();  return TRUE;
+	case MID_EXIT:      OnExit();      return TRUE;
+	case MID_CHECK:     OnCheck();     return TRUE;
+	}
 	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+	if (ResDlg::OnCommand(nID, nCode)) return TRUE;
+	return nCode == RESN_CLICKED && m_app->OnCommand(nID);
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CShipeditDlg message handlers
 
 BOOL CShipeditDlg::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+	ResDlg::OnInitDialog();
+
+	// MENU IDR_MAINMENU of the dialog template: menu bar on top, its commands go to OnCommand
+	oapiCreateResMenu(nullptr, IDR_MAINMENU, hDlg, [this](int nID, int nCode, QWidget*) { OnCommand(nID, nCode); });
 
 	// Add "About..." menu item to system menu.
 
 	// IDM_ABOUTBOX must be in the system command range.
-	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
-	ASSERT(IDM_ABOUTBOX < 0xF000);
+	assert((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
+	assert(IDM_ABOUTBOX < 0xF000);
 
-	CMenu* pSysMenu = GetSystemMenu(FALSE);
+	QWidget* pSysMenu = hDlg; // the title bar menu is the window manager's: the entry goes to the dialog's context menu
 	if (pSysMenu != NULL)
 	{
-		CString strAboutMenu;
-		strAboutMenu.LoadString(IDS_ABOUTBOX);
-		if (!strAboutMenu.IsEmpty())
+		char strAboutMenu[256];
+		oapiLoadResString(nullptr, IDS_ABOUTBOX, strAboutMenu, 256);
+		if (strAboutMenu[0])
 		{
-			pSysMenu->AppendMenu(MF_SEPARATOR);
-			pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
+			QAction* pSep = new QAction(pSysMenu);
+			pSep->setSeparator(true);
+			pSysMenu->addAction(pSep); // MF_SEPARATOR
+			QAction* pAbout = new QAction(QString::fromUtf8(strAboutMenu), pSysMenu);
+			QObject::connect(pAbout, &QAction::triggered, pSysMenu, [this]() { OnSysCommand(IDM_ABOUTBOX, 0); });
+			pSysMenu->addAction(pAbout); // MF_STRING, IDM_ABOUTBOX
+			pSysMenu->setContextMenuPolicy(Qt::ActionsContextMenu);
 		}
 	}
 
-	SetIcon(m_hIcon, TRUE);			// Set big icon
-	SetIcon(m_hIcon, FALSE);		// Set small icon
+	hDlg->setWindowIcon(m_hIcon);	// Set big and small icon
 	
 	// TODO: Add extra initialization here
 	
@@ -135,7 +141,7 @@ void CShipeditDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 	else
 	{
-		CDialog::OnSysCommand(nID, lParam);
+		// CDialog::OnSysCommand left out: the other system commands belong to the window manager
 	}
 }
 
@@ -143,69 +149,41 @@ void CShipeditDlg::OnSysCommand(UINT nID, LPARAM lParam)
 //  to draw the icon.  For MFC applications using the document/view model,
 //  this is automatically done for you by the framework.
 
-void CShipeditDlg::OnPaint() 
-{
-	if (IsIconic())
-	{
-		CPaintDC dc(this); // device context for painting
-
-		SendMessage(WM_ICONERASEBKGND, (WPARAM) dc.GetSafeHdc(), 0);
-
-		// Center icon in client rectangle
-		int cxIcon = GetSystemMetrics(SM_CXICON);
-		int cyIcon = GetSystemMetrics(SM_CYICON);
-		CRect rect;
-		GetClientRect(&rect);
-		int x = (rect.Width() - cxIcon + 1) / 2;
-		int y = (rect.Height() - cyIcon + 1) / 2;
-
-		// Draw the icon
-		dc.DrawIcon(x, y, m_hIcon);
-	}
-	else
-	{
-		CDialog::OnPaint();
-	}
-}
-
-HCURSOR CShipeditDlg::OnQueryDragIcon()
-{
-	return (HCURSOR) m_hIcon;
-}
+// OnPaint, OnQueryDragIcon left out: the window manager draws the minimised window's icon
 
 void CShipeditDlg::Refresh ()
 {
 	char cbuf[256];
 	sprintf (cbuf, "%d", m_app->ngrp);
-	GetDlgItem (IDC_NGROUP)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_NGROUP), cbuf);
 	sprintf (cbuf, "%d", m_app->nvtx);
-	GetDlgItem (IDC_NVTX)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_NVTX), cbuf);
 	sprintf (cbuf, "%d", m_app->ntri);
-	GetDlgItem (IDC_NTRI)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_NTRI), cbuf);
 	sprintf (cbuf, "[%0.2f %0.2f %0.2f] [%0.2f %0.2f %0.2f]",
 		m_app->bbmin.x, m_app->bbmin.y, m_app->bbmin.z,
 		m_app->bbmax.x, m_app->bbmax.y, m_app->bbmax.z);
-	GetDlgItem (IDC_BB)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_BB), cbuf);
 }
 
 void CShipeditDlg::RefreshCalc ()
 {
 	char cbuf[256];
 	sprintf (cbuf, "Parameters (%d samples)", m_app->nop);
-	GetDlgItem (IDC_NSAMPLE)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_NSAMPLE), cbuf);
 
 	sprintf (cbuf, "%0.2f", m_app->vol);
-	GetDlgItem (IDC_VOL)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_VOL), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", m_app->cg.x, m_app->cg.y, m_app->cg.z);
-	GetDlgItem (IDC_CG)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_CG), cbuf);
 	sprintf (cbuf, "%0.2f %0.2f %0.2f", m_app->cs.x, m_app->cs.y, m_app->cs.z);
-	GetDlgItem (IDC_CS)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_CS), cbuf);
 	sprintf (cbuf, "%0.2f\t%0.2f\t%0.2f", m_app->J.m11, m_app->J.m12, m_app->J.m13);
-	GetDlgItem (IDC_INERTIA1)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_INERTIA1), cbuf);
 	sprintf (cbuf, "%0.2f\t%0.2f\t%0.2f", m_app->J.m12, m_app->J.m22, m_app->J.m23);
-	GetDlgItem (IDC_INERTIA2)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_INERTIA2), cbuf);
 	sprintf (cbuf, "%0.2f\t%0.2f\t%0.2f", m_app->J.m13, m_app->J.m23, m_app->J.m33);
-	GetDlgItem (IDC_INERTIA3)->SetWindowText (cbuf);
+	oapiSetDlgText (GetDlgItem (IDC_INERTIA3), cbuf);
 }
 
 void CShipeditDlg::OnCalcstart() 
@@ -231,9 +209,9 @@ void CShipeditDlg::OnCheck()
 		if (tot_removed) {
 			char cbuf[256];
 			sprintf (cbuf, "Removed %d unused vertices from mesh.", tot_removed);
-			MessageBox (cbuf, "Check result", MB_OK);
+			QMessageBox (QMessageBox::NoIcon, "Check result", cbuf, QMessageBox::Ok, hDlg).exec (); // MessageBox, MB_OK
 		} else {
-			MessageBox ("No problems found", "Check result", MB_OK);
+			QMessageBox (QMessageBox::NoIcon, "Check result", "No problems found", QMessageBox::Ok, hDlg).exec ();
 		}
 	}
 	m_app->InitMesh();
@@ -246,6 +224,6 @@ void CShipeditDlg::OnExit()
 
 void CShipeditDlg::OnClose() 
 {
-	CDialog::OnClose();
+	ResDlg::OnClose();
 	DestroyWindow ();
 }

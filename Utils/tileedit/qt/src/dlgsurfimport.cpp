@@ -70,7 +70,7 @@ void DlgSurfImport::onParamFromUser()
 
 void DlgSurfImport::onMetaFileChanged(const QString &name)
 {
-	m_haveMeta = scanMetaFile(name.toLatin1(), m_metaInfo);
+	m_haveMeta = scanMetaFile(name.toLocal8Bit(), m_metaInfo); // file name bytes: Latin-1 (ANSI) -> local 8-bit (UTF-8)
 	if (m_haveMeta) {
 		ui->spinLvl->setValue(m_metaInfo.lvl);
 		ui->spinIlat0->setValue(m_metaInfo.ilat0);
@@ -123,7 +123,7 @@ void DlgSurfImport::accept()
 	m_metaInfo.colourMatch = ui->comboColourmatch->currentIndex();
 
 	SurfTileBlock *sblock = SurfTileBlock::Load(m_metaInfo.lvl, m_metaInfo.ilat0, m_metaInfo.ilat1, m_metaInfo.ilng0, m_metaInfo.ilng1);
-	int res = dxtread_png(ui->editPath->text().toLatin1(), m_metaInfo, sblock->getData());
+	int res = dxtread_png(ui->editPath->text().toLocal8Bit(), m_metaInfo, sblock->getData());
 	if (res != 0) {
 		QString msg("Error reading PNG file:\n");
 		switch (res) {

@@ -44,7 +44,7 @@ void TileCanvas::paintEvent(QPaintEvent *event)
     }
 }
 
-void TileCanvas::enterEvent(QEvent *event)
+void TileCanvas::enterEvent(QEnterEvent *event)
 {
 	emit tileEntered(this);
 }
@@ -56,7 +56,7 @@ void TileCanvas::leaveEvent(QEvent *event)
 
 void TileCanvas::mouseMoveEvent(QMouseEvent *event)
 {
-    updateGlyph(event->x(), event->y());
+    updateGlyph(event->position().toPoint().x(), event->position().toPoint().y());
 	emit mouseMovedInCanvas(m_canvasIdx, event);
 }
 
@@ -224,9 +224,9 @@ void TileCanvas::setTileBlock(const TileBlock *tileBlock, TileMode mode)
 	else if (m_tileedit) {
 		m_lvl = m_tileedit->m_lvl;
 		m_ilat0 = m_tileedit->m_ilat;
-		m_ilat1 = min(nLat(m_lvl), m_ilat0 + m_tileedit->m_blocksize);
+		m_ilat1 = std::min(nLat(m_lvl), m_ilat0 + m_tileedit->m_blocksize);
 		m_ilng0 = m_tileedit->m_ilng;
-		m_ilng1 = min(nLng(m_lvl), m_ilng0 + m_tileedit->m_blocksize);
+		m_ilng1 = std::min(nLng(m_lvl), m_ilng0 + m_tileedit->m_blocksize);
 	}
 
 	if (m_glyphMode == GLYPHMODE_NAVIGATE) {

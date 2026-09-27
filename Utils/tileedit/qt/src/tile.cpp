@@ -3,7 +3,7 @@
 #include "ddsread.h"
 #include <iostream>
 #include <algorithm>
-#include <direct.h>
+#include <sys/stat.h> // direct.h mkdir -> POSIX mkdir
 #include <dxt_io.h>
 
 int Tile::s_openMode = 0x3;
@@ -14,13 +14,13 @@ std::string Tile::s_root;
 
 void ensureLayerDir(const char *rootDir, const char *layer, int lvl, int ilat)
 {
-	char path[256];
+	char path[1024]; // was 256: callers pass 1024-byte roots and Linux paths aren't capped at MAX_PATH
 	sprintf(path, "%s/%s", rootDir, layer);
-	mkdir(path);
+	mkdir(path, 0777);
 	sprintf(path, "%s/%s/%02d", rootDir, layer, lvl);
-	mkdir(path);
+	mkdir(path, 0777);
 	sprintf(path, "%s/%s/%02d/%06d", rootDir, layer, lvl, ilat);
-	mkdir(path);
+	mkdir(path, 0777);
 }
 
 
@@ -32,7 +32,7 @@ Tile::Tile(int lvl, int ilat, int ilng)
     m_ilat = m_subilat = ilat;
     m_ilng = m_subilng = ilng;
 
-    int sz = 1 << min(lvl+6, 9);
+    int sz = 1 << std::min(lvl+6, 9);
     lat_subrange = std::make_pair(0, sz);
     lng_subrange = std::make_pair(0, sz);
 }
@@ -85,7 +85,7 @@ void Tile::ensureTmpLayerDir()
 {
 	char cbuf[1024];
 	sprintf(cbuf, "%s/tileedit.tmp", s_root.c_str());
-	mkdir(cbuf);
+	mkdir(cbuf, 0777);
 	::ensureLayerDir(cbuf, Layer().c_str(), m_lvl, m_ilat);
 }
 

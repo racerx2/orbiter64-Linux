@@ -59,7 +59,7 @@ void DlgElevImport::onOpenMetaFileDialog()
 
 void DlgElevImport::onMetaFileChanged(const QString &name)
 {
-	m_haveMeta = scanMetaFile(name.toLatin1(), m_metaInfo);
+	m_haveMeta = scanMetaFile(name.toLocal8Bit(), m_metaInfo); // file name bytes: Latin-1 (ANSI) -> local 8-bit (UTF-8)
 	if (m_haveMeta) {
 		ui->labelLvl->setText(QString::number(m_metaInfo.lvl));
 		ui->spinIlat0->setValue(m_metaInfo.ilat0);
@@ -187,7 +187,7 @@ void DlgElevImport::accept()
 		return;
 	}
 	ElevTileBlock *eblock = ElevTileBlock::Load(m_metaInfo.lvl, m_metaInfo.ilat0, m_metaInfo.ilat1, m_metaInfo.ilng0, m_metaInfo.ilng1);
-	if (!elvread_png(ui->editPath->text().toLatin1(), m_metaInfo, eblock->getData())) {
+	if (!elvread_png(ui->editPath->text().toLocal8Bit(), m_metaInfo, eblock->getData())) {
 		QMessageBox mbox(QMessageBox::Warning, tr("tileedit: Warning"), tr("Error reading PNG file"), QMessageBox::Close);
 		mbox.exec();
 		return;

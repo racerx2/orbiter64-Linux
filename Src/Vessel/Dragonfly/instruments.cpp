@@ -1061,12 +1061,14 @@ hRC=new QOpenGLContext; // wglCreateContext: Qt's default format is a compatibil
 int ret;
 ret=hRC->create() && hRC->makeCurrent(hDC2);					//all standard OpenGL init so far
 if (!ret) { oapiWriteLog((char*)"Dragonfly: ADI ball: no OpenGL context"); init=-1; return; } // not upstream: no context, no ball
-hBMP=new QOpenGLFramebufferObject(160,160,QOpenGLFramebufferObject::Depth); //size of the sphere is 160x160; depth buffer as the generic GDI formats have
-hBMP->bind();
 
 //We load the texture
 int texture_index=LoadOGLBitmap(oapiResolvePath("Textures/adi.dds").c_str());
 if (texture_index>0) glEnable(GL_TEXTURE_2D);
+// not upstream: the FBO is made after the texture, else its colour texture takes name 1, which LoadOGLBitmap binds without glGenTextures
+hBMP=new QOpenGLFramebufferObject(160,160,QOpenGLFramebufferObject::Depth); //size of the sphere is 160x160; depth buffer as the generic GDI formats have
+hBMP->bind();
+if (texture_index>0) glBindTexture(GL_TEXTURE_2D, texture_index); // not upstream: making the FBO left texture 0 bound
 
 
 glShadeModel(GL_SMOOTH);                        // Enable Smooth Shading

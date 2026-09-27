@@ -4,14 +4,14 @@
 // ==================================================================
 
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
 #include "DrawAPI.h"
-#include <windowsx.h>
+// windowsx.h left out: no message cracker macros are used
 #include "gcCoreAPI.h"
 #include "Orbit.h"
 #include "Reference.h"
@@ -49,7 +49,7 @@ class Orbits : public oapi::Module
 
 public:
 
-				Orbits(HINSTANCE hDLL);
+				Orbits(void *hDLL);
 				~Orbits();
 
 	void		clbkRender(oapi::Sketchpad *pSkp);
@@ -87,7 +87,7 @@ private:
 // Render HUD Wrapper
 // =================================================================================================
 //
-void __cdecl RenderOrbitClbk(oapi::Sketchpad *pSkp, void *pParam)
+void RenderOrbitClbk(oapi::Sketchpad *pSkp, void *pParam)
 {
 	((Orbits*)pParam)->clbkRender(pSkp);
 }
@@ -97,7 +97,7 @@ void __cdecl RenderOrbitClbk(oapi::Sketchpad *pSkp, void *pParam)
 // Initialize module
 // =================================================================================================
 //
-DLLCLBK void InitModule(HINSTANCE hModule)
+DLLCLBK void InitModule(void *hModule)
 {
 	oapiRegisterModule(new Orbits(hModule));
 }
@@ -105,7 +105,7 @@ DLLCLBK void InitModule(HINSTANCE hModule)
 
 // =================================================================================================
 //
-DLLCLBK void ExitModule(HINSTANCE  hModule)
+DLLCLBK void ExitModule(void *hModule)
 {
 
 }
@@ -116,10 +116,10 @@ DLLCLBK void ExitModule(HINSTANCE  hModule)
 // Orbiter Module
 // =================================================================================================
 //
-Orbits::Orbits(HINSTANCE hInst) : Module(hInst), pCore(NULL), Ref(NULL), pBody(NULL)
+Orbits::Orbits(void *hInst) : Module(hInst), pCore(NULL), Ref(NULL), pBody(NULL)
 {
 
-	FILE *fp = fopen("Config/DrawOrbits.cfg", "rt");
+	FILE *fp = fopen(oapiResolvePath("Config/DrawOrbits.cfg").c_str(), "rt");
 
 	if (fp) {
 		char buf[256];
@@ -507,10 +507,10 @@ void Orbits::DrawOrbit(Sketchpad *pSkp2, COrbit *pOrb, OBJHANDLE hRef, oapi::FVE
 				pSkp2->QuickBrush(draw);
 				pSkp2->Rectangle(pt.x - s, pt.y - s, pt.x + s, pt.y + s);
 				if (of&ODR_LAB) {
-					strcpy_s(buf, 256, "LAN ");
-					strcat_s(buf, 256, AngleToText(pOrb->LAN()*DEG, 2));
-					strcat_s(buf, 256, ";RIn ");
-					strcat_s(buf, 256, AngleToText(pOrb->Inc()*DEG, 2));
+					snprintf(buf, 256, "%s", "LAN ");
+					strncat(buf, AngleToText(pOrb->LAN()*DEG, 2), 256 - strlen(buf) - 1);
+					strncat(buf, ";RIn ", 256 - strlen(buf) - 1);
+					strncat(buf, AngleToText(pOrb->Inc()*DEG, 2), 256 - strlen(buf) - 1);
 					Label(pSkp2, &pt, pos, buf);
 				}
 			}
@@ -521,10 +521,10 @@ void Orbits::DrawOrbit(Sketchpad *pSkp2, COrbit *pOrb, OBJHANDLE hRef, oapi::FVE
 				pSkp2->QuickBrush(black);
 				pSkp2->Rectangle(pt.x - s, pt.y - s, pt.x + s, pt.y + s);
 				if (of&ODR_LAB) {
-					strcpy_s(buf, 256, "LAN ");
-					strcat_s(buf, 256, AngleToText(limit(pOrb->LAN()-PI)*DEG, 2));
-					strcat_s(buf, 256, ";RIn ");
-					strcat_s(buf, 256, AngleToText(pOrb->Inc()*DEG, 2));
+					snprintf(buf, 256, "%s", "LAN ");
+					strncat(buf, AngleToText(limit(pOrb->LAN()-PI)*DEG, 2), 256 - strlen(buf) - 1);
+					strncat(buf, ";RIn ", 256 - strlen(buf) - 1);
+					strncat(buf, AngleToText(pOrb->Inc()*DEG, 2), 256 - strlen(buf) - 1);
 					Label(pSkp2, &pt, pos, buf);
 				}
 			}
@@ -540,10 +540,10 @@ void Orbits::DrawOrbit(Sketchpad *pSkp2, COrbit *pOrb, OBJHANDLE hRef, oapi::FVE
 				pSkp2->QuickBrush(draw);
 				pSkp2->Ellipse(pt.x - s, pt.y - s, pt.x + s, pt.y + s);
 				if (of&ODR_LAB) {
-					strcpy_s(buf, 256, "PeT ");
-					strcat_s(buf, 256, ValueToText(pOrb->PeT(), 2));
-					strcat_s(buf, 256, ";PeA ");
-					strcat_s(buf, 256, ValueToText(pOrb->PeD()-dRad, 2));
+					snprintf(buf, 256, "%s", "PeT ");
+					strncat(buf, ValueToText(pOrb->PeT(), 2), 256 - strlen(buf) - 1);
+					strncat(buf, ";PeA ", 256 - strlen(buf) - 1);
+					strncat(buf, ValueToText(pOrb->PeD()-dRad, 2), 256 - strlen(buf) - 1);
 					Label(pSkp2, &pt, pos, buf);
 				}
 			}
@@ -554,10 +554,10 @@ void Orbits::DrawOrbit(Sketchpad *pSkp2, COrbit *pOrb, OBJHANDLE hRef, oapi::FVE
 				pSkp2->QuickBrush(black);
 				pSkp2->Ellipse(pt.x - s, pt.y - s, pt.x + s, pt.y + s);
 				if (of&ODR_LAB) {
-					strcpy_s(buf, 256, "ApT ");
-					strcat_s(buf, 256, ValueToText(pOrb->ApT(), 2));
-					strcat_s(buf, 256, ";ApA ");
-					strcat_s(buf, 256, ValueToText(pOrb->ApD() - dRad, 2));
+					snprintf(buf, 256, "%s", "ApT ");
+					strncat(buf, ValueToText(pOrb->ApT(), 2), 256 - strlen(buf) - 1);
+					strncat(buf, ";ApA ", 256 - strlen(buf) - 1);
+					strncat(buf, ValueToText(pOrb->ApD() - dRad, 2), 256 - strlen(buf) - 1);
 					Label(pSkp2, &pt, pos, buf);
 				}
 			}
@@ -567,7 +567,7 @@ void Orbits::DrawOrbit(Sketchpad *pSkp2, COrbit *pOrb, OBJHANDLE hRef, oapi::FVE
 
 // =================================================================================================
 //
-inline void Swap(long *a, long *b)
+inline void Swap(LONG *a, LONG *b) // RECT members: 32-bit LONG, LP64 long is 64-bit
 {
 	long c = *a; *a = *b; *b = c;
 }
@@ -612,7 +612,7 @@ void Orbits::Label(Sketchpad *pSkp2, IVECTOR2 *pt, VECTOR3 &plnDir, const char *
 	int y = pt->y + ty;
 
 	char buffer[256];
-	strcpy_s(buffer, 256, label);
+	snprintf(buffer, 256, "%s", label);
 	char *tok = strtok(buffer, ";");
 
 	while (tok) {

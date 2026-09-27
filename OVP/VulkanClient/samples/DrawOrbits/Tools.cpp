@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <assert.h>
-#include <intrin.h>
+// intrin.h left out: MSVC intrinsics header, none are used
 
 char ValueToText_Str[32];
 
@@ -24,7 +24,7 @@ const char *ValueToText(double real, int digits)
 	memset(temp, 0, 32);
 	memset(ValueToText_Str, 0, 32);
 
-	if (_isnan(real)) { strcpy_s(ValueToText_Str, 32, "NAN"); return ValueToText_Str; }
+	if (std::isnan(real)) { snprintf(ValueToText_Str, 32, "%s", "NAN"); return ValueToText_Str; }
 
 	double v = fabs(real);
 	int n;
@@ -43,8 +43,8 @@ const char *ValueToText(double real, int digits)
 
 	if (n>15) {
 		if (digits<0) digits = 0;
-		sprintf_s(temp, 30, "%1.*e\n", digits, real);
-		strncpy_s(ValueToText_Str, 30, temp, 10);
+		snprintf(temp, 30, "%1.*e\n", digits, real);
+		snprintf(ValueToText_Str, 30, "%.10s", temp); // strncpy_s (count 10)
 		return ValueToText_Str;
 	}
 
@@ -68,8 +68,8 @@ const char *ValueToText(double real, int digits)
 
 	if (digits<0) digits = 0;
 
-	sprintf_s(ValueToText_Str, 30, "%1.*f", digits, real);
-	strcat_s(ValueToText_Str, 30, c);
+	snprintf(ValueToText_Str, 30, "%1.*f", digits, real);
+	strncat(ValueToText_Str, c, 30 - strlen(ValueToText_Str) - 1);
 
 	return ValueToText_Str;
 }
@@ -89,7 +89,7 @@ const char *AngleToText(double deg, int digits)
 	if (f >= 360.0) f = 0.0;
 	if (deg<0) f = -f;
 
-	sprintf_s(ValueToText_Str, 30, "%1.*f\xB0", digits, f);
+	snprintf(ValueToText_Str, 30, "%1.*f\xB0", digits, f);
 
 	return ValueToText_Str;
 }

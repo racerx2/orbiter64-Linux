@@ -8,16 +8,17 @@ add_library(DrawOrbits MODULE
 	Reference.h
 	Tools.cpp
 	Tools.h
-	Orbits.rc
 )
+orbiter_rc_resources(DrawOrbits Orbits.rc)
 
 add_dependencies(DrawOrbits
 	D3D9Client
 )
 
+# ${OrbiterTgt} left out: the orbiter symbols resolve against the executable at dlopen (no import library on ELF)
 target_link_libraries(DrawOrbits
-	${OrbiterTgt}
 	Orbitersdk
+	Qt6::Widgets
 )
 
 target_include_directories(DrawOrbits

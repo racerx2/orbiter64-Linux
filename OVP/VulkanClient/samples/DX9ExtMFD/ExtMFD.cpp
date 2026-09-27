@@ -8,20 +8,22 @@
 // Open multifunctional displays (MFD) in external windows
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
 #include "MFDWindow.h"
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "resource.h"
+#include <QImage>
 #include <stdio.h>
 
 // ==============================================================
 // Global variables
 // ==============================================================
 
-HINSTANCE g_hInst;    // module instance handle
-HBITMAP g_hPin;       // "pin" button bitmap
+void *g_hInst;        // module instance handle
+QImage *g_hPin;       // "pin" button bitmap
 DWORD g_dwCmd;        // custom function identifier
 
 // ==============================================================
@@ -29,9 +31,9 @@ DWORD g_dwCmd;        // custom function identifier
 // ==============================================================
 
 void OpenDlgClbk (void *context);
-INT_PTR CALLBACK MsgProc (HWND, UINT, WPARAM, LPARAM);
-extern LRESULT FAR PASCAL MFD_WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-extern LRESULT FAR PASCAL MFD_BtnProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void MsgProc (QWidget*, void*);
+extern QWidget *MFD_DisplayCtrl (const RESCONTROL *ctrl, QWidget *parent); // window class "ExtMFD_Display" (MFD_WndProc)
+extern QWidget *MFD_ButtonCtrl (const RESCONTROL *ctrl, QWidget *parent);  // window class "ExtMFD_Button" (MFD_BtnProc)
 
 // ==============================================================
 // API interface
@@ -41,7 +43,7 @@ extern LRESULT FAR PASCAL MFD_BtnProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 // This function is called when Orbiter starts or when the module
 // is activated.
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	g_hInst = hDLL; // remember the instance handle
 
@@ -53,42 +55,27 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 		OpenDlgClbk, NULL);
 
 	// Load the bitmap for the "pin" title button
-	g_hPin = (HBITMAP)LoadImage (g_hInst, MAKEINTRESOURCE(IDB_PIN), IMAGE_BITMAP, 15, 30, 0);
+	g_hPin = oapiLoadResImage (g_hInst, IDB_PIN);
+	if (g_hPin) *g_hPin = g_hPin->scaled (15, 30); // LoadImage size
 
 	// Register a window classes for the MFD display and buttons
-	WNDCLASS wndClass;
-	wndClass.style = CS_HREDRAW | CS_VREDRAW;
-	wndClass.lpfnWndProc   = MFD_WndProc;
-	wndClass.cbClsExtra    = 0;
-	wndClass.cbWndExtra    = 0;
-	wndClass.hInstance     = hDLL;
-	wndClass.hIcon         = NULL;
-#pragma warning(disable:4302)
-	wndClass.hCursor       = LoadCursor (NULL, MAKEINTRESOURCE(IDC_ARROW));
-#pragma warning(default:4302)
-	wndClass.hbrBackground = (HBRUSH)GetStockObject (BLACK_BRUSH);
-	wndClass.lpszMenuName  = NULL;
-	wndClass.lpszClassName = "ExtMFD_Display";
-	RegisterClass (&wndClass);
-
-	wndClass.lpfnWndProc   = MFD_BtnProc;
-	wndClass.hbrBackground = (HBRUSH)GetStockObject (LTGRAY_BRUSH);
-	wndClass.lpszClassName = "ExtMFD_Button";
-	RegisterClass (&wndClass);
+	// WNDCLASS: procedure and background brush are in the widgets the factories make; the cursor is Qt's arrow
+	oapiRegisterResControl (hDLL, "ExtMFD_Display", MFD_DisplayCtrl);
+	oapiRegisterResControl (hDLL, "ExtMFD_Button", MFD_ButtonCtrl);
 }
 
 // ==============================================================
 // This function is called when Orbiter shuts down or when the
 // module is deactivated
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister window classes
-	UnregisterClass ("ExtMFD_Display", g_hInst);
-	UnregisterClass ("ExtMFD_Button", g_hInst);
+	oapiUnregisterResControl (g_hInst, "ExtMFD_Display");
+	oapiUnregisterResControl (g_hInst, "ExtMFD_Button");
 
 	// Free bitmap resources
-	DeleteObject (g_hPin);
+	delete g_hPin;
 
 	// Unregister the custom function in Orbiter
 	oapiUnregisterCustomCmd (g_dwCmd);

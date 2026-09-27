@@ -9,6 +9,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <string.h> // mem*/str* functions (windows.h brought them in)
 #include "OrbiterAPI.h"
 
 /*

@@ -3,11 +3,12 @@
 // Licensed under the MIT License
 // ==================================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
-#include "windows.h"
-#include "orbitersdk.h"
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include <cstring> // str* functions (windows.h brought in string.h)
+#include "Orbitersdk.h"
 #include "MFD.h"
 #include "gcCoreAPI.h"
 #include "Shell.h"
@@ -33,7 +34,7 @@ class GenericModule : public oapi::Module
 
 public:
 
-	GenericModule(HINSTANCE hInst) : Module(hInst) {	}
+	GenericModule(void *hInst) : Module(hInst) {	}
 
 	~GenericModule() {	}
 
@@ -59,7 +60,7 @@ public:
 // ============================================================================================================
 // API interface
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	GenericModule *pFly = new GenericModule(hDLL);
 	oapiRegisterModule(pFly);
@@ -78,7 +79,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 
 // ============================================================================================================
 //
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the custom MFD mode when the module is unloaded
 	oapiUnregisterMFDMode (g_MFDmode);
@@ -307,7 +308,7 @@ char *CameraMFD::ButtonLabel (int bt)
 {
 	// The labels for the two buttons used by our MFD mode
 	static const char *label[] = {"NA", "PA", "ND", "PD", "FWD", "BWD", "VES", "NV", "ZM+", "ZM-", "PAR", "CRS"};
-	return (char*)(bt < ARRAYSIZE(label) ? label[bt] : 0);
+	return (char*)(bt < (sizeof(label)/sizeof(label[0])) ? label[bt] : 0);
 }
 
 
@@ -333,7 +334,7 @@ int CameraMFD::ButtonMenu (const MFDBUTTONMENU **menu) const
 
 	if (menu) *menu = mnu;
 
-	return ARRAYSIZE(mnu); // return the number of buttons used
+	return (sizeof(mnu)/sizeof(mnu[0])); // return the number of buttons used
 }
 
 
@@ -353,7 +354,7 @@ bool CameraMFD::Update(oapi::Sketchpad *pSkp)
 	int tbgh = 27;		 // Text backgound height
 	int edge = tbgh + 2; // Minumum spacing between cross endpoints and MFD screen edge
 
-	RECT sr = { 0, 0, long(W - 2), long(H - 3) };
+	RECT sr = { 0, 0, LONG(W - 2), LONG(H - 3) }; // RECT members: 32-bit LONG
 	
 	pSkp->SetTextAlign(Sketchpad::TAlign_horizontal::CENTER);
 
@@ -382,7 +383,7 @@ bool CameraMFD::Update(oapi::Sketchpad *pSkp)
 		// Draw the cross-hairs
 		if (bCross) {
 
-			IVECTOR2 rc = { long(W / 2), long(H / 2) };
+			IVECTOR2 rc = { LONG(W / 2), LONG(H / 2) }; // IVECTOR2 members: 32-bit LONG
 
 			int y = H / 2 - 2;
 			int x = W / 2 + 1;
@@ -406,20 +407,20 @@ bool CameraMFD::Update(oapi::Sketchpad *pSkp)
 	}
 	else {
 		static const char *msg = { "No Graphics API" };
-		pSkp->Text(W / 2, H / 2, msg, lstrlen(msg));
+		pSkp->Text(W / 2, H / 2, msg, strlen(msg));
 		return true;
 	}
 	
 
 	if (!hCamera) {
 		static const char *msg = { "Custom Cameras Disabled" };
-		pSkp->Text(W / 2, H / 2, msg, lstrlen(msg));
+		pSkp->Text(W / 2, H / 2, msg, strlen(msg));
 		return true;
 	}
 
 	if (nDock == 0 && nAtch == 0) {
 		static const char *msg = { "No Dock/Attachment points" };
-		pSkp->Text(W / 2, H / 2, msg, lstrlen(msg));
+		pSkp->Text(W / 2, H / 2, msg, strlen(msg));
 		return true;
 	}
 
@@ -434,7 +435,7 @@ bool CameraMFD::Update(oapi::Sketchpad *pSkp)
 	            ? std::string(" [ID:") + hVessel->GetAttachmentId(hVessel->GetAttachmentHandle(bParent, index)) + "]"
 	            : "";
 
-	sprintf_s(text, 256, "Viewing %s %s%d)%s", hVessel->GetName(), mode[type], index, atchId.c_str());
+	snprintf(text, 256, "Viewing %s %s%d)%s", hVessel->GetName(), mode[type], index, atchId.c_str());
 
 	
 	pSkp->QuickBrush(0xA0000000);
@@ -445,9 +446,9 @@ bool CameraMFD::Update(oapi::Sketchpad *pSkp)
 
 	hShell->Title (pSkp, text);
 
-	sprintf_s(text, 256, "[%s] FOV=%0.0f° Ofs=%2.2f[m]", paci[bParent], fov*2.0, offset);
+	snprintf(text, 256, "[%s] FOV=%0.0f° Ofs=%2.2f[m]", paci[bParent], fov*2.0, offset);
 
-	pSkp->Text(10, H - tbgh, text, lstrlen(text));
+	pSkp->Text(10, H - tbgh, text, strlen(text));
 	
 	return true;
 }
@@ -610,12 +611,12 @@ void CameraMFD::ReadStatus(FILEHANDLE scn)
 	char mask[256] = "";
 
 	while (oapiReadScenario_nextline(scn, line)) {
-		if (1 == sscanf_s(line, "ATCH_MASK %s", mask, (int)_countof(mask))) {
+		if (1 == sscanf(line, "ATCH_MASK %255s", mask)) { // sscanf_s buffer size: mask[256]
 
 			if (pMask) delete[] pMask; // <= can this really happen?
 
 			pMask = new char[strlen(mask) + 1];
-			strcpy_s(pMask, strlen(mask) + 1, mask);
+			snprintf(pMask, strlen(mask) + 1, "%s", mask);
 
 			type = Type::Atch;
 			NextAttachment();

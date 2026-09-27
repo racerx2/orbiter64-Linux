@@ -236,11 +236,10 @@ install(TARGETS D3D9Client
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
-# samples left out until the client builds
-#add_subdirectory(samples/DrawOrbits)
-#add_subdirectory(samples/DX9ExtMFD)
-#add_subdirectory(samples/GenericCamera)
-#add_subdirectory(samples/TerrainToolKit)
+add_subdirectory(samples/DrawOrbits)
+add_subdirectory(samples/DX9ExtMFD)
+add_subdirectory(samples/GenericCamera)
+add_subdirectory(samples/TerrainToolKit)
 
 set(Exclude
 	PATTERN CMakeLists.txt EXCLUDE

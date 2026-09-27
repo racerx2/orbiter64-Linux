@@ -6,22 +6,22 @@
 #ifndef __MFDWINDOW_H
 #define __MFDWINDOW_H
 
-#define STRICT 1
-#include <windows.h>
-#include "orbitersdk.h"
+// STRICT left out: windows.h handle type-checking switch
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include "Orbitersdk.h"
 #include "gcCoreAPI.h"
 
 class MFDWindow: public ExternMFD {
 public:
-	MFDWindow (HINSTANCE _hInst, const MFDSPEC &spec);
+	MFDWindow (void *_hInst, const MFDSPEC &spec);
 	~MFDWindow ();
-	void Initialise (HWND _hDlg);
+	void Initialise (QWidget *_hDlg);
 	void SetVessel (OBJHANDLE hV);
 	void SetTitle ();
 	void Resize();
 	void CheckAspect (LPRECT, DWORD);
-	void RepaintButton (HWND hWnd);
-	void RepaintDisplay(HWND hWnd);
+	void RepaintButton (QWidget *hWnd);
+	// RepaintDisplay left out: the display is a Vulkan window (see MFDWindow.cpp)
 	void ProcessButton (int bt, int event);
 	void StickToVessel (bool stick);
 
@@ -32,9 +32,9 @@ public:
 private:
 	RECT wr;
 	HSWAP hSwap;
-	HINSTANCE hInst;  // instance handle
-	HWND hDlg, hDsp;  // dialog and MFD display handles
-	HFONT hBtnFnt;    // button font
+	void *hInst;      // instance handle
+	QWidget *hDlg, *hDsp; // dialog and MFD display handles
+	QFont *hBtnFnt;   // button font
 	int BW, BH, ds;   // button width and height, display size
 	int gap;          // geometry parameters
 	int fnth;         // button font height

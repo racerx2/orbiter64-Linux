@@ -3,8 +3,7 @@
 // Licensed under the MIT License
 // ==================================================================
 
-#include <Windows.h>
-#include <windowsx.h>
+// Windows.h, windowsx.h left out: the Win32 types come from OrbiterPlatform.h
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
@@ -14,7 +13,12 @@
 #include "resource.h"
 #include "gcPropertyTree.h"
 #include "QTree.h"
-#include <Commctrl.h>
+#include "OrbiterResource.h"
+// Commctrl.h left out: the common controls are Qt widgets
+#include <QComboBox>
+#include <QMessageBox>
+#include <QProgressBar>
+#include <cstring>
 #include <vector>
 #include <list>
 
@@ -22,7 +26,7 @@ using namespace std;
 
 extern ToolKit *g_pTK;
 
-BOOL CALLBACK gDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void gDlgProc(QWidget *hDlg, void *context);
 
 // =================================================================================================
 // Abort Import Process, Release resources...
@@ -50,7 +54,7 @@ void ToolKit::StopImport()
 //
 void ToolKit::Export()
 {
-	int what = SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_GETCURSEL, 0, 0);
+	int what = DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT)->currentIndex(); // CB_GETCURSEL
 	int flags = gcTileFlags::TREE | gcTileFlags::CACHE;
 	int srff = 0;
 
@@ -109,14 +113,14 @@ void ToolKit::ExportElev()
 		INT16 *pElev = se.pNode->GetElevation();
 		if (!pElev) {
 			char msg[256];
-			sprintf_s(msg, 256, "Tile (iLng=%d, iLat=%d) has no elevation for level %d", se.pNode->ilng, se.pNode->ilat, selection.slvl);
-			MessageBoxA(pCore->GetRenderWindow(), msg, "Error:", MB_OK);
+			snprintf(msg, 256, "Tile (iLng=%d, iLat=%d) has no elevation for level %d", se.pNode->ilng, se.pNode->ilat, selection.slvl);
+			QMessageBox(QMessageBox::NoIcon, "Error:", msg, QMessageBox::Ok).exec(); // MessageBoxA (render window, MB_OK)
 			return;
 		}
 	}
 
 
-	if (GetSaveFileNameA(&SaveElevation)) 
+	if (FileDlgSave(SaveElevation)) 
 	{
 		int type = 0;
 
@@ -125,11 +129,11 @@ void ToolKit::ExportElev()
 
 		if (type == 0) {
 			// If above fails then use selected "filter" to appeand file "id".
-			if (SaveImage.nFilterIndex == 0) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".dds"), type = 1;
+			if (SaveImage.nFilterIndex == 0) strncat(SaveImage.lpstrFile, ".dds", MAX_PATH - strlen(SaveImage.lpstrFile) - 1), type = 1;
 		}
 
 		if (type == 0) {
-			MessageBoxA(pCore->GetRenderWindow(), "Invalid File Type", "Error:", MB_OK);
+			QMessageBox(QMessageBox::NoIcon, "Error:", "Invalid File Type", QMessageBox::Ok).exec();
 			return;
 		}
 
@@ -139,7 +143,7 @@ void ToolKit::ExportElev()
 
 		if (hSrf) {
 			if (!pCore->SaveSurface(SaveImage.lpstrFile, hSrf)) {
-				MessageBoxA(pCore->GetRenderWindow(), "Failed to Save a file", "Error:", MB_OK);
+				QMessageBox(QMessageBox::NoIcon, "Error:", "Failed to Save a file", QMessageBox::Ok).exec();
 				return;
 			}	
 			oapiReleaseTexture(hSrf);
@@ -153,7 +157,7 @@ void ToolKit::ExportElev()
 void ToolKit::BakeImport()
 {
 
-	if (MessageBox(pCore->GetRenderWindow(), "Bake and Write the tiles in 'OrbiterRoot/TerrainToolKit/' Folder ?", "Are you sure", MB_YESNO | MB_ICONEXCLAMATION) != IDYES) return;
+	if (QMessageBox(QMessageBox::Warning, "Are you sure", "Bake and Write the tiles in 'OrbiterRoot/TerrainToolKit/' Folder ?", QMessageBox::Yes | QMessageBox::No).exec() != QMessageBox::Yes) return; // MB_YESNO | MB_ICONEXCLAMATION
 
 	bool bWater = IsLayerValid(Layer::LayerType::WATER);
 	bool bNight = IsLayerValid(Layer::LayerType::NIGHT);
@@ -165,11 +169,11 @@ void ToolKit::BakeImport()
 	int nTiles = selection.area.size();
 	nTiles += (nTiles / 2 + nTiles / 4 + nTiles / 8);
 	
-	hProgDlg = CreateDialogParamA(hModule, MAKEINTRESOURCE(IDD_PROGRESS), hAppMainWnd, (DLGPROC)gDlgProc, 0);
-	SendDlgItemMessage(hProgDlg, IDC_PROGBAR, PBM_SETRANGE, 0, MAKELONG(0, nTiles));
-	SendDlgItemMessage(hProgDlg, IDC_PROGBAR, PBM_SETPOS, 0, 0);
+	hProgDlg = oapiCreateResDialog(hModule, IDD_PROGRESS, NULL); gDlgProc(hProgDlg, 0); // CreateDialogParamA (owner: the render window, a QWindow)
+	DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setRange(0, nTiles); // PBM_SETRANGE
+	DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setValue(0); // PBM_SETPOS
 
-	ShowWindow(hProgDlg, SW_SHOW);
+	hProgDlg->show(); // ShowWindow
 
 	// ------------------------------------------------------------------
 	//
@@ -180,7 +184,7 @@ void ToolKit::BakeImport()
 		int levels = pProp->GetComboBoxSelection(hBLvs) + 1;
 		int flags = gcTileFlags::TEXTURE | gcTileFlags::CACHE | gcTileFlags::TREE;
 
-		SetWindowText(hProgDlg, "Baking Surface:");
+		oapiSetDlgText(hProgDlg, "Baking Surface:"); // SetWindowText
 		list<QTree*> parents;
 
 		for (auto s : selection.area)
@@ -211,9 +215,9 @@ void ToolKit::BakeImport()
 		int flags = gcTileFlags::MASK | gcTileFlags::CACHE | gcTileFlags::TREE;
 
 		progress = 0;
-		SetWindowText(hProgDlg, "Baking Nightlights:");
-		SendDlgItemMessage(hProgDlg, IDC_PROGBAR, PBM_SETRANGE, 0, MAKELONG(0, nTiles));
-		SendDlgItemMessage(hProgDlg, IDC_PROGBAR, PBM_SETPOS, 0, 0);
+		oapiSetDlgText(hProgDlg, "Baking Nightlights:");
+		DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setRange(0, nTiles);
+		DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setValue(0);
 
 		list<QTree*> parents;
 
@@ -234,7 +238,7 @@ void ToolKit::BakeImport()
 		oapiReleaseTexture(hTemp);
 	}
 
-	DestroyWindow(hProgDlg);
+	delete hProgDlg; // DestroyWindow
 }
 
 
@@ -277,7 +281,7 @@ void ToolKit::OpenImage(Layer::LayerType lr)
 
 	auto Lr = pLr[(int)lr];
 
-	if (GetOpenFileNameA(&SaveImage)) 
+	if (FileDlgOpen(SaveImage)) 
 	{
 		if (Lr) {
 			if (Lr->hSource) {
@@ -292,8 +296,8 @@ void ToolKit::OpenImage(Layer::LayerType lr)
 			SURFHANDLE hSrf = oapiLoadSurfaceEx(SaveImage.lpstrFile, OAPISURFACE_TEXTURE, true);
 
 			if (!hSrf) {
-				sprintf_s(buf, 32 + MAX_PATH, "Unable to load file [%s]", SaveImage.lpstrFile);
-				MessageBoxA(hAppMainWnd, buf, "Error:", MB_OK);
+				snprintf(buf, 32 + MAX_PATH, "Unable to load file [%s]", SaveImage.lpstrFile);
+				QMessageBox(QMessageBox::NoIcon, "Error:", buf, QMessageBox::Ok).exec();
 				return;
 			}
 

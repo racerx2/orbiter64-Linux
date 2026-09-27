@@ -13,7 +13,7 @@
 // =================================================================================
 
 
-#include "mfdapi.h"
+#include "MFDAPI.h"
 #include "Shell.h"
 
 // Header of true MFD
@@ -51,7 +51,7 @@ ShellMFD::~ShellMFD ()
 
 // ============================================================================================================
 //
-void ShellMFD::InitModule(HINSTANCE hDLL)
+void ShellMFD::InitModule(void *hDLL)
 {
 	// Construct MFD List
 	MFDList = new mfd_list[256]();
@@ -59,7 +59,7 @@ void ShellMFD::InitModule(HINSTANCE hDLL)
 
 // ============================================================================================================
 //
-void ShellMFD::ExitModule(HINSTANCE hDLL)
+void ShellMFD::ExitModule(void *hDLL)
 {
 	if (MFDList) {
 
@@ -166,7 +166,7 @@ bool ShellMFD::Update(Sketchpad *pSkp)
 	return true;
 }
 
-void ShellMFD::Update (HDC hDC)
+void ShellMFD::Update (QPainter *hDC)
 {
 		
 }

@@ -1,7 +1,7 @@
 
 
 #include "OrbiterAPI.h"
-#include <Windows.h>
+// Windows.h left out: the Win32 types come from OrbiterPlatform.h
 #include "gcCoreAPI.h"
 
 #pragma once

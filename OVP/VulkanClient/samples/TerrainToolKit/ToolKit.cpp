@@ -4,12 +4,11 @@
 // ==================================================================
 
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
 
-#include <Windows.h>
-#include <windowsx.h>
+// Windows.h, windowsx.h left out: the Win32 types come from OrbiterPlatform.h
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
@@ -19,7 +18,12 @@
 #include "resource.h"
 #include "gcPropertyTree.h"
 #include "QTree.h"
-#include <Commctrl.h>
+#include "OrbiterResource.h"
+// Commctrl.h left out: the common controls are Qt widgets
+#include <QAbstractButton>
+#include <QComboBox>
+#include <QMessageBox>
+#include <cstring>
 #include <vector>
 #include <list>
 
@@ -38,12 +42,12 @@ const T* ptr(const T& x) { return &x; }
 // D3D9Client Callback Wrappers
 // =================================================================================================
 //
-void __cdecl RenderClbk(int iUser, void *pUser, void *pParam)
+void RenderClbk(int iUser, void *pUser, void *pParam)
 {
 	((ToolKit*)pParam)->clbkRender();
 }
 
-void __cdecl MouseClickClbk(int iUser, void *pUser, void *pParam)
+void MouseClickClbk(int iUser, void *pUser, void *pParam)
 {
 	((ToolKit*)pParam)->clbkMouseClick(iUser, pUser);
 }
@@ -57,7 +61,7 @@ string LngLat(Position p);
 // Initialize module
 // =================================================================================================
 //
-DLLCLBK void InitModule(HINSTANCE hModule)
+DLLCLBK void InitModule(void *hModule)
 {
 	// Can do very little here since graphics servises are not yet running 
 	oapiRegisterModule(new ToolKit(hModule));
@@ -66,7 +70,7 @@ DLLCLBK void InitModule(HINSTANCE hModule)
 
 // =================================================================================================
 //
-DLLCLBK void ExitModule(HINSTANCE  hModule)
+DLLCLBK void ExitModule(void *hModule)
 {
 
 }
@@ -83,26 +87,32 @@ DLLCLBK void OpenToolsClbk(void *context)
 
 // ===============================================================================================
 //
-BOOL CALLBACK gDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void gDlgProc(QWidget *hDlg, void *context)
 {
-	if (g_pTK) return g_pTK->DlgProc(hDlg, uMsg, wParam, lParam);
-	return 0;
+	// WM_INITDIALOG: nothing to set up (ToolKit::DlgProc returned true)
+	// WM_COMMAND
+	oapiConnectDlgCommands(hDlg, [hDlg](int id, int code, QWidget *hCtrl) {
+		if (g_pTK) g_pTK->DlgProc(hDlg, id, code, hCtrl);
+	});
+}
+
+// not upstream: the WM_COMMAND the property tree sent to gDlgProc
+void gPropClbk(QWidget *hDlg, WORD id, WORD code, HPROP hEntry)
+{
+	if (g_pTK) g_pTK->DlgProc(hDlg, id, code, hEntry);
 }
 
 
 // ===============================================================================================
 //
-BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+BOOL ToolKit::DlgProc(QWidget *hDlg, WORD id, WORD code, void *lParam)
 {
 
-	switch (uMsg) {
+	// WM_INITDIALOG: gDlgProc
 
-	case WM_INITDIALOG:
-		return true;
-
-	case WM_COMMAND:
+	// WM_COMMAND
 	{
-		switch (LOWORD(wParam))
+		switch (id)
 		{
 		case IDC_LIGHTNESS:
 		case IDC_BRIGHTNESS:
@@ -128,7 +138,7 @@ BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case IDC_STARTIMPORT:
 		{
 			if (selection.selw == 0 || selection.selh == 0) {
-				MessageBox(pCore->GetRenderWindow(), "You need to drag a box around the import area first.", "Info", MB_OK);
+				QMessageBox(QMessageBox::NoIcon, "Info", "You need to drag a box around the import area first.", QMessageBox::Ok).exec(); // MessageBox (render window, MB_OK)
 				break;
 			}
 			if (CreateOverlays())
@@ -147,7 +157,7 @@ BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		case IDC_OPENELEV:
 		{
-			MessageBox(pCore->GetRenderWindow(), "This feature is not yet implemented.", "Info", MB_OK);
+			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
 			//OpenImage(Layer::LayerType::ELEVATION);
 			return true;
 		}
@@ -166,13 +176,13 @@ BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		case IDC_OPENMESH:
 		{
-			MessageBox(pCore->GetRenderWindow(), "This feature is not yet implemented.", "Info", MB_OK);
+			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
 			return true;
 		}
 
 		case IDC_EDITELEV:
 		{
-			MessageBox(pCore->GetRenderWindow(), "This feature is not yet implemented.", "Info", MB_OK);
+			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
 			return true;
 		}
 
@@ -214,7 +224,6 @@ BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			break;
 		} // switch(wParam)
 	} // WM_COMMAND
-	} // switch(uMsg)
 	return false;
 }
 
@@ -225,7 +234,7 @@ BOOL ToolKit::DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 // Orbiter Module
 // =================================================================================================
 //
-ToolKit::ToolKit(HINSTANCE hInst) : gcGUIApp(), Module(hInst)
+ToolKit::ToolKit(void *hInst) : gcGUIApp(), Module(hInst)
 {
 	pCore = NULL;
 	hMgr = NULL;
@@ -339,7 +348,7 @@ bool ToolKit::Initialize()
 
 	// Must Initialize the base class
 	if (gcGUIApp::Initialize() == false) {
-		MessageBox(hAppMainWnd, "gcGUI is disabled, can't launch", "Error", MB_OK);
+		QMessageBox(QMessageBox::NoIcon, "Error", "gcGUI is disabled, can't launch", QMessageBox::Ok).exec(); // MessageBox (render window, MB_OK)
 		pCore = NULL;
 		hAppMainWnd = NULL;
 		return false;
@@ -386,38 +395,39 @@ bool ToolKit::Initialize()
 	// Create GUI Sections --------------------------------------------------------------------------
 	//
 	hRootNode = RegisterApplication("Terrain ToolKit V1.1", NULL, gcGUI::DS_LEFT);
-	//hMainDlg = CreateDialogParamA(hModule, MAKEINTRESOURCE(IDD_MAIN), hAppMainWnd, gDlgProc, 0);
+	// CreateDialogParam: the owner, the render window, is a QWindow, so the dialogs have no widget parent (gcGUI takes them in)
+	//hMainDlg = oapiCreateResDialog(hModule, IDD_MAIN, NULL); gDlgProc(hMainDlg, 0);
 	//hMainNode = RegisterSubsection(hRootNode, "Main", hMainDlg);
-	hCtrlDlg = CreateDialogParamA(hModule, MAKEINTRESOURCE(IDD_EXPORT), hAppMainWnd, (DLGPROC)gDlgProc, 0);
+	hCtrlDlg = oapiCreateResDialog(hModule, IDD_EXPORT, NULL); gDlgProc(hCtrlDlg, 0);
 	hCtrlNode = RegisterSubsection(hRootNode, "Selection Oprions", hCtrlDlg);
-	hImpoDlg = CreateDialogParam(hModule, MAKEINTRESOURCE(IDD_IMPORT), hAppMainWnd, (DLGPROC)gDlgProc, 0);
+	hImpoDlg = oapiCreateResDialog(hModule, IDD_IMPORT, NULL); gDlgProc(hImpoDlg, 0);
 	hImpoNode = RegisterSubsection(hRootNode, "Import Options", hImpoDlg, 0xC0FFE0);
-	hDataDlg  = CreateDialogParam(hModule, MAKEINTRESOURCE(IDD_DATA), hAppMainWnd, (DLGPROC)gDlgProc, 0);
+	hDataDlg  = oapiCreateResDialog(hModule, IDD_DATA, NULL); gDlgProc(hDataDlg, 0);
 	hDataNode = RegisterSubsection(hRootNode, "Properties", hDataDlg);
 
 	DisplayWindow(hRootNode);
 
-	SendDlgItemMessage(hCtrlDlg, IDC_AUTOHIGHLIGHT, BM_SETCHECK, true, 0);
-	SendDlgItemMessage(hCtrlDlg, IDC_DISPSEL, BM_SETCHECK, true, 0);
+	DlgItem<QAbstractButton>(hCtrlDlg, IDC_AUTOHIGHLIGHT)->setChecked(true); // BM_SETCHECK
+	DlgItem<QAbstractButton>(hCtrlDlg, IDC_DISPSEL)->setChecked(true);
 
-	SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_ADDSTRING, 0, (LPARAM)"Texture");			// 0
-	SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_ADDSTRING, 0, (LPARAM)"Nightlights");		// 1
-	//SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_ADDSTRING, 0, (LPARAM)"Elevation");		// 2
-	SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_SETCURSEL, 0, 0);
+	DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT)->clear(); // CB_RESETCONTENT
+	oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT), "Texture");			// 0
+	oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT), "Nightlights");		// 1
+	//oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT), "Elevation");		// 2
+	DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT)->setCurrentIndex(0); // CB_SETCURSEL
 
-	SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_ADDSTRING, 0, (LPARAM)"Current Render Lvl");	// 0
-	SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_ADDSTRING, 0, (LPARAM)"Heighest Existing");		// 1
-	SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_SETCURSEL, 1, 0);
+	DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT)->clear();
+	oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT), "Current Render Lvl");	// 0
+	oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT), "Heighest Existing");		// 1
+	DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT)->setCurrentIndex(1);
 
 	for (int i = 5; i < 22; i++) {
-		char Lbl[32]; sprintf_s(Lbl, 32, "Level %d", i);
-		SendDlgItemMessageA(hCtrlDlg, IDC_SELECT, CB_ADDSTRING, 0, (LPARAM)Lbl);
+		char Lbl[32]; snprintf(Lbl, 32, "Level %d", i);
+		oapiComboAddString(DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT), Lbl);
 	}
 
 
-	pProp = new gcPropertyTree(this, hDataDlg, IDC_DATAVIEW, (DLGPROC)gDlgProc, GetFont(0), GetModule());
+	pProp = new gcPropertyTree(this, hDataDlg, IDC_DATAVIEW, gPropClbk, GetFont(0), GetModule());
 
 	// ---------------------------------------------------
 	hSecCur = pProp->SubSection("Mouse cursor location");
@@ -441,7 +451,7 @@ bool ToolKit::Initialize()
 	hBLvs = pProp->AddComboBox("Lvls to Bake", 0, hSecExp);
 
 	for (int i = 0; i < 8; i++) {
-		char buf[8]; sprintf_s(buf, 8, "%d", i);
+		char buf[8]; snprintf(buf, 8, "%d", i);
 		pProp->AddComboBoxItem(hBLvs, buf);
 	}
 	pProp->SetComboBoxSelection(hBLvs, 0);
@@ -452,14 +462,14 @@ bool ToolKit::Initialize()
 	pProp->Update();
 
 	
-	memset(&SaveImage, 0, sizeof(OPENFILENAME));
-	memset(&SaveDDS, 0, sizeof(OPENFILENAME));
-	memset(&SaveElevation, 0, sizeof(OPENFILENAME));
+	memset(&SaveImage, 0, sizeof(FileDlgSpec));
+	memset(&SaveDDS, 0, sizeof(FileDlgSpec));
+	memset(&SaveElevation, 0, sizeof(FileDlgSpec));
 	memset(SaveFileName, 0, sizeof(SaveFileName));
 	memset(SaveFileTitle, 0, sizeof(SaveFileTitle));
 
+	// lStructSize left out; Flags: OFN_OVERWRITEPROMPT -> bOverwritePrompt, OFN_NOCHANGEDIR (QFileDialog keeps the working directory)
 	SaveImage.hwndOwner = pCore->GetRenderWindow();
-	SaveImage.lStructSize = sizeof(OPENFILENAME);
 	SaveImage.lpstrFile = SaveFileName;
 	SaveImage.nMaxFile = sizeof(SaveFileName);
 	SaveImage.lpstrFileTitle = SaveFileTitle;
@@ -467,34 +477,32 @@ bool ToolKit::Initialize()
 	SaveImage.lpstrInitialDir = "";
 	SaveImage.lpstrDefExt = NULL;
 	SaveImage.lpstrFilter = 
-"Image Files\0*.dds;*.png;*.jpg;*.bmp\0\
-Direct Draw Surface (.dds)\0*.dds\0\
-Windows Bitmap (.bmp)\0*.bmp\0\
-Portable Network Graphics (.png)\0*.png\0\
-JPEG Image (.jpg)\0*.jpg\0";
+"Image Files (*.dds *.png *.jpg *.bmp);;\
+Direct Draw Surface (.dds) (*.dds);;\
+Windows Bitmap (.bmp) (*.bmp);;\
+Portable Network Graphics (.png) (*.png);;\
+JPEG Image (.jpg) (*.jpg)";
 	SaveImage.nFilterIndex = 0;
-	SaveImage.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+	SaveImage.bOverwritePrompt = true;
 
 	// ------------------------------------------------------
 
 	SaveDDS.hwndOwner = pCore->GetRenderWindow();
-	SaveDDS.lStructSize = sizeof(OPENFILENAME);
 	SaveDDS.lpstrFile = SaveFileName;
 	SaveDDS.nMaxFile = sizeof(SaveFileName);
 	SaveDDS.lpstrFileTitle = SaveFileTitle;
 	SaveDDS.nMaxFileTitle = sizeof(SaveFileTitle);
 	SaveDDS.lpstrInitialDir = "";
 	SaveDDS.lpstrDefExt = NULL;
-	SaveDDS.lpstrFilter = "Image Files\0*.dds\0Direct Draw Surface (.dds)\0*.dds\0\0";
+	SaveDDS.lpstrFilter = "Image Files (*.dds);;Direct Draw Surface (.dds) (*.dds)";
 	SaveDDS.nFilterIndex = 0;
 	SaveDDS.lpstrFileTitle = NULL;
 	SaveDDS.nMaxFileTitle = 0;
-	SaveDDS.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+	SaveDDS.bOverwritePrompt = true;
 
 	// ------------------------------------------------------
 
 	SaveElevation.hwndOwner = pCore->GetRenderWindow();
-	SaveElevation.lStructSize = sizeof(OPENFILENAME);
 	SaveElevation.lpstrFile = SaveFileName;
 	SaveElevation.nMaxFile = sizeof(SaveFileName);
 	SaveElevation.lpstrFileTitle = SaveFileTitle;
@@ -502,12 +510,12 @@ JPEG Image (.jpg)\0*.jpg\0";
 	SaveElevation.lpstrInitialDir = "";
 	SaveElevation.lpstrDefExt = NULL;
 	SaveElevation.lpstrFilter =
-"Elevation Files\0*.dds\0\
-Direct Draw Surface (.dds)\0*.dds\0\0";
+"Elevation Files (*.dds);;\
+Direct Draw Surface (.dds) (*.dds)";
 	SaveElevation.nFilterIndex = 0;
 	SaveElevation.lpstrFileTitle = NULL;
 	SaveElevation.nMaxFileTitle = 0;
-	SaveElevation.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+	SaveElevation.bOverwritePrompt = true;
 	
 	bGo = true;
 	return true;
@@ -518,7 +526,7 @@ Direct Draw Surface (.dds)\0*.dds\0\0";
 //
 int ToolKit::SelectionFlags()
 {
-	int what = SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_GETCURSEL, 0, 0);
+	int what = DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT)->currentIndex(); // CB_GETCURSEL
 
 	switch (what) {
 	case Select::WTexture: return gcTileFlags::TEXTURE | gcTileFlags::CACHE | gcTileFlags::TREE;
@@ -547,10 +555,10 @@ void ToolKit::clbkRender()
 	if (!dmSphere) return;
 
 	bool bGuides = false; // (SendDlgItemMessageA(hCtrlDlg, IDC_GUIDES, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	bool bAutoHighlight = (SendDlgItemMessageA(hCtrlDlg, IDC_AUTOHIGHLIGHT, BM_GETCHECK, 0, 0) == BST_CHECKED);
-	bool bHideClip = (SendDlgItemMessageA(hCtrlDlg, IDC_DISPSEL, BM_GETCHECK, 0, 0) != BST_CHECKED);
+	bool bAutoHighlight = (DlgItem<QAbstractButton>(hCtrlDlg, IDC_AUTOHIGHLIGHT)->isChecked()); // BM_GETCHECK
+	bool bHideClip = (!DlgItem<QAbstractButton>(hCtrlDlg, IDC_DISPSEL)->isChecked());
 	
-	int select = SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_GETCURSEL, 0, 0);
+	int select = DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT)->currentIndex(); // CB_GETCURSEL
 	int flags = SelectionFlags();
 
 	gcCore::PickGround pg; memset(&pg, 0, sizeof(gcCore::PickGround));
@@ -1086,8 +1094,8 @@ void ToolKit::clbkMouseClick(int iUser, void *pData)
 	if (!pRoot) return;
 	if (!pCore) return;
 
-	int select = SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_GETCURSEL, 0, 0);
-	int what = SendDlgItemMessage(hCtrlDlg, IDC_WHAT, CB_GETCURSEL, 0, 0);
+	int select = DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT)->currentIndex(); // CB_GETCURSEL
+	int what = DlgItem<QComboBox>(hCtrlDlg, IDC_WHAT)->currentIndex();
 
 	gcCore::PickGround *pPick = (gcCore::PickGround *)pData;
 

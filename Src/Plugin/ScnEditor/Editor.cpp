@@ -493,6 +493,7 @@ QWidget *ScnEditorTab::CreateTab (void *hInst, WORD ResId,  DLGINIT TabProc)
 {
 	hTab = oapiCreateResDialog (hInst, ResId, ed->DlgHandle()); // CreateDialogParam
 	if (!hTab) return hTab;
+	if (!hTab->testAttribute(Qt::WA_WState_ExplicitShowHide)) hTab->hide(); // no WS_VISIBLE: Qt shows a child not hidden explicitly along with its parent
 	hTab->setProperty ("DWLP_USER", QVariant::fromValue ((void*)this)); // SetWindowLongPtr, set before WM_INITDIALOG: a custom page may call ScnEditorMsg there
 	TabProc (hTab, this); // WM_INITDIALOG
 	return hTab;

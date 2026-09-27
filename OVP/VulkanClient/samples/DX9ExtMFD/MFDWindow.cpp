@@ -5,6 +5,15 @@
 
 #include "MFDWindow.h"
 #include "resource.h"
+#include "OrbiterResource.h"
+#include <QFont>
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QVariant>
+#include <QWindow>
+#include <cstring>
+#include <functional>
 #include <stdio.h> // temporary
 
 using std::min;
@@ -12,15 +21,41 @@ using std::max;
 
 #define IDSTICK 999
 
+#define WMSZ_RIGHT       2 // not upstream: winuser.h WM_SIZING edges
+#define WMSZ_BOTTOM      6
+#define WMSZ_BOTTOMRIGHT 8
+
 // ==============================================================
 // prototype definitions
 
-INT_PTR CALLBACK DlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void DlgProc (QWidget *hDlg, void *context);
+
+// not upstream: the Vulkan window inside the display control (RegisterSwap presents into it)
+static QWindow *DisplayWindow (QWidget *hDsp)
+{
+	return (QWindow*)hDsp->property ("DisplayWindow").value<void*>();
+}
+
+// not upstream: SetWindowPos (hWnd, NULL, x, y, w, h, SWP_SHOWWINDOW)
+static void PlaceWindow (QWidget *hWnd, int x, int y, int w, int h)
+{
+	hWnd->setGeometry (x, y, w, h);
+	hWnd->show();
+}
+
+// not upstream: routes the dialog's events to a handler (WM_SIZE, DefDlgProc's WM_CLOSE/Esc)
+class DlgEvents: public QObject {
+public:
+	DlgEvents (QWidget *hWnd, std::function<bool(QEvent*)> handler): QObject (hWnd), handler (handler) { hWnd->installEventFilter (this); }
+	bool eventFilter (QObject *o, QEvent *e) override { return handler (e); }
+private:
+	std::function<bool(QEvent*)> handler;
+};
 
 // ==============================================================
 // class MFDWindow
 
-MFDWindow::MFDWindow (HINSTANCE _hInst, const MFDSPEC &spec): ExternMFD (spec), hInst(_hInst)
+MFDWindow::MFDWindow (void *_hInst, const MFDSPEC &spec): ExternMFD (spec), hInst(_hInst)
 {
 	hSwap = NULL;
 	hBtnFnt = 0;
@@ -36,24 +71,25 @@ MFDWindow::~MFDWindow ()
 	gcCore *pCore = gcGetCoreInterface();
 	if (pCore && hSwap) pCore->ReleaseSwap(hSwap);
 	oapiCloseDialog (hDlg);
-	if (hBtnFnt) DeleteObject (hBtnFnt);
+	if (hBtnFnt) delete hBtnFnt;
 }
 
-void MFDWindow::Initialise (HWND _hDlg)
+void MFDWindow::Initialise (QWidget *_hDlg)
 {
-	extern HBITMAP g_hPin;
+	extern QImage *g_hPin;
 
 	hDlg = _hDlg;
-	hDsp = GetDlgItem (hDlg, IDC_DISPLAY);
+	hDsp = oapiResDlgItem (hDlg, IDC_DISPLAY);
 	
 	for (int i = 0; i < 16; i++)
-		SetWindowLongPtr (GetDlgItem (hDlg, IDC_BUTTON1+i), GWLP_USERDATA, i);
+		oapiResDlgItem (hDlg, IDC_BUTTON1+i)->setProperty ("GWLP_USERDATA", i);
 
 	oapiAddTitleButton (IDSTICK, g_hPin, DLG_CB_TWOSTATE);
 	SetTitle ();
 	gap = 3;
 
-	GetWindowRect(hDlg, &wr);
+	QRect g = hDlg->frameGeometry(); // GetWindowRect
+	wr = { g.left(), g.top(), g.left() + g.width(), g.top() + g.height() };
 	CheckAspect(&wr, 0);
 	Resize();
 }
@@ -68,16 +104,17 @@ void MFDWindow::SetTitle ()
 {
 	char cbuf[256] = "DX9 MFD [";
 	oapiGetObjectName (hVessel, cbuf+9, 200);
-	strcat_s (cbuf, 250, "]");
-	SetWindowText (hDlg, cbuf);		//<<--- Very odd runtime check failure here why now ???  :jarmonik 5-Aug-2021
+	strncat (cbuf, "]", 250 - strlen (cbuf) - 1);
+	oapiSetDlgText (hDlg, cbuf);		//<<--- Very odd runtime check failure here why now ???  :jarmonik 5-Aug-2021
 }
 
 void MFDWindow::CheckAspect(LPRECT r, DWORD q)
 {
 	RECT c,b;
 
-	GetClientRect(hDlg, &c);
-	GetWindowRect(hDlg, &b);
+	QRect cg = hDlg->rect(), bg = hDlg->frameGeometry();
+	c = { 0, 0, cg.width(), cg.height() }; // GetClientRect
+	b = { bg.left(), bg.top(), bg.left() + bg.width(), bg.top() + bg.height() }; // GetWindowRect
 
 	int ew = (b.right - b.left) - (c.right - c.left);
 	int eh = (b.bottom - b.top) - (c.bottom - c.top);
@@ -112,8 +149,7 @@ void MFDWindow::CheckAspect(LPRECT r, DWORD q)
 
 void MFDWindow::Resize()
 {
-	RECT r;
-	GetClientRect (hDlg, &r);
+	RECT r = { 0, 0, hDlg->width(), hDlg->height() }; // GetClientRect
 	int bw = (r.right*35)/300;
 	BW = max (30, min (60, bw));
 	BH = max (15, min (40, (bw*2)/3));
@@ -122,56 +158,51 @@ void MFDWindow::Resize()
 	int fh = BW/3;
 
 	if (fh != fnth) {
-		if (hBtnFnt) DeleteObject (hBtnFnt);
-		hBtnFnt = CreateFont (fnth = fh, 0, 0, 0, 0, 0, 0, 0, DEFAULT_CHARSET,
-			OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-			DEFAULT_PITCH|FF_DONTCARE, "Arial");
+		if (hBtnFnt) delete hBtnFnt;
+		hBtnFnt = new QFont ("Arial"); // CreateFont (fh, ..., "Arial")
+		hBtnFnt->setPixelSize (fnth = fh);
 	}
 
 	DH = DW = ds;
 
-	SetWindowPos(hDsp, NULL, BW + gap * 2, gap, ds, ds, SWP_SHOWWINDOW);
+	PlaceWindow(hDsp, BW + gap * 2, gap, ds, ds);
 	
 	int x1 = gap;
 	int x2 = r.right-gap-BW;
 	int dy = (DH*2)/13, y0 = DH/7, y1 = r.top+y0-BH/2;
 	for (int i = 0; i < 6; i++) {
-		SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON1+i), NULL, x1, y1+i*dy, BW, BH, SWP_SHOWWINDOW);
-		SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON7+i), NULL, x2, y1+i*dy, BW, BH, SWP_SHOWWINDOW);
+		PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON1+i), x1, y1+i*dy, BW, BH);
+		PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON7+i), x2, y1+i*dy, BW, BH);
 	}
 	y1 = r.top+DH+gap*2;
-	SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON_DRV), NULL, r.left + DW/2 + (BW*12)/4, y1, BW, BH, SWP_SHOWWINDOW);
-	SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON_PWR), NULL, r.left + DW/2 - (BW*7)/4, y1, BW, BH, SWP_SHOWWINDOW);
-	SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON_SEL), NULL, r.left + DW/2 - BW/2, y1, BW, BH, SWP_SHOWWINDOW);
-	SetWindowPos (GetDlgItem (hDlg, IDC_BUTTON_MNU), NULL, r.left + DW/2 + (BW*3)/4, y1, BW, BH, SWP_SHOWWINDOW);
+	PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON_DRV), r.left + DW/2 + (BW*12)/4, y1, BW, BH);
+	PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON_PWR), r.left + DW/2 - (BW*7)/4, y1, BW, BH);
+	PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON_SEL), r.left + DW/2 - BW/2, y1, BW, BH);
+	PlaceWindow (oapiResDlgItem (hDlg, IDC_BUTTON_MNU), r.left + DW/2 + (BW*3)/4, y1, BW, BH);
 
 	if (!bFailed) {
 		gcCore *pCore = gcGetCoreInterface();
-		if (pCore) hSwap = pCore->RegisterSwap(hDsp, hSwap, 0);
+		if (pCore) hSwap = pCore->RegisterSwap(DisplayWindow(hDsp), hSwap, 0);
 	}
 
 	MFDSPEC spec = {{0,0,DW,DH},6,6,y0,dy};
 	ExternMFD::Resize (spec);
 
-	InvalidateRect(hDlg, NULL, FALSE);
+	hDlg->update(); // InvalidateRect
 }
 
 
-void MFDWindow::RepaintDisplay(HWND hWnd)
-{
-	PAINTSTRUCT ps;
-	HDC hDCtgt = BeginPaint(hWnd, &ps);
-	EndPaint(hWnd, &ps);
-}
+// RepaintDisplay left out: BeginPaint/EndPaint only validated the display, which is a Vulkan window now
 
-void MFDWindow::RepaintButton (HWND hWnd)
+void MFDWindow::RepaintButton (QWidget *hWnd)
 {
-	int id = (int)GetWindowLongPtr (hWnd, GWLP_USERDATA);
-	PAINTSTRUCT ps;
-	HDC hDC = BeginPaint (hWnd, &ps);
-	SelectObject (hDC, GetStockObject (BLACK_PEN));
-	Rectangle (hDC, 0, 0, BW, BH);
-	SetTextAlign (hDC, TA_CENTER);
+	int id = hWnd->property ("GWLP_USERDATA").toInt();
+	QPainter painter (hWnd); // BeginPaint
+	QPainter *hDC = &painter;
+	hDC->setPen (QPen (Qt::black, 0)); // BLACK_PEN
+	hDC->setBrush (Qt::white); // the DC's default WHITE_BRUSH
+	hDC->drawRect (0, 0, BW - 1, BH - 1); // Rectangle (0, 0, BW, BH)
+	QColor textcol (Qt::black); // SetTextAlign TA_CENTER: see TextOut below
 	const char *label;
 	if (id < 12) {
 		label = GetButtonLabel (id);
@@ -181,16 +212,19 @@ void MFDWindow::RepaintButton (HWND hWnd)
 		if (id == 15) label = drv[0];
 		else {
 			label = lbl[id - 12];
-			if (id == 12) SetTextColor(hDC, 0x0000FF);
+			if (id == 12) textcol = QColor (0xFF, 0x00, 0x00); // SetTextColor 0x0000FF
 		}
 	}
 	if (label) {
-		SetBkMode (hDC, TRANSPARENT);
-		HFONT pFont = (HFONT)SelectObject (hDC, hBtnFnt);
-		TextOut (hDC, BW/2, (BH-fnth)/2, label, lstrlen(label));
-		SelectObject (hDC, pFont);
+		hDC->setBackgroundMode (Qt::TransparentMode); // SetBkMode TRANSPARENT
+		QFont pFont = hDC->font();
+		hDC->setFont (*hBtnFnt);
+		QString s = QString::fromLatin1 (label, strlen(label));
+		hDC->setPen (textcol);
+		hDC->drawText (BW/2 - hDC->fontMetrics().horizontalAdvance (s)/2, (BH-fnth)/2 + hDC->fontMetrics().ascent(), s); // TextOut, TA_CENTER
+		hDC->setFont (pFont);
 	}
-	EndPaint (hWnd, &ps);
+	// EndPaint: the painter ends with this function
 }
 
 void MFDWindow::ProcessButton (int bt, int event)
@@ -225,7 +259,7 @@ void MFDWindow::clbkRefreshDisplay (SURFHANDLE)
 	gcCore *pCore = gcGetCoreInterface();
 	if (!pCore) return;
 
-	if (!hSwap) hSwap = pCore->RegisterSwap(hDsp, hSwap, 0);
+	if (!hSwap) hSwap = pCore->RegisterSwap(DisplayWindow(hDsp), hSwap, 0);
 	if (!hSwap) {
 		bFailed = true;
 		return;
@@ -243,9 +277,9 @@ void MFDWindow::clbkRefreshDisplay (SURFHANDLE)
 
 void MFDWindow::clbkRefreshButtons ()
 {
-	InvalidateRect(GetDlgItem(hDlg, IDC_BUTTON_DRV), NULL, FALSE);
+	oapiResDlgItem(hDlg, IDC_BUTTON_DRV)->update(); // InvalidateRect
 	for (int i = 0; i < 12; i++)
-		InvalidateRect (GetDlgItem (hDlg, IDC_BUTTON1+i), NULL, FALSE);
+		oapiResDlgItem (hDlg, IDC_BUTTON1+i)->update();
 }
 
 void MFDWindow::clbkFocusChanged (OBJHANDLE hFocus)
@@ -268,71 +302,105 @@ void MFDWindow::StickToVessel (bool stick)
 // ==============================================================
 // Windows message handler for the dialog box
 
-INT_PTR CALLBACK DlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void DlgProc (QWidget *hDlg, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((MFDWindow*)lParam)->Initialise (hDlg);
-		return TRUE;
-	case WM_SIZING:
-		((MFDWindow*)oapiGetDialogContext(hDlg))->CheckAspect(LPRECT(lParam), (DWORD)wParam);
-		return TRUE;
-	case WM_SIZE:
-		((MFDWindow*)oapiGetDialogContext(hDlg))->Resize();
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+		((MFDWindow*)context)->Initialise (hDlg);
+	// WM_SIZING left out: Qt can't adjust the window manager's resize drag; CheckAspect still runs from Initialise
+	// WM_COMMAND
+	auto command = [hDlg](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDCANCEL:
 			oapiUnregisterExternMFD ((MFDWindow*)oapiGetDialogContext (hDlg));
-			return TRUE;
+			return;
 		case IDHELP:
 			((MFDWindow*)oapiGetDialogContext(hDlg))->OpenModeHelp ();
-			return TRUE;
-		case IDSTICK:
-			((MFDWindow*)oapiGetDialogContext(hDlg))->StickToVessel (HIWORD(wParam) != 0);
-			return TRUE;
+			return;
+		case IDSTICK: // title button: the state comes as the notification code
+			((MFDWindow*)oapiGetDialogContext(hDlg))->StickToVessel (code != 0);
+			return;
 		}
+	};
+	oapiConnectDlgCommands (hDlg, command);
+	new DlgEvents (hDlg, [hDlg, command](QEvent *e) -> bool {
+		switch (e->type()) {
+		case QEvent::Resize: // WM_SIZE
+			((MFDWindow*)oapiGetDialogContext(hDlg))->Resize();
+			return false;
+		case QEvent::Close: // not upstream: DefDlgProc's WM_CLOSE -> IDCANCEL to this procedure
+			e->ignore();
+			command (IDCANCEL, RESN_CLICKED, NULL);
+			return true;
+		case QEvent::KeyPress: // not upstream: Esc -> IDCANCEL to this procedure
+			if (static_cast<QKeyEvent*>(e)->key() != Qt::Key_Escape) return false;
+			command (IDCANCEL, RESN_CLICKED, NULL);
+			return true;
+		default:
+			return false;
+		}
+	});
+	// oapiDefDialogProc left out: oapiOpenDialogEx wires the default dialog behaviour
+}
+
+
+// MFD_WndProc left out: the display is a Vulkan window, with no background to erase and nothing to paint (WM_ERASEBKGND, WM_PAINT)
+
+
+bool MFD_BtnProc (QWidget *hWnd, QEvent *e)
+{
+	switch (e->type()) {
+	case QEvent::Paint: { // WM_PAINT
+		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (hWnd->parentWidget());
+		mfdw->RepaintButton (hWnd);
+		} return true;
+	case QEvent::MouseButtonPress:    // WM_LBUTTONDOWN
+	case QEvent::MouseButtonDblClick: { // the class has no CS_DBLCLKS: a second WM_LBUTTONDOWN
+		if (static_cast<QMouseEvent*>(e)->button() != Qt::LeftButton) break;
+		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (hWnd->parentWidget());
+		mfdw->ProcessButton (hWnd->property ("GWLP_USERDATA").toInt(), PANEL_MOUSE_LBDOWN);
+		// SetCapture: Qt grabs the mouse for the pressed widget
+		} return true;
+	case QEvent::MouseButtonRelease: { // WM_LBUTTONUP
+		if (static_cast<QMouseEvent*>(e)->button() != Qt::LeftButton) break;
+		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (hWnd->parentWidget());
+		mfdw->ProcessButton (hWnd->property ("GWLP_USERDATA").toInt(), PANEL_MOUSE_LBUP);
+		// ReleaseCapture: the grab ends with the release
+		} return true;
+	default:
 		break;
 	}
-	return oapiDefDialogProc (hDlg, uMsg, wParam, lParam);
+
+	return false; // DefWindowProc
 }
 
 
-LRESULT CALLBACK MFD_WndProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{	
-	switch (uMsg) {
-		case WM_ERASEBKGND:
-			return 1;
-		case WM_PAINT: 
-		{
-			MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext(GetParent(hWnd));
-			mfdw->RepaintDisplay(hWnd);
-			return 0;
-		} 
+// not upstream: the window classes registered in ExtMFD.cpp (WNDCLASS: window procedure, background brush)
+class MFD_Wnd: public QWidget {
+public:
+	MFD_Wnd (QWidget *parent, bool (*proc)(QWidget*, QEvent*), const QColor &bg): QWidget (parent), wndproc (proc) {
+		setAutoFillBackground (true); // hbrBackground
+		QPalette p = palette(); p.setColor (QPalette::Window, bg); setPalette (p);
 	}
-	return DefWindowProc (hWnd, uMsg, wParam, lParam);
-}
+protected:
+	bool event (QEvent *e) override { return wndproc (this, e) || QWidget::event (e); }
+private:
+	bool (*wndproc)(QWidget*, QEvent*);
+};
 
-
-LRESULT FAR PASCAL MFD_BtnProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+QWidget *MFD_ButtonCtrl (const RESCONTROL *ctrl, QWidget *parent) // "ExtMFD_Button": MFD_BtnProc, LTGRAY_BRUSH
 {
-	switch (uMsg) {
-	case WM_PAINT: {
-		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (GetParent (hWnd));
-		mfdw->RepaintButton (hWnd);
-		} return 0;
-	case WM_LBUTTONDOWN: {
-		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (GetParent (hWnd));
-		mfdw->ProcessButton ((int)GetWindowLongPtr(hWnd, GWLP_USERDATA), PANEL_MOUSE_LBDOWN);
-		SetCapture (hWnd);
-		} return 0;
-	case WM_LBUTTONUP: {
-		MFDWindow *mfdw = (MFDWindow*)oapiGetDialogContext (GetParent (hWnd));
-		mfdw->ProcessButton ((int)GetWindowLongPtr(hWnd, GWLP_USERDATA), PANEL_MOUSE_LBUP);
-		ReleaseCapture();
-		} return 0;
-	}
+	return new MFD_Wnd (parent, MFD_BtnProc, QColor (192, 192, 192));
+}
 
-	return DefWindowProc (hWnd, uMsg, wParam, lParam);
+QWidget *MFD_DisplayCtrl (const RESCONTROL *ctrl, QWidget *parent) // "ExtMFD_Display": BLACK_BRUSH, a Vulkan window for the swapchain
+{
+	QWindow *w = new QWindow;
+	w->setSurfaceType (QSurface::VulkanSurface);
+	w->create(); // CreateWindow: the native window exists at once, so RegisterSwap works from WM_INITDIALOG on
+	QWidget *hWnd = QWidget::createWindowContainer (w, parent);
+	hWnd->setProperty ("DisplayWindow", QVariant::fromValue ((void*)w));
+	QPalette p = hWnd->palette(); p.setColor (QPalette::Window, Qt::black); hWnd->setPalette (p);
+	hWnd->setAutoFillBackground (true);
+	return hWnd;
 }
 

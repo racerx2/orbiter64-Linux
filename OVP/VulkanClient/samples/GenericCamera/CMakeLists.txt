@@ -5,16 +5,17 @@ add_library(GenericCamera MODULE
 	Shell.cpp
 	MFD.h
 	Shell.h
-	GenericCamera.rc
 )
+orbiter_rc_resources(GenericCamera GenericCamera.rc)
 
 add_dependencies(GenericCamera
 	D3D9Client
 )
 
+# ${OrbiterTgt} left out: the orbiter symbols resolve against the executable at dlopen (no import library on ELF)
 target_link_libraries(GenericCamera
-	${OrbiterTgt}
 	Orbitersdk
+	Qt6::Widgets
 )
 
 target_include_directories(GenericCamera

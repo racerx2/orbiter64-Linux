@@ -222,10 +222,34 @@ static void ResolveScriptPaths (lua_State *L)
 	lua_pop (L, 2);
 }
 
+// not upstream: loadlib.c setpath, so LUA_PATH/LUA_CPATH (";;" = default) still override the defaults below
+static void SetPackagePath (lua_State *L, const char *fieldname, const char *envname, const char *def)
+{
+	const char *path = getenv (envname);
+	if (path == NULL)
+		lua_pushstring (L, def);
+	else {
+		path = luaL_gsub (L, path, LUA_PATHSEP LUA_PATHSEP, LUA_PATHSEP "\1" LUA_PATHSEP);
+		luaL_gsub (L, path, "\1", def);
+		lua_remove (L, -2);
+	}
+	lua_setfield (L, -2, fieldname);
+}
+
+// not upstream: Lua's Windows defaults search the exe folder ('!'), which is Orbiter's working folder
+static void SetPackagePaths (lua_State *L)
+{
+	lua_getglobal (L, "package");
+	SetPackagePath (L, "path", LUA_PATH, "./?.lua;./lua/?.lua;./lua/?/init.lua;./?/init.lua");
+	SetPackagePath (L, "cpath", LUA_CPATH, "./?.so;./loadall.so");
+	lua_pop (L, 1);
+}
+
 void Interpreter::Initialise ()
 {
 	luaL_openlibs (L);    // load the default libraries
 	ResolveScriptPaths (L); // not upstream: see above
+	SetPackagePaths (L);    // not upstream: see above
 	LoadAPI ();           // load default set of API interface functions
 	LoadVesselAPI ();     // load vessel-specific part of API
 	LoadLightEmitterMethods (); // load light source methods

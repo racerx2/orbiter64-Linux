@@ -14,7 +14,7 @@
 #define NOIMAGE
 #define NOTAPE
 
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
 #include <stdio.h>
 #include <math.h>
 #include <malloc.h>

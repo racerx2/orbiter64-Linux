@@ -7,22 +7,22 @@ add_library(TerrainToolKit MODULE
 	QTree.cpp	
 	ToolKit.h
 	ToolKit.cpp
-	ToolKit.rc
 	ExportImport.cpp
 	Basics.cpp
 	Layer.cpp
 	resource.h
 )
+orbiter_rc_resources(TerrainToolKit ToolKit.rc)
 
 add_dependencies(TerrainToolKit
 	D3D9Client
 )
 
+# ${OrbiterTgt} left out: the orbiter symbols resolve against the executable at dlopen (no import library on ELF)
 target_link_libraries(TerrainToolKit
-	${OrbiterTgt}
 	Orbitersdk
-	Msimg32.lib
-	Comctl32.lib
+	Qt6::Widgets
+	# Msimg32.lib, Comctl32.lib left out: AlphaBlend and the common controls are Qt
 )
 
 target_include_directories(TerrainToolKit

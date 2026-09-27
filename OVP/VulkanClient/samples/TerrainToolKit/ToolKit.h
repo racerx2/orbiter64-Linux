@@ -1,8 +1,7 @@
 
 #include <list>
 #include <vector>
-#include <windows.h>
-#include <windowsx.h>
+// windows.h, windowsx.h left out: the Win32 types come from OrbiterPlatform.h
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
@@ -47,6 +46,24 @@ struct selentry {
 	QTree *pNode;
 	int x, y; // Index (position) in the selection
 };
+
+
+// not upstream: the OPENFILENAMEA fields used here, for the QFileDialog counterparts of GetOpenFileNameA/GetSaveFileNameA
+struct FileDlgSpec {
+	QWindow *hwndOwner;			// not a widget: the dialogs open without a parent
+	char *lpstrFile;			// path (in and out)
+	DWORD nMaxFile;
+	char *lpstrFileTitle;		// file name without its folder (out)
+	DWORD nMaxFileTitle;
+	const char *lpstrInitialDir;
+	const char *lpstrDefExt;
+	const char *lpstrFilter;	// Qt filter list: "Name (*.a *.b);;..."
+	DWORD nFilterIndex;			// selected filter, 1-based (out)
+	bool bOverwritePrompt;		// OFN_OVERWRITEPROMPT
+};
+
+bool FileDlgOpen(FileDlgSpec &ofn); // GetOpenFileNameA
+bool FileDlgSave(FileDlgSpec &ofn); // GetSaveFileNameA
 
 
 struct Position {
@@ -107,10 +124,10 @@ class ToolKit : public gcGUIApp, public oapi::Module
 
 public:
 
-				ToolKit(HINSTANCE hDLL);
+				ToolKit(void *hDLL);
 				~ToolKit();
 
-	bool		SaveFile(OPENFILENAMEA &SaveImage);
+	bool		SaveFile(FileDlgSpec &SaveImage);
 	void		Export();
 	void		ExportElev();
 	void		OpenImage(Layer::LayerType lr);
@@ -119,7 +136,7 @@ public:
 	bool		Initialize();
 	bool		IsLayerValid(Layer::LayerType lr);
 	void		SetupPlanet(OBJHANDLE hPln);
-	BOOL		DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	BOOL		DlgProc(QWidget *hDlg, WORD id, WORD code, void *lParam); // the WM_COMMAND of the dialogs and the property tree
 
 				// From gcGUIApp
 	void		clbkShutdown();
@@ -163,9 +180,9 @@ private:
 
 	sSelection			selection;
 	sSelection			oldsel;
-	OPENFILENAMEA		SaveImage;
-	OPENFILENAMEA		SaveDDS;
-	OPENFILENAMEA		SaveElevation;
+	FileDlgSpec			SaveImage;
+	FileDlgSpec			SaveDDS;
+	FileDlgSpec			SaveElevation;
 	char				SaveFileName[MAX_PATH];
 	char				SaveFileTitle[MAX_PATH];
 
@@ -200,13 +217,13 @@ private:
 
 	
 
-	HWND				hProgDlg;
+	QWidget				*hProgDlg;
 
-	HWND				hMainDlg;
-	HWND				hCtrlDlg;
-	HWND				hDataDlg;
-	HWND				hImpoDlg;
-	HWND				hAppMainWnd;
+	QWidget				*hMainDlg;
+	QWidget				*hCtrlDlg;
+	QWidget				*hDataDlg;
+	QWidget				*hImpoDlg;
+	QWindow				*hAppMainWnd;
 
 	HNODE				hRootNode;
 	HNODE				hMainNode;

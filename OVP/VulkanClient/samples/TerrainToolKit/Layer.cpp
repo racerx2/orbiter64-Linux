@@ -4,8 +4,7 @@
 // ==================================================================
 
 
-#include <Windows.h>
-#include <windowsx.h>
+// Windows.h, windowsx.h left out: the Win32 types come from OrbiterPlatform.h
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
@@ -14,7 +13,7 @@
 #include "resource.h"
 #include "gcPropertyTree.h"
 #include "QTree.h"
-#include <Commctrl.h>
+// Commctrl.h left out: the common controls are Qt widgets
 #include <vector>
 #include <list>
 

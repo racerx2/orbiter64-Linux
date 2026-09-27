@@ -21,7 +21,7 @@ class TRUE_MFD;
 
 // ========================================================================
 
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include "DrawAPI.h"
 
 using namespace oapi;
@@ -49,7 +49,7 @@ public:
 	bool		ConsumeButton (int bt, int event);
 	char *		ButtonLabel (int bt);
 	int			ButtonMenu (const MFDBUTTONMENU **menu) const;
-	void		Update (HDC hDC);
+	void		Update (QPainter *hDC);
 	bool		Update (Sketchpad *pSkp);
 	void		WriteStatus (FILEHANDLE scn) const;
 	void		ReadStatus (FILEHANDLE scn);
@@ -62,13 +62,13 @@ public:
 	// Call these functions from global InitModule and ExitModule callbacks for initialization and cleanup.
 	// Like:
 	// 
-	// DLLCLBK void ExitModule(HINSTANCE hDLL)
+	// DLLCLBK void ExitModule(void *hDLL)
 	// {
 	//		ShellMFD::ExitModule(hDLL);
 	// }
 	//
-	static void	InitModule(HINSTANCE hDLL);
-	static void ExitModule(HINSTANCE hDLL);
+	static void	InitModule(void *hDLL);
+	static void ExitModule(void *hDLL);
 	static OAPI_MSGTYPE MsgProc(UINT msg, UINT mfd, WPARAM wparam, LPARAM lparam);
 
 private:

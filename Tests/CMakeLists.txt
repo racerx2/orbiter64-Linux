@@ -69,8 +69,11 @@ function(add_unit_test test_name)
 endfunction()
 
 # Register unit tests
-# Lua.Interpreter waits for LuaInterpreter and the Orbiter exe (Phase 7)
-#add_test_file(Lua.Interpreter)
+add_test_file(Lua.Interpreter)
+# not upstream: LuaInterpreter.so imports the exe-side API (Orbiter.exe on Windows); functions bind lazily, the rest comes from test doubles
+target_sources(Lua.Interpreter PRIVATE Lua.Interpreter.Exe.cpp)
+set_target_properties(Lua.Interpreter PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(Lua.Interpreter PRIVATE -Wl,--unresolved-symbols=ignore-in-shared-libs)
 
 # not upstream: proves the Catch2/ctest harness builds and runs
 add_unit_test(Port.Harness)

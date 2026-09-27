@@ -4,14 +4,39 @@
 // ==================================================================
 
 #include "gcPropertyTree.h"
+#include "OrbiterResource.h"
 #include <sstream>
 #include <iomanip>
-#include <windowsx.h>
+// windowsx.h, CommCtrl.h left out: the child controls are Qt widgets
 #include <list>
-#include <CommCtrl.h>
 #include <locale>
 #include <codecvt>
+#include <cstring>
+#include <QApplication>
+#include <QBitmap>
+#include <QClipboard>
+#include <QComboBox>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QSignalBlocker>
+#include <QSlider>
 
+#define TB_THUMBTRACK 5 // not upstream: commctrl.h value, the code the tree sends for slider moves
+
+static QColor Colour(COLORREF c) { return QColor(GetRValue(c), GetGValue(c), GetBValue(c)); } // not upstream: COLORREF (0x00bbggrr) -> QColor
+
+static bool PtInRect(const RECT *r, POINT p) { return p.x >= r->left && p.x < r->right && p.y >= r->top && p.y < r->bottom; } // not upstream: winuser.h PtInRect
+
+// not upstream: TextOut (hDC, x, y, s) in a colour; GDI's y is the top of the text, QPainter's the baseline
+static void TextOut(QPainter *hDC, int x, int y, const QString &s, const QColor &c = Qt::black)
+{
+	QPen pen = hDC->pen();
+	hDC->setPen(c);
+	hDC->drawText(x, y + hDC->fontMetrics().ascent(), s);
+	hDC->setPen(pen);
+}
 
 list<gcPropertyTree *> g_gcPropertyTrees;
 std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
@@ -19,66 +44,75 @@ std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
 
 // ==================================================================================
 //
-LRESULT CALLBACK gcPropertyTreeProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+bool gcPropertyTreeProc(QWidget *hWnd, QEvent *e)
 {
 	for (gcPropertyTree * ptr : g_gcPropertyTrees)
-		if (ptr->GetHWND() == hWnd) return ptr->WndProc(hWnd, uMsg, wParam, lParam);
+		if (ptr->GetHWND() == hWnd) return ptr->WndProc(hWnd, e);
 
-	HWND hParent = GetParent(hWnd);
+	QWidget *hParent = hWnd->parentWidget();
 
 	if (hParent)
 		for (gcPropertyTree * ptr : g_gcPropertyTrees) 
-			if (ptr->GetHWND() == hParent) return ptr->WndProc(hWnd, uMsg, wParam, lParam);
+			if (ptr->GetHWND() == hParent) return ptr->WndProc(hWnd, e);
 	
-	return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	return false; // DefWindowProc
 }
 
 
+// not upstream: the window class "gcPropertyTreeCtrl" (WNDCLASS: window procedure, WHITE_BRUSH background)
+class gcPropertyTreeWnd: public QWidget {
+public:
+	gcPropertyTreeWnd (QWidget *parent): QWidget (parent) {
+		setAutoFillBackground (true); // hbrBackground
+		QPalette p = palette(); p.setColor (QPalette::Window, Qt::white); setPalette (p);
+		setFocusPolicy (Qt::ClickFocus); // SetFocus on a click, for the Ctrl-C key
+	}
+protected:
+	bool event (QEvent *e) override { return gcPropertyTreeProc (this, e) || QWidget::event (e); }
+};
 
-// ==================================================================================
-//
-void gcPropertyTreeInitialize(HINSTANCE hInst)
+static QWidget *gcPropertyTreeCtrl (const RESCONTROL *ctrl, QWidget *parent)
 {
-	WNDCLASS wc;
-	memset(&wc, 0, sizeof(WNDCLASS));
-	wc.style = CS_NOCLOSE | CS_OWNDC | CS_SAVEBITS;
-	wc.lpfnWndProc = gcPropertyTreeProc;
-	wc.hInstance = hInst;
-	wc.hCursor = LoadCursorA(NULL, MAKEINTRESOURCE(IDC_ARROW));
-	wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-	wc.lpszClassName = "gcPropertyTreeCtrl";
-	RegisterClass(&wc);
+	return new gcPropertyTreeWnd (parent);
 }
 
 
 // ==================================================================================
 //
-void gcPropertyTreeRelease(HINSTANCE hInst)
+void gcPropertyTreeInitialize(void *hInst)
 {
-	UnregisterClass("gcPropertyTree", hInst);
+	// WNDCLASS: CS_NOCLOSE, CS_OWNDC, CS_SAVEBITS and the arrow cursor have no Qt counterpart to set
+	oapiRegisterResControl(hInst, "gcPropertyTreeCtrl", gcPropertyTreeCtrl);
 }
 
 
 // ==================================================================================
 //
-gcPropertyTree::gcPropertyTree(gcGUIApp *_pApp, HWND _hWnd, WORD _idc, DLGPROC pCall, HFONT hFnt, HINSTANCE _hInst) : alloc_id('gcTV')
+void gcPropertyTreeRelease(void *hInst)
+{
+	oapiUnregisterResControl(hInst, "gcPropertyTreeCtrl"); // upstream unregistered "gcPropertyTree", which never existed
+}
+
+
+// ==================================================================================
+//
+gcPropertyTree::gcPropertyTree(gcGUIApp *_pApp, QWidget *_hWnd, WORD _idc, GCPROPCLBK pCall, QFont *hFnt, void *_hInst) : alloc_id('gcTV')
 {
 	pApp = _pApp;
 	pCore = gcGetCoreInterface();
 
-	InitCommonControls();
+	// InitCommonControls left out: the common controls are Qt widgets
 	g_gcPropertyTrees.push_back(this);
 	idc = _idc;
-	hWnd = GetDlgItem(_hWnd, idc);
+	hWnd = oapiResDlgItem(_hWnd, idc);
 	hDlg = _hWnd;
 	hInst = _hInst;
 	pCallback = pCall;
 	hBuf = NULL;
 	pSelected = NULL;
 	hBM = NULL;
-	hSr = NULL;
 
-	hIcons = pCore->LoadBitmapFromFile("D3D9\\Icons18.png");
+	hIcons = pCore->LoadBitmapFromFile("D3D9/Icons18.png");
 
 	if (!hIcons) {
 		oapiWriteLog((char*)"gcPropertyTree: FAILED to load Textures/D3D9/Icons18.png");
@@ -87,29 +121,27 @@ gcPropertyTree::gcPropertyTree(gcGUIApp *_pApp, HWND _hWnd, WORD _idc, DLGPROC p
 		oapiWriteLog((char*)"gcPropertyTree: No core interface !!");
 	}
 
-	DWORD style = GetWindowLong(hWnd, GWL_STYLE);
-	SetWindowLong(hWnd, GWL_STYLE, style | WS_CLIPCHILDREN);
-	SetWindowLong(hWnd, GWL_EXSTYLE, WS_EX_STATICEDGE | WS_EX_CONTROLPARENT);
-	SetWindowLongPtrA(hWnd, GWLP_USERDATA, (LONG_PTR)this);
+	// WS_CLIPCHILDREN: Qt widgets don't paint over their children; WS_EX_STATICEDGE, WS_EX_CONTROLPARENT left out (no edge, Qt handles tab focus)
+	hWnd->setProperty("GWLP_USERDATA", QVariant::fromValue((void*)this));
 
-	hBr0 = CreateSolidBrush(0xFFFFFF);
-	hBr1 = CreateSolidBrush(0xF0F0F0);
-	hBr2 = CreateSolidBrush(0xFFFFFF);
-	hBrTit[0] = CreateSolidBrush(0xDDFFFF);
-	hBrTit[1] = CreateSolidBrush(0xDDFFDD);
-	hBrTit[2] = CreateSolidBrush(0xFFFFBB);
-	hBr4 = CreateSolidBrush(0xAAFFFF);
-	hPen = CreatePen(PS_SOLID, 1, 0x808080);
+	hBr0 = new QBrush(Colour(0xFFFFFF)); // CreateSolidBrush
+	hBr1 = new QBrush(Colour(0xF0F0F0));
+	hBr2 = new QBrush(Colour(0xFFFFFF));
+	hBrTit[0] = new QBrush(Colour(0xDDFFFF));
+	hBrTit[1] = new QBrush(Colour(0xDDFFDD));
+	hBrTit[2] = new QBrush(Colour(0xFFFFBB));
+	hBr4 = new QBrush(Colour(0xAAFFFF));
+	hPen = new QPen(Colour(0x808080), 0); // CreatePen (PS_SOLID, 1)
 	hFont = hFnt;
 
 	RECT wc, wd, cr;
-	GetWindowRect(hWnd, &wc);
-	GetWindowRect(hDlg, &wd);
+	QRect g = hWnd->geometry(); // GetWindowRect, in the dialog's coordinates
+	wc = { g.left(), g.top(), g.left() + g.width(), g.top() + g.height() };
+	wd = { 0, 0, hDlg->width(), hDlg->height() };
 	
-	HWND hCB = CreateComboBox(0);
-	SetWindowPos(hCB, NULL, 0, 0, 100, 5, 0);
-	GetWindowRect(hCB, &cr);
-	DestroyWindow(hCB);
+	QWidget *hCB = CreateComboBox(0);
+	cr = { 0, 0, 100, hCB->sizeHint().height() }; // SetWindowPos (100 x 5): a combo box keeps its own height
+	delete hCB; // DestroyWindow
 
 	// Compute Margins
 	wmrg = ((wd.right - wd.left) - (wc.right - wc.left)) / 2;
@@ -128,24 +160,23 @@ gcPropertyTree::~gcPropertyTree()
 
 	for (HPROP hp : Data)
 	{
-		if (hp->hCtrl) DestroyWindow(hp->hCtrl);
+		if (hp->hCtrl) delete hp->hCtrl; // DestroyWindow
 		if (hp->pSlider) delete hp->pSlider;
 		delete hp;
 	}
 
-	if (hBM) DeleteDC(hBM);
-	if (hSr) DeleteDC(hSr);
-	if (hBuf) DeleteObject(hBuf);
+	// DeleteDC (hBM, hSr): the memory DC lives only during Paint
+	if (hBuf) delete hBuf;
 
-	DeleteObject(hIcons);
-	DeleteObject(hBr0);
-	DeleteObject(hBr1);
-	DeleteObject(hBr2);
-	DeleteObject(hBr4);
-	DeleteObject(hPen);
-	DeleteObject(hBrTit[0]);
-	DeleteObject(hBrTit[1]);
-	DeleteObject(hBrTit[2]);
+	delete hIcons;
+	delete hBr0;
+	delete hBr1;
+	delete hBr2;
+	delete hBr4;
+	delete hPen;
+	delete hBrTit[0];
+	delete hBrTit[1];
+	delete hBrTit[2];
 }
 
 
@@ -154,24 +185,8 @@ gcPropertyTree::~gcPropertyTree()
 void gcPropertyTree::CopyToClipboard()
 {	
 	if (!pSelected) return;
-	if (OpenClipboard(hWnd)) {
-		EmptyClipboard();
-		HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, pSelected->val.size() + 2);
-		if (hData) {
-			char *pText = (char *)GlobalLock(hData);
-			if (pText) {
-				int i = 0;
-				while (true) {
-					pText[i] = pSelected->val[i];
-					if (pText[i] == 0) break;
-					i++;
-				}
-				GlobalUnlock(hData);
-				SetClipboardData(CF_TEXT, hData);
-			}
-		}
-		CloseClipboard();
-	}
+	// OpenClipboard, EmptyClipboard, GlobalAlloc, SetClipboardData (CF_TEXT), CloseClipboard
+	QApplication::clipboard()->setText(QString::fromUtf8(pSelected->val.c_str()));
 	return;
 }
 
@@ -187,7 +202,7 @@ void gcPropertyTree::CloseTree(HPROP hPar)
 			else if (hp->hCtrl) {
 				hp->oldx = 65536;
 				hp->oldy = 65536;
-				ShowWindow(hp->hCtrl, SW_HIDE);
+				hp->hCtrl->hide();
 			}
 		}
 	}
@@ -195,86 +210,77 @@ void gcPropertyTree::CloseTree(HPROP hPar)
 
 // ==================================================================================
 //
-LRESULT gcPropertyTree::WndProc(HWND hCtrl, UINT uMsg, WPARAM wParam, LPARAM lParam)
+// not upstream: the WM_HSCROLL / WM_COMMAND part of WndProc, called by the child controls' Qt signals (see Create*)
+void gcPropertyTree::CtrlNotify(QWidget *hCtrl, WORD code)
 {
 
 	// Post Slider Messages to Main DlgProc
 	//
-	if (uMsg == WM_HSCROLL || uMsg == WM_COMMAND) {
 		for (HPROP hp : Data)	{
 			if (hp->style != Style::SLIDER) continue;
-			if (hp->hCtrl != HWND(lParam)) continue;
+			if (hp->hCtrl != hCtrl) continue;
 			if (hp->pSlider) {
-				if (uMsg == WM_COMMAND) {
-					if (LOWORD(wParam) == hp->idc) {
-						if (HIWORD(wParam) == EN_SETFOCUS || HIWORD(wParam) == EN_KILLFOCUS) {
-							if (pCallback) pCallback(hDlg, WM_COMMAND, MAKELONG(hp->idc, HIWORD(wParam)), LPARAM(hp));
-						}
-						return 1;
-					}
-				}
-				if (uMsg == WM_HSCROLL) {
-					switch (LOWORD(wParam)) {
-					case TB_THUMBTRACK:
-					case TB_THUMBPOSITION:
-					case TB_PAGEUP:
-					case TB_PAGEDOWN:
-						WORD pos = WORD(SendMessage(hp->hCtrl, TBM_GETPOS, 0, 0));
+				// WM_COMMAND EN_SETFOCUS/EN_KILLFOCUS of a slider left out: trackbars don't send them
+				// WM_HSCROLL TB_THUMBTRACK, TB_THUMBPOSITION, TB_PAGEUP, TB_PAGEDOWN: the slider's valueChanged
+					{
+						WORD pos = WORD(qobject_cast<QSlider*>(hp->hCtrl)->value()); // TBM_GETPOS
 						hp->pSlider->lin_pos = (double(pos) / 1000.0);
-						if (pCallback) pCallback(hDlg, WM_COMMAND, MAKELONG(hp->idc, TB_THUMBTRACK), LPARAM(hp));
-						break;
+						if (pCallback) pCallback(hDlg, hp->idc, TB_THUMBTRACK, hp);
 					}
-					return 1;
-				}
+					return;
 			}
 		}
-	}
 
 
 	// Post Edit and ComboBox Messages to Main DlgProc
 	//
-	if (uMsg == WM_COMMAND) {
 		for (HPROP hp : Data)	{
 			if (hp->style == Style::TEXTBOX || hp->style == Style::COMBOBOX) {
-				if (hp->hCtrl == HWND(lParam) && hp->hCtrl != NULL)	{
-					if (pCallback) pCallback(hDlg, WM_COMMAND, MAKELONG(hp->idc, HIWORD(wParam)), LPARAM(hp));
+				if (hp->hCtrl == hCtrl && hp->hCtrl != NULL)	{
+					if (pCallback) pCallback(hDlg, hp->idc, code, hp);
 				}
 			}
 		}
-	}
+}
 
+bool gcPropertyTree::WndProc(QWidget *hCtrl, QEvent *e)
+{
+	// WM_HSCROLL, WM_COMMAND of the child controls: CtrlNotify above
 
 	// Process gcPropertyTree related stuff
 	//
-	switch (uMsg) {
+	switch (e->type()) {
 
-	case WM_KEYDOWN:
+	case QEvent::KeyPress: // WM_KEYDOWN
 	{
-		if (wParam == 0x43 && GetKeyState(VK_CONTROL) < 0) CopyToClipboard();
+		QKeyEvent *k = static_cast<QKeyEvent*>(e);
+		if (k->key() == Qt::Key_C && (k->modifiers() & Qt::ControlModifier)) CopyToClipboard();
 		break;
 	}
 
-	case WM_KILLFOCUS:
+	case QEvent::FocusOut: // WM_KILLFOCUS
 	{
 		pSelected = NULL;
-		InvalidateRect(hWnd, NULL, false);
+		hWnd->update(); // InvalidateRect
 		break;
 	}
 
-	case WM_MOUSEWHEEL:
+	case QEvent::Wheel: // WM_MOUSEWHEEL
 		break;
 
-	case WM_LBUTTONDOWN:
+	case QEvent::MouseButtonPress: // WM_LBUTTONDOWN
 	{
-		POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		QMouseEvent *m = static_cast<QMouseEvent*>(e);
+		if (m->button() != Qt::LeftButton) break;
+		POINT pt = { LONG(m->position().x()), LONG(m->position().y()) };
 		for (HPROP hp : Data) {
 			if (PtInRect(&hp->rect, pt) && hp->bVisible) {
 				pDown = hp;
 				if (hp->bChildren == false && hp->hCtrl == NULL) {
 					pSelected = hp;
-					SetFocus(hWnd);
-					InvalidateRect(hWnd, NULL, false);
-					if (pCallback) pCallback(hDlg, WM_COMMAND, MAKELONG(idc, GCGUI_MSG_SELECTED), LPARAM(pSelected));
+					hWnd->setFocus(); // SetFocus
+					hWnd->update(); // InvalidateRect
+					if (pCallback) pCallback(hDlg, idc, GCGUI_MSG_SELECTED, pSelected);
 				}
 				break;
 			}
@@ -282,9 +288,11 @@ LRESULT gcPropertyTree::WndProc(HWND hCtrl, UINT uMsg, WPARAM wParam, LPARAM lPa
 		break;
 	}
 
-	case WM_LBUTTONUP:
+	case QEvent::MouseButtonRelease: // WM_LBUTTONUP
 	{
-		POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };	
+		QMouseEvent *m = static_cast<QMouseEvent*>(e);
+		if (m->button() != Qt::LeftButton) break;
+		POINT pt = { LONG(m->position().x()), LONG(m->position().y()) };
 		if (pDown) {
 			if (PtInRect(&pDown->rect, pt)) {
 				pDown->bOpen = !pDown->bOpen;
@@ -295,35 +303,27 @@ LRESULT gcPropertyTree::WndProc(HWND hCtrl, UINT uMsg, WPARAM wParam, LPARAM lPa
 		break;
 	}
 
-	case WM_MOUSELEAVE:
-	{
-		pSelected = NULL;
-		InvalidateRect(hWnd, NULL, false);
-		break;
-	}
+	// WM_MOUSELEAVE left out: Win32 sends it only after TrackMouseEvent, which is never called here
 
-	case WM_MOUSEMOVE:
+	case QEvent::MouseMove: // WM_MOUSEMOVE
 	{
 		break;
 	}
 
-	case WM_PAINT:
+	case QEvent::Paint: // WM_PAINT
 	{
-		PAINTSTRUCT ps;
-		HDC hDC = BeginPaint(hWnd, &ps);
-		Paint(hDC);
-		EndPaint(hWnd, &ps);
-		break;
+		QPainter hDC(hWnd); // BeginPaint
+		Paint(&hDC);
+		return true; // EndPaint
 	}
 
-	case WM_ERASEBKGND:
-		return 1;
+	// WM_ERASEBKGND: Paint covers the whole window from its buffer
 
 	default:
 		break;
 	}
 
-	return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	return false; // DefWindowProc
 }
 
 
@@ -337,61 +337,57 @@ void gcPropertyTree::PaintIcon(int x, int y, int id)
 	if (hIcons) {
 
 		DWORD ck = 0, sx = 0;
-		BITMAP ic;
-		GetObject(hIcons, sizeof(BITMAP), &ic);
+		QSize ic = hIcons->size(); // GetObject (BITMAP)
 
 		switch (id) {
-		case 0:	sx = ic.bmHeight * 0; ck = yell; break;
-		case 1: sx = ic.bmHeight * 1; ck = mang; break;
-		case 2: sx = ic.bmHeight * 2; ck = yell; break;
-		case 3: sx = ic.bmHeight * 3; ck = mang; break;
+		case 0:	sx = ic.height() * 0; ck = yell; break;
+		case 1: sx = ic.height() * 1; ck = mang; break;
+		case 2: sx = ic.height() * 2; ck = yell; break;
+		case 3: sx = ic.height() * 3; ck = mang; break;
 		}
 
-		SelectObject(hSr, hIcons);
-		int yo = (hlbl - ic.bmHeight) / 2;
-		TransparentBlt(hBM, x, y + yo, ic.bmHeight, ic.bmHeight, hSr, sx, 0, ic.bmHeight, ic.bmHeight, ck);
+		int yo = (hlbl - ic.height()) / 2;
+		// TransparentBlt: the icon with its key colour masked out
+		QPixmap icon = QPixmap::fromImage(hIcons->copy(sx, 0, ic.height(), ic.height()));
+		icon.setMask(QBitmap::fromImage(hIcons->copy(sx, 0, ic.height(), ic.height()).createMaskFromColor(Colour(ck).rgb(), Qt::MaskInColor)));
+		hBM->drawPixmap(x, y + yo, icon);
 	}
 }
 
 // ==================================================================================
 //
-void gcPropertyTree::Paint(HDC _hDC)
+void gcPropertyTree::Paint(QPainter *_hDC)
 {
 	RECT wr; SIZE size;
 
-	if (!hBM) hBM = CreateCompatibleDC(_hDC);
-	if (!hSr) hSr = CreateCompatibleDC(_hDC);
-
-	SetTextAlign(hBM, TA_TOP | TA_LEFT);
-	SetTextColor(hBM, 0);
-	SetBkMode(hBM, TRANSPARENT);
-	SelectObject(hBM, hFont);
-	SelectObject(hBM, hPen);
-
-	GetWindowRect(hWnd, &wr);
+	wr = { 0, 0, hWnd->width(), hWnd->height() }; // GetWindowRect
 
 	int w = wr.right - wr.left;
 	int h = wr.bottom - wr.top;
 
-	BITMAP ic;
-	GetObject(hIcons, sizeof(BITMAP), &ic);
+	QSize ic = hIcons ? hIcons->size() : QSize(0, 0); // GetObject (BITMAP)
 
 	if (hBuf) {
-		BITMAP bm;
-		GetObject(hBuf, sizeof(BITMAP), &bm);
-		if (bm.bmHeight != h) {
-			DeleteObject(hBuf);
+		if (hBuf->height() != h) {
+			delete hBuf;
 			hBuf = NULL;
 		}
 	}
 
 	if (!hBuf) {
-		hBuf = CreateCompatibleBitmap(_hDC, w, h);
-		SelectObject(hBM, hBuf);
+		hBuf = new QImage(w, h, QImage::Format_RGB32); // CreateCompatibleBitmap
+		QPainter bm(hBuf);
 		RECT rect = { 0, 0, w, h };
-		FillRect(hBM, &rect, hBr1);
+		bm.fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, *hBr1); // FillRect
 	}
-	else SelectObject(hBM, hBuf);
+
+	QPainter bm(hBuf); // CreateCompatibleDC, SelectObject: the memory DC, for this paint
+	hBM = &bm;
+
+	// SetTextAlign (TA_TOP | TA_LEFT): TextOut below adds the ascent; SetTextColor 0
+	hBM->setBackgroundMode(Qt::TransparentMode); // SetBkMode TRANSPARENT
+	hBM->setFont(*hFont);
+	hBM->setPen(*hPen);
 	
 	wlbl = 0;
 
@@ -399,9 +395,10 @@ void gcPropertyTree::Paint(HDC _hDC)
 	{
 		hp->bVisible = false;
 
-		if (GetTextExtentExPointA(hBM, hp->label.c_str(), hp->label.size(), 100000, NULL, NULL, &size)) {
+		{	// GetTextExtentExPointA
+			size.cx = hBM->fontMetrics().horizontalAdvance(QString::fromLatin1(hp->label.c_str(), hp->label.size()));
 			if (hp->bChildren) {
-				if (hp->val.size() != 0) size.cx += ic.bmHeight;
+				if (hp->val.size() != 0) size.cx += ic.height();
 				else size.cx = 0;
 			} 
 			if (size.cx > wlbl) wlbl = size.cx;
@@ -411,20 +408,15 @@ void gcPropertyTree::Paint(HDC _hDC)
 	wlbl += 8*3;
 	bOdd = false;
 
-	HRGN hRgn = CreateRectRgn(0, 0, w, h);
-	SelectClipRgn(_hDC, hRgn);
+	// CreateRectRgn, SelectClipRgn: the widget's painter clips to it already
 
 	int y = PaintSection(_hDC, NULL, 0, wlbl, 0, 0);
+	bm.end();
+	hBM = NULL;
 	
-	if (!BitBlt(_hDC, 0, 0, w, h, hBM, 0, 0, SRCCOPY))
-	{
-		oapiWriteLogV("gcPropertyTree: BitBlt Failed Error=%u", GetLastError());
-	}
+	_hDC->drawImage(0, 0, *hBuf); // BitBlt
 
-	for (HPROP hp : Data)	if (hp->bVisible) if (hp->hCtrl) InvalidateRect(hp->hCtrl, NULL, false);
-	
-	SelectClipRgn(_hDC, NULL);
-	DeleteObject(hRgn);
+	for (HPROP hp : Data)	if (hp->bVisible) if (hp->hCtrl) hp->hCtrl->update(); // InvalidateRect
 }
 
 // ==================================================================================
@@ -439,16 +431,15 @@ bool gcPropertyTree::HasMoved(HPROP hP, int x, int y)
 
 // ==================================================================================
 //
-int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int y, int lvl)
+int gcPropertyTree::PaintSection(QPainter *_hDC, HPROP hPar, int ident, int wlbl, int y, int lvl)
 {
 
 	RECT wr;
-	GetWindowRect(hWnd, &wr);
+	wr = { 0, 0, hWnd->width(), hWnd->height() }; // GetWindowRect
 
 	int w = wr.right - wr.left;
 	
-	BITMAP ic;
-	GetObject(hIcons, sizeof(BITMAP), &ic);
+	QSize ic = hIcons ? hIcons->size() : QSize(0, 0); // GetObject (BITMAP)
 
 	for (HPROP hp : Data)
 	{
@@ -464,22 +455,20 @@ int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int 
 
 		hp->rect = rect;
 
-		HBRUSH hSel = 0;
+		QBrush *hSel = 0;
 		if (bOdd) hSel = hBr0;
 		else	  hSel = hBr1;
 		if (pSelected == hp) hSel = hBr4;
 
 		bOdd = !bOdd;
 
-		if (hp->bChildren) FillRect(hBM, &rect, hBrTit[lvl%3]);
-		else FillRect(hBM, &rect, hSel);
+		if (hp->bChildren) hBM->fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, *hBrTit[lvl%3]); // FillRect
+		else hBM->fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, *hSel);
 
-		MoveToEx(hBM, ident, y + hlbl - 1, NULL);
-		LineTo(hBM, w, y + hlbl - 1);
+		hBM->drawLine(ident, y + hlbl - 1, w, y + hlbl - 1); // MoveToEx, LineTo
 
 		if (hp->bChildren == false || hp->val.size() > 0) {
-			MoveToEx(hBM, wlbl, y, NULL);
-			LineTo(hBM, wlbl, y + hlbl);
+			hBM->drawLine(wlbl, y, wlbl, y + hlbl);
 		}
 
 		// Title bar for a sub section
@@ -488,30 +477,30 @@ int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int 
 			if (hp->bOpen) PaintIcon(ident, y - 1, 0);
 			else PaintIcon(ident, y - 1, 1);
 
-			TextOut(hBM, ident + ic.bmHeight + n/2, y + z, hp->label.c_str(), hp->label.size());
-			TextOut(hBM, wlbl + n, y + z, hp->val.c_str(), hp->val.size());
+			TextOut(hBM, ident + ic.height() + n/2, y + z, QString::fromLatin1(hp->label.c_str(), hp->label.size()));
+			TextOut(hBM, wlbl + n, y + z, QString::fromLatin1(hp->val.c_str(), hp->val.size()));
 
 			y += hlbl;
 
 			if (hp->bOpen) {
 				int slen = GetSubsentionLength(hp);
-				SelectObject(hBM, hBr4);
-				Rectangle(hBM, ident - 1, y - 1, ident + 4, y + slen);
+				hBM->setBrush(*hBr4); // SelectObject
+				hBM->drawRect(ident - 1, y - 1, (ident + 4) - (ident - 1) - 1, (y + slen) - (y - 1) - 1); // Rectangle
 				y = PaintSection(_hDC, hp, ident + 4, wlbl, y, lvl + 1);
 			}
 
 			continue;
 		}
 		
-		TextOut(hBM, n + ident, y + z, hp->label.c_str(), hp->label.size());
+		TextOut(hBM, n + ident, y + z, QString::fromLatin1(hp->label.c_str(), hp->label.size()));
 
 		if (!hp->hCtrl) {
-			wstring ws = converter.from_bytes(hp->val);
-			SetTextColor(hBM, hp->color);
-			TextOutW(hBM, wlbl + n, y + z, ws.c_str(), hp->val.size());
-			SetTextColor(hBM, 0);
+			QString ws = QString::fromUtf8(hp->val.c_str()); // converter.from_bytes
+			TextOut(hBM, wlbl + n, y + z, ws, Colour(hp->color)); // SetTextColor, TextOutW, SetTextColor 0
 		}
 		else {
+
+			// ExcludeClipRect below left out: the child controls are painted over the tree anyway
 
 			// Textbox
 			if (hp->style == Style::TEXTBOX) {
@@ -520,9 +509,8 @@ int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int 
 				int r = w - 1;
 				int b = y + hlbl - 2;
 				RECT re = { wlbl + 1, y, w, y + hlbl - 1 };
-				FillRect(hBM, &re, hBr2);
-				ExcludeClipRect(_hDC, l, t, r, b);
-				if (HasMoved(hp, l, t))	SetWindowPos(hp->hCtrl, NULL, l, t, r - l, b - t, SWP_SHOWWINDOW);
+				hBM->fillRect(re.left, re.top, re.right - re.left, re.bottom - re.top, *hBr2);
+				if (HasMoved(hp, l, t))	{ hp->hCtrl->setGeometry(l, t, r - l, b - t); hp->hCtrl->show(); } // SetWindowPos SWP_SHOWWINDOW
 			}
 
 			// Combobox
@@ -531,8 +519,7 @@ int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int 
 				int t = y - 1;
 				int r = w - 1;
 				int b = y + hlbl;
-				ExcludeClipRect(_hDC, l, t, r, b);
-				if (HasMoved(hp, l, t))	SetWindowPos(hp->hCtrl, NULL, l, t, r - l, b - t, SWP_SHOWWINDOW);
+				if (HasMoved(hp, l, t))	{ hp->hCtrl->setGeometry(l, t, r - l, b - t); hp->hCtrl->show(); }
 			}
 
 			// Slider
@@ -541,8 +528,7 @@ int gcPropertyTree::PaintSection(HDC _hDC, HPROP hPar, int ident, int wlbl, int 
 				int t = y;
 				int r = w - 2;
 				int b = y + hlbl - 1;
-				ExcludeClipRect(_hDC, l, t, r, b);
-				if (HasMoved(hp, l, t))	SetWindowPos(hp->hCtrl, NULL, l, t, r - l, b - t, SWP_SHOWWINDOW);
+				if (HasMoved(hp, l, t))	{ hp->hCtrl->setGeometry(l, t, r - l, b - t); hp->hCtrl->show(); }
 			}
 		}
 
@@ -576,71 +562,79 @@ int gcPropertyTree::GetSubsentionLength(HPROP hPar)
 void gcPropertyTree::Update()
 {
 	RECT wd;
-	GetWindowRect(hDlg, &wd);
+	wd = { 0, 0, hDlg->width(), hDlg->height() }; // GetWindowRect
 	int w = (wd.right - wd.left);
 	int h = GetSubsentionLength(NULL);
 	
 	if (h != len) {
-		SetWindowPos(hDlg, NULL, 0, 0, w, h + tmrg + bmrg, SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
-		SetWindowPos(hWnd, NULL, wmrg, tmrg, w - wmrg * 2, h, SWP_NOZORDER | SWP_SHOWWINDOW);
+		hDlg->resize(w, h + tmrg + bmrg); hDlg->show(); // SetWindowPos (SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW)
+		hWnd->setGeometry(wmrg, tmrg, w - wmrg * 2, h); hWnd->show(); // SetWindowPos (SWP_NOZORDER | SWP_SHOWWINDOW)
 		pApp->UpdateSize(hDlg);
 		len = h;
 	}
 
-	InvalidateRect(hWnd, NULL, true);
+	hWnd->update(); // InvalidateRect
 }
 
 
 // ==================================================================================
 //
-HWND gcPropertyTree::GetHWND() const 
+QWidget *gcPropertyTree::GetHWND() const 
 { 
 	return hWnd;
 }
 
 
-// ==================================================================================
-//
-LRESULT gcPropertyTree::SendCtrlMessage(HPROP hCtrl, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	if (hCtrl) if (hCtrl->hCtrl) return SendMessageA(hCtrl->hCtrl, uMsg, wParam, lParam);
-	return 0;
-}
+// SendCtrlMessage left out: raw window messages to the child controls (see gcPropertyTree.h)
 
 
 // ==================================================================================
 //
-HWND gcPropertyTree::CreateEditControl(WORD id, bool bReadOnly)
+QWidget *gcPropertyTree::CreateEditControl(WORD id, bool bReadOnly)
 {
-	DWORD dwStyle = WS_CHILD | WS_VISIBLE;
-	if (bReadOnly) dwStyle |= ES_READONLY;
-	HWND hEdit = CreateWindowExA(0, "EDIT", NULL, dwStyle,
-		0, 0, 0, 0, hWnd, (HMENU)id, (HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), NULL);
-	SendMessageA(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
+	QLineEdit *hEdit = new QLineEdit(hWnd); // CreateWindowExA "EDIT", WS_CHILD | WS_VISIBLE
+	hEdit->setReadOnly(bReadOnly); // ES_READONLY
+	hEdit->setFrame(false);
+	hEdit->setProperty("resId", id); // HMENU id
+	hEdit->setFont(*hFont); // WM_SETFONT
+	hEdit->setGeometry(0, 0, 0, 0);
+	hEdit->show();
+	// WM_COMMAND EN_CHANGE, EN_KILLFOCUS to the parent: CtrlNotify
+	QObject::connect(hEdit, &QLineEdit::textChanged, hWnd, [this, hEdit]() { CtrlNotify(hEdit, RESN_CHANGE); });
+	QObject::connect(hEdit, &QLineEdit::editingFinished, hWnd, [this, hEdit]() { CtrlNotify(hEdit, RESN_KILLFOCUS); });
 	return hEdit;
 }
 
 
 // ==================================================================================
 //
-HWND gcPropertyTree::CreateComboBox(WORD id)
+QWidget *gcPropertyTree::CreateComboBox(WORD id)
 {
-	DWORD dwStyle = WS_CHILD | WS_VISIBLE | CBS_DROPDOWN;
-	HWND hEdit = CreateWindowExA(WS_EX_TRANSPARENT | WS_EX_CLIENTEDGE, "COMBOBOX", NULL, dwStyle,
-		0, 0, 0, 0, hWnd, (HMENU)id, (HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), NULL);
-	SendMessageA(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
+	QComboBox *hEdit = new QComboBox(hWnd); // CreateWindowExA "COMBOBOX", WS_CHILD | WS_VISIBLE | CBS_DROPDOWN
+	hEdit->setEditable(true);
+	hEdit->setProperty("resId", id); // HMENU id
+	hEdit->setFont(*hFont); // WM_SETFONT
+	hEdit->setGeometry(0, 0, 0, 0);
+	hEdit->show();
+	// WM_COMMAND CBN_SELCHANGE, CBN_EDITCHANGE to the parent: CtrlNotify
+	QObject::connect(hEdit, &QComboBox::activated, hWnd, [this, hEdit]() { CtrlNotify(hEdit, RESN_SELCHANGE); });
+	QObject::connect(hEdit, &QComboBox::editTextChanged, hWnd, [this, hEdit]() { CtrlNotify(hEdit, RESN_EDITCHANGE); });
 	return hEdit;
 }
 
 
 // ==================================================================================
 //
-HWND gcPropertyTree::CreateSlider(WORD id)
+QWidget *gcPropertyTree::CreateSlider(WORD id)
 {
-	DWORD dwStyle = WS_CHILD | WS_VISIBLE | TBS_NOTICKS | TBS_TRANSPARENTBKGND | TBS_BOTH;
-	HWND hEdit = CreateWindowExA(WS_EX_TRANSPARENT, TRACKBAR_CLASS, NULL, dwStyle,
-		0, 0, 0, 0, hWnd, (HMENU)id, (HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), NULL);
-	SendMessage(hEdit, TBM_SETRANGE, (WPARAM)TRUE, (LPARAM)MAKELONG(0, 1000));
+	QSlider *hEdit = new QSlider(Qt::Horizontal, hWnd); // CreateWindowExA TRACKBAR_CLASS, WS_CHILD | WS_VISIBLE | TBS_NOTICKS | TBS_BOTH
+	hEdit->setTickPosition(QSlider::NoTicks);
+	hEdit->setProperty("resId", id); // HMENU id
+	hEdit->setRange(0, 1000); // TBM_SETRANGE
+	hEdit->setGeometry(0, 0, 0, 0);
+	hEdit->show();
+	// WM_HSCROLL to the parent: CtrlNotify (TBM_SETPOS blocks the signal, as it doesn't notify)
+	QObject::connect(hEdit, &QSlider::valueChanged, hWnd, [this, hEdit]() { CtrlNotify(hEdit, TB_THUMBTRACK); });
 	return hEdit;
 }
 
@@ -729,7 +723,7 @@ HPROP gcPropertyTree::GetEntry(int idx)
 
 // ==================================================================================
 //
-HPROP gcPropertyTree::GetEntry(HWND hCtrl)
+HPROP gcPropertyTree::GetEntry(QWidget *hCtrl)
 {
 	if (hCtrl == NULL) return NULL;
 	for (HPROP hp : Data) if (hp->hCtrl == hCtrl) return hp;
@@ -745,7 +739,7 @@ void* gcPropertyTree::GetUserRef(HPROP hEntry)
 
 // ==================================================================================
 //
-HWND gcPropertyTree::GetControl(HPROP hEntry)
+QWidget *gcPropertyTree::GetControl(HPROP hEntry)
 {
 	if (hEntry) return hEntry->hCtrl;
 	return NULL;
@@ -856,7 +850,8 @@ void gcPropertyTree::SetSliderValue(HPROP hSlider, double val)
 		if (pSl->scl == Scale::LINEAR) pSl->lin_pos = lin;
 		if (pSl->scl == Scale::SQRT) pSl->lin_pos = lin*lin;
 		if (pSl->scl == Scale::SQUARE) pSl->lin_pos = sqrt(lin);
-		SendMessageA(hSlider->hCtrl, TBM_SETPOS, 1, WORD(pSl->lin_pos*1000.0));
+		QSignalBlocker block(hSlider->hCtrl); // TBM_SETPOS doesn't notify
+		qobject_cast<QSlider*>(hSlider->hCtrl)->setValue(WORD(pSl->lin_pos*1000.0));
 	}
 }
 
@@ -880,7 +875,7 @@ string gcPropertyTree::GetTextBoxContent(HPROP hTextBox)
 {
 	if (hTextBox->style != Style::TEXTBOX) return string();
 	if (!hTextBox->hCtrl) return string();
-	GetWindowTextA(hTextBox->hCtrl, buffer, sizeof(buffer));
+	oapiGetDlgText(hTextBox->hCtrl, buffer, sizeof(buffer)); // GetWindowTextA
 	return string(buffer);
 }
 
@@ -890,7 +885,7 @@ void gcPropertyTree::SetTextBoxContent(HPROP hTextBox, string text)
 {
 	if (hTextBox->style != Style::TEXTBOX) return;
 	if (!hTextBox->hCtrl) return;
-	SetWindowTextA(hTextBox->hCtrl, text.c_str());
+	oapiSetDlgText(hTextBox->hCtrl, text.c_str()); // SetWindowTextA
 }
 
 // ==================================================================================
@@ -899,7 +894,8 @@ void gcPropertyTree::SetComboBoxSelection(HPROP hCombo, int idx)
 {
 	if (hCombo->style != Style::COMBOBOX) return;
 	if (!hCombo->hCtrl) return;
-	SendMessage(hCombo->hCtrl, CB_SETCURSEL, idx, 0);
+	QSignalBlocker block(hCombo->hCtrl); // CB_SETCURSEL doesn't notify
+	qobject_cast<QComboBox*>(hCombo->hCtrl)->setCurrentIndex(idx);
 }
 
 // ==================================================================================
@@ -908,7 +904,7 @@ int	gcPropertyTree::GetComboBoxSelection(HPROP hCombo)
 {
 	if (hCombo->style != Style::COMBOBOX) return 0;
 	if (!hCombo->hCtrl) return 0;
-	return int(SendMessage(hCombo->hCtrl, CB_GETCURSEL, 0, 0));
+	return qobject_cast<QComboBox*>(hCombo->hCtrl)->currentIndex(); // CB_GETCURSEL
 }
 
 // ==================================================================================
@@ -917,7 +913,8 @@ void gcPropertyTree::ClearComboBox(HPROP hCombo)
 {
 	if (hCombo->style != Style::COMBOBOX) return;
 	if (!hCombo->hCtrl) return;
-	SendMessage(hCombo->hCtrl, CB_RESETCONTENT, 0, 0);
+	QSignalBlocker block(hCombo->hCtrl); // CB_RESETCONTENT doesn't notify
+	qobject_cast<QComboBox*>(hCombo->hCtrl)->clear();
 }
 
 // ==================================================================================
@@ -926,6 +923,7 @@ int gcPropertyTree::AddComboBoxItem(HPROP hCombo, const char *label)
 {
 	if (hCombo->style != Style::COMBOBOX) return -1;
 	if (!hCombo->hCtrl) return -1;
-	return int(SendMessage(hCombo->hCtrl, CB_ADDSTRING, 0, (LPARAM)label));
+	QSignalBlocker block(hCombo->hCtrl); // CB_ADDSTRING doesn't notify
+	return oapiComboAddString(qobject_cast<QComboBox*>(hCombo->hCtrl), label);
 }
 

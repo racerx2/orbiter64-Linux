@@ -4,8 +4,7 @@
 // ==================================================================
 
 
-#include <Windows.h>
-#include <windowsx.h>
+// Windows.h, windowsx.h left out: the Win32 types come from OrbiterPlatform.h
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include "ModuleAPI.h"
@@ -14,7 +13,13 @@
 #include "resource.h"
 #include "gcPropertyTree.h"
 #include "QTree.h"
-#include <Commctrl.h>
+#include "OrbiterResource.h"
+// Commctrl.h left out: the common controls are Qt widgets
+#include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QProgressBar>
+#include <cstring>
 #include <vector>
 #include <list>
 
@@ -85,7 +90,7 @@ FMATRIX4 ToolKit::CreateWorldMatrix(OBJHANDLE hPlanet, double lng, double lat, d
 void ToolKit::DrawBox(FVECTOR3 *box, DWORD color)
 {
 	WORD Idx[24] = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
-	pCore->RenderLines(box, Idx, 8, ARRAYSIZE(Idx), &mIdent, color);
+	pCore->RenderLines(box, Idx, 8, (sizeof(Idx)/sizeof(Idx[0])), &mIdent, color);
 }
 
 
@@ -328,8 +333,8 @@ SURFHANDLE ToolKit::GetBaseElevation(int elev_fmt)
 void ToolKit::MakeProgress()
 {
 	progress++;
-	SendDlgItemMessage(hProgDlg, IDC_PROGBAR, PBM_SETPOS, progress, 0);
-	UpdateWindow(hProgDlg);
+	DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setValue(progress); // PBM_SETPOS
+	hProgDlg->repaint(); // UpdateWindow
 }
 
 
@@ -373,9 +378,9 @@ void ToolKit::UpdateTileInfo(int flags, QTree* pF, gcCore::PickGround* pP)
 	pProp->SetValue(hCEle, pP->elev, 1);
 
 	if (pF) {
-		if (flags & gcTileFlags::TEXTURE) sprintf_s(name, 63, "Surf/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
-		if (flags & gcTileFlags::MASK) sprintf_s(name, 63, "Mask/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
-		if (flags & gcTileFlags::ELEVATION) sprintf_s(name, 63, "Elev/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
+		if (flags & gcTileFlags::TEXTURE) snprintf(name, 63, "Surf/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
+		if (flags & gcTileFlags::MASK) snprintf(name, 63, "Mask/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
+		if (flags & gcTileFlags::ELEVATION) snprintf(name, 63, "Elev/%d/%d/%d.dds", pF->level + 4, pF->ilat, pF->ilng);
 		if (!pF->HasOwnTex(flags)) color = 0x000000FF;
 	}
 	pProp->SetValue(hCFil, string(name), color);
@@ -387,16 +392,37 @@ void ToolKit::UpdateTileInfo(int flags, QTree* pF, gcCore::PickGround* pP)
 //
 int	ToolKit::SelectedLevel()
 {
-	int select = SendDlgItemMessage(hCtrlDlg, IDC_SELECT, CB_GETCURSEL, 0, 0);
+	int select = DlgItem<QComboBox>(hCtrlDlg, IDC_SELECT)->currentIndex(); // CB_GETCURSEL
 	return max(select - 1, -1);
 }
 
 
 // =================================================================================================
+// not upstream: GetOpenFileNameA / GetSaveFileNameA on QFileDialog (see FileDlgSpec in ToolKit.h)
 //
-bool ToolKit::SaveFile(OPENFILENAMEA &SaveImage)
+static bool FileDlg(FileDlgSpec &ofn, bool bSave)
 {
-	if (GetSaveFileNameA(&SaveImage)) {
+	QStringList filters = QString::fromUtf8(ofn.lpstrFilter).split(";;");
+	QString sel;
+	if (ofn.nFilterIndex >= 1 && ofn.nFilterIndex <= DWORD(filters.size())) sel = filters[ofn.nFilterIndex - 1];
+	QString dir = QString::fromUtf8(ofn.lpstrFile[0] ? ofn.lpstrFile : ofn.lpstrInitialDir);
+	QFileDialog::Options opt = (ofn.bOverwritePrompt ? QFileDialog::Options() : QFileDialog::DontConfirmOverwrite);
+	QString f = (bSave ? QFileDialog::getSaveFileName(nullptr, QString(), dir, QString::fromUtf8(ofn.lpstrFilter), &sel, opt)
+	                   : QFileDialog::getOpenFileName(nullptr, QString(), dir, QString::fromUtf8(ofn.lpstrFilter), &sel, opt));
+	if (f.isEmpty()) return false;
+	snprintf(ofn.lpstrFile, ofn.nMaxFile, "%s", f.toUtf8().constData());
+	if (ofn.lpstrFileTitle) snprintf(ofn.lpstrFileTitle, ofn.nMaxFileTitle, "%s", QFileInfo(f).fileName().toUtf8().constData());
+	ofn.nFilterIndex = DWORD(filters.indexOf(sel) + 1);
+	return true;
+}
+
+bool FileDlgOpen(FileDlgSpec &ofn) { return FileDlg(ofn, false); }
+bool FileDlgSave(FileDlgSpec &ofn) { return FileDlg(ofn, true); }
+
+
+bool ToolKit::SaveFile(FileDlgSpec &SaveImage)
+{
+	if (FileDlgSave(SaveImage)) {
 
 		int type = 0;
 
@@ -409,11 +435,11 @@ bool ToolKit::SaveFile(OPENFILENAMEA &SaveImage)
 
 		if (type == 0) {
 			// If above fails then use selected "filter" to appeand file "id".
-			if (SaveImage.nFilterIndex == 0) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".jpg");
-			if (SaveImage.nFilterIndex == 1) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".dds");
-			if (SaveImage.nFilterIndex == 2) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".bmp");
-			if (SaveImage.nFilterIndex == 3) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".png");
-			if (SaveImage.nFilterIndex == 4) strcat_s(SaveImage.lpstrFile, MAX_PATH, ".jpg");
+			if (SaveImage.nFilterIndex == 0) strncat(SaveImage.lpstrFile, ".jpg", MAX_PATH - strlen(SaveImage.lpstrFile) - 1);
+			if (SaveImage.nFilterIndex == 1) strncat(SaveImage.lpstrFile, ".dds", MAX_PATH - strlen(SaveImage.lpstrFile) - 1);
+			if (SaveImage.nFilterIndex == 2) strncat(SaveImage.lpstrFile, ".bmp", MAX_PATH - strlen(SaveImage.lpstrFile) - 1);
+			if (SaveImage.nFilterIndex == 3) strncat(SaveImage.lpstrFile, ".png", MAX_PATH - strlen(SaveImage.lpstrFile) - 1);
+			if (SaveImage.nFilterIndex == 4) strncat(SaveImage.lpstrFile, ".jpg", MAX_PATH - strlen(SaveImage.lpstrFile) - 1);
 		}
 		return true;
 	}

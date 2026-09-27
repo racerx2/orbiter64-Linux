@@ -2,20 +2,25 @@
 
 #include <vector>
 #include <string>
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
 #include <gcCoreAPI.h>
 #include <gcGUI.h>
 
 
 using namespace std;
 
-void gcPropertyTreeInitialize(HINSTANCE hInst);
-void gcPropertyTreeRelease(HINSTANCE hInst);
+void gcPropertyTreeInitialize(void *hInst);
+void gcPropertyTreeRelease(void *hInst);
 
 #define GCGUI_MSG_SELECTED	0x0001
 
 
 typedef struct gcProperty * HPROP;
+
+// not upstream: the WM_COMMAND (id, notification code, entry) the tree sent to its DLGPROC; codes are RESN_*, TB_THUMBTRACK or GCGUI_MSG_SELECTED
+typedef void (*GCPROPCLBK)(QWidget *hDlg, WORD id, WORD code, HPROP hEntry);
+
+class QEvent;
 
 
 class gcPropertyTree
@@ -36,16 +41,16 @@ public:
 
 	//		--------------------------------------------------------------------------
 
-			gcPropertyTree(gcGUIApp *_pApp, HWND hWnd, WORD idc, DLGPROC pCall, HFONT hFnt, HINSTANCE hInst);
+			gcPropertyTree(gcGUIApp *_pApp, QWidget *hWnd, WORD idc, GCPROPCLBK pCall, QFont *hFnt, void *hInst);
 			~gcPropertyTree();
 
 	//		--------------------------------------------------------------------------
 
-	HWND	GetHWND() const;
-	HWND	GetControl(HPROP hEntry);
+	QWidget* GetHWND() const;
+	QWidget* GetControl(HPROP hEntry);
 	void*	GetUserRef(HPROP hEntry);
 	HPROP	GetEntry(int idx);
-	HPROP	GetEntry(HWND hCtrl);
+	HPROP	GetEntry(QWidget *hCtrl);
 	void	OpenEntry(HPROP hEntry, bool bOpen = true);
 	void	ShowEntry(HPROP hEntry, bool bShow = true);
 
@@ -54,7 +59,7 @@ public:
 	HPROP	AddEditControl(const string &lbl, WORD id, HPROP parent = NULL, const string &text = "", void *pUser = NULL);
 	HPROP	AddComboBox(const string &lbl, WORD id, HPROP parent = NULL, void* pUser = NULL);
 	HPROP	AddSlider(const string &lbl, WORD id, HPROP parent = NULL, void* pUser = NULL);
-	LRESULT SendCtrlMessage(HPROP hCtrl, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	// SendCtrlMessage left out: raw window messages to the child controls; nothing calls it, the typed functions below are its uses
 
 	//		--------------------------------------------------------------------------
 
@@ -85,33 +90,34 @@ public:
 	//		--------------------------------------------------------------------------
 
 	void	Update();
-	void	Paint(HDC hDC);
-	LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void	Paint(QPainter *hDC);
+	bool	WndProc(QWidget *hWnd, QEvent *e);
+	void	CtrlNotify(QWidget *hCtrl, WORD code);
 
 private:
 
-	int		PaintSection(HDC hDC, HPROP hPar, int ident, int wlbl, int y, int lvl);
+	int		PaintSection(QPainter *hDC, HPROP hPar, int ident, int wlbl, int y, int lvl);
 	void	PaintIcon(int x, int y, int id);
 	int		GetSubsentionLength(HPROP hP);
 	void	CopyToClipboard();
 	void	CloseTree(HPROP hp);
-	HWND	CreateEditControl(WORD id, bool bReadOnly = true);
-	HWND	CreateComboBox(WORD id);
-	HWND	CreateSlider(WORD id);
+	QWidget* CreateEditControl(WORD id, bool bReadOnly = true);
+	QWidget* CreateComboBox(WORD id);
+	QWidget* CreateSlider(WORD id);
 	bool	HasMoved(HPROP hP, int x, int y);
 
 	gcCore2 *pCore;
 	gcGUIApp *pApp;
-	DLGPROC pCallback;
-	HWND  hWnd, hDlg;
-	HDC	hSr, hBM;
-	HFONT hFont;
-	HPEN hPen;
-	HBRUSH hBr0, hBr1, hBr2, hBr4;
-	HBRUSH hBrTit[3];
-	HBITMAP hBuf;
-	HBITMAP	hIcons;
-	HINSTANCE hInst;
+	GCPROPCLBK pCallback;
+	QWidget *hWnd, *hDlg;
+	QPainter *hBM;		// memory DC on hBuf, during Paint (hSr, the icon source DC, left out: icons are drawn from their image)
+	QFont *hFont;
+	QPen *hPen;
+	QBrush *hBr0, *hBr1, *hBr2, *hBr4;
+	QBrush *hBrTit[3];
+	QImage *hBuf;
+	QImage *hIcons;
+	void *hInst;
 	HPROP pSelected, pDown;
 	int wlbl, hlbl, wmrg, tmrg, bmrg, len;
 	WORD idc;
@@ -130,7 +136,7 @@ typedef struct gcProperty
 	bool bVisible;
 	bool bChildren;
 	bool bOn;
-	HWND hCtrl;
+	QWidget *hCtrl;
 	void* pUser;
 	gcPropertyTree::gcSlider *pSlider;
 	RECT rect;

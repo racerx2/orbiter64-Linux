@@ -41,8 +41,7 @@ if(ORBITER_BUILD_D3D9CLIENT)
 endif()
 else() # Linux port
 if(ORBITER_BUILD_VULKANCLIENT)
-  # D3D9Client_Interface (InterfaceBuilder: gcCoreAPI.h) left out until OVP/VulkanClient has it again
-  add_dependencies(LuaInterpreter	D3D9Client)
+  add_dependencies(LuaInterpreter	D3D9Client D3D9Client_Interface) # the VulkanClient target keeps upstream's names
 endif()
 endif() # WIN32
 

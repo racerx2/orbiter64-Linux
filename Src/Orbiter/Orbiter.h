@@ -163,6 +163,7 @@ public:
 	bool UnloadModule (HINSTANCE hDLL);
 #else // __linux__
 	bool UnloadModule (void *hDLL);
+	bool UnloadModule (const char *name) { return UnloadModule (std::string (name)); } // char* names picked the void* overload (HINSTANCE never took one)
 #endif // __linux__
 
 	Vessel *SetFocusObject (Vessel *vessel, bool setview = true);

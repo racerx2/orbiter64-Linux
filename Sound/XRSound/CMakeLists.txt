@@ -59,8 +59,19 @@ FetchContent_Declare(dr_flac
 	URL_HASH SHA256=a35468f278f17cf9538ce189debf76a5854a77e139980f7b5185d67566a0c837
 	DOWNLOAD_NO_EXTRACT TRUE
 )
-FetchContent_MakeAvailable(stb_vorbis dr_mp3 dr_flac)
+# not upstream: tracker modules (MOD, S3M, XM, IT, which irrKlang played) through libxmp-lite (MIT), built static
+FetchContent_Declare(libxmp_lite
+	URL https://github.com/libxmp/libxmp/releases/download/libxmp-4.6.3/libxmp-lite-4.6.3.tar.gz
+	URL_HASH SHA256=fa6465d8b911363ae602c7baaa625ca1f5223142d10bb4682029c4d2f630cb62
+	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW) # its options take the values below
+set(BUILD_STATIC ON)
+set(BUILD_SHARED OFF)
+set(LIBXMP_PIC ON)
+FetchContent_MakeAvailable(stb_vorbis dr_mp3 dr_flac libxmp_lite)
 set(AUDIO_DECODER_INCLUDE_DIRS ${stb_vorbis_SOURCE_DIR} ${dr_mp3_SOURCE_DIR} ${dr_flac_SOURCE_DIR})
+set(AUDIO_DECODER_LIBS libxmp-lite::xmp_lite_static)
 endif() # WIN32
 
 ## XRSound
@@ -136,7 +147,7 @@ if(ORBITER_MAKE_TESTS)
 	set_target_properties(XRSound.AudioEngine.Test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}/Tests)
 	target_include_directories(XRSound.AudioEngine.Test PRIVATE ${SOLUTION_DIR} ${AUDIO_DECODER_INCLUDE_DIRS})
 	target_compile_definitions(XRSound.AudioEngine.Test PRIVATE XRSOUND_TEST_SOUNDS="${ASSET_DIR}/XRSound/Default")
-	target_link_libraries(XRSound.AudioEngine.Test PkgConfig::PIPEWIRE)
+	target_link_libraries(XRSound.AudioEngine.Test PkgConfig::PIPEWIRE ${AUDIO_DECODER_LIBS})
 	add_test(NAME XRSound.AudioEngine.Test COMMAND $<TARGET_FILE:XRSound.AudioEngine.Test>)
 	set_tests_properties(XRSound.AudioEngine.Test PROPERTIES TIMEOUT 20)
 endif()

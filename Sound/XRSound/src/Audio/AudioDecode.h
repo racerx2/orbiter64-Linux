@@ -1,4 +1,4 @@
-// not upstream: sound file decoding for XRSound's audio engine (WAV parsed here; OGG, MP3, FLAC via stb_vorbis, dr_mp3, dr_flac)
+// not upstream: sound file decoding for XRSound's audio engine (WAV parsed here; OGG, MP3, FLAC via stb_vorbis, dr_mp3, dr_flac; MOD, S3M, XM, IT via libxmp-lite)
 
 #pragma once
 

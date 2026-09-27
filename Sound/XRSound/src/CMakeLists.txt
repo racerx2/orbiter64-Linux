@@ -76,6 +76,7 @@ target_link_libraries(XRSound_dll
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
 	PkgConfig::PIPEWIRE
+	${AUDIO_DECODER_LIBS}
 	Qt6::Widgets
 )
 endif() # WIN32

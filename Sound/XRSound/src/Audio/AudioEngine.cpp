@@ -567,8 +567,25 @@ bool AudioVoice::FetchFrame(const uint64_t index, float &left, float &right)
             return false;
         p = m_window.data() + (index - m_winStart) * m_channels;
     }
+    if (m_channels <= 2)
+    {
+        left = p[0];
+        right = (m_channels > 1) ? p[1] : p[0];     // mono plays on both sides
+        return true;
+    }
+    // more channels (WAV order FL FR FC LFE BL BR SL SR) fold into two: centre and surrounds at -3 dB, LFE out
+    const float k = 0.7071f;
     left = p[0];
-    right = (m_channels > 1) ? p[1] : p[0];     // mono plays on both sides; channels past the second are left out
+    right = p[1];
+    switch (m_channels)
+    {
+    case 3: left += k * p[2]; right += k * p[2]; break;                                         // FL FR FC
+    case 4: left += k * p[2]; right += k * p[3]; break;                                         // FL FR BL BR
+    case 5: left += k * (p[2] + p[3]); right += k * (p[2] + p[4]); break;                       // FL FR FC BL BR
+    case 6: left += k * (p[2] + p[4]); right += k * (p[2] + p[5]); break;                       // FL FR FC LFE BL BR
+    case 7: left += k * (p[2] + p[5]) + 0.5f * p[4]; right += k * (p[2] + p[6]) + 0.5f * p[4]; break; // FL FR FC LFE BC SL SR
+    default: left += k * (p[2] + p[4] + p[6]); right += k * (p[2] + p[5] + p[7]); break;         // FL FR FC LFE BL BR SL SR
+    }
     return true;
 }
 

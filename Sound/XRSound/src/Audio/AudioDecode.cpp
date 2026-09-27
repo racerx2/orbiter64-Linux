@@ -1,4 +1,4 @@
-// not upstream: sound file decoding for XRSound's audio engine (WAV parsed here; OGG, MP3, FLAC via stb_vorbis, dr_mp3, dr_flac)
+// not upstream: sound file decoding for XRSound's audio engine (WAV parsed here; OGG, MP3, FLAC via stb_vorbis, dr_mp3, dr_flac; MOD, S3M, XM, IT via libxmp-lite)
 
 #include "AudioDecode.h"
 
@@ -18,10 +18,11 @@
 #define STB_VORBIS_NO_PUSHDATA_API
 #define STB_VORBIS_NO_STDIO
 #include "stb_vorbis.c"
+#include <xmp.h>
 
 namespace
 {
-enum class Format { Unknown, Wav, Ogg, Flac, Mp3 };
+enum class Format { Unknown, Wav, Ogg, Flac, Mp3, Module };
 
 uint16_t Le16(const uint8_t *p)
 {
@@ -48,6 +49,8 @@ Format Detect(const std::vector<uint8_t> &b)
         return Format::Mp3;
     if ((n >= 2) && (p[0] == 0xFF) && ((p[1] & 0xE0) == 0xE0))   // MPEG audio frame sync
         return Format::Mp3;
+    if ((n > 0) && (n <= LONG_MAX) && (xmp_test_module_from_memory(p, static_cast<long>(n), nullptr) == 0))   // tracker formats have no magic at the start
+        return Format::Module;
     return Format::Unknown;
 }
 
@@ -209,6 +212,7 @@ public:
             const int n = stb_vorbis_get_samples_float_interleaved(m_pVorbis, static_cast<int>(channels), pOut + done * channels, want);
             if (n <= 0)
                 break;
+            ToWavOrder(pOut + done * channels, static_cast<uint64_t>(n));
             done += static_cast<uint64_t>(n);
         }
         return done;
@@ -220,8 +224,105 @@ public:
     }
 
 private:
+    // Vorbis orders 3 to 8 channels its own way; the mixer takes WAV's (FL FR FC LFE BL BR SL SR)
+    void ToWavOrder(float *p, const uint64_t n) const
+    {
+        static const int order[9][8] = {
+            {}, {}, {},
+            { 0, 2, 1 },                        // L C R
+            { 0, 1, 2, 3 },                     // FL FR RL RR
+            { 0, 2, 1, 3, 4 },                  // FL C FR RL RR
+            { 0, 2, 1, 5, 3, 4 },               // FL C FR RL RR LFE
+            { 0, 2, 1, 6, 5, 3, 4 },            // FL C FR SL SR RC LFE
+            { 0, 2, 1, 7, 5, 6, 3, 4 } };       // FL C FR SL SR RL RR LFE
+        if ((channels < 3) || (channels > 8))
+            return;
+        float f[8];
+        for (uint64_t i = 0; i < n; i++, p += channels)
+        {
+            memcpy(f, p, channels * sizeof(float));
+            for (uint32_t c = 0; c < channels; c++)
+                p[c] = f[order[channels][c]];
+        }
+    }
+
     AudioBytes m_bytes;     // stb_vorbis reads from these bytes
     stb_vorbis *m_pVorbis;
+};
+
+class ModStream : public AudioStream
+{
+public:
+    ModStream(const AudioBytes &bytes) : m_bytes(bytes), m_ctx(xmp_create_context()), m_bLoaded(false), m_bEnd(false) { }
+
+    ~ModStream() override
+    {
+        if (m_bLoaded)
+        {
+            xmp_end_player(m_ctx);
+            xmp_release_module(m_ctx);
+        }
+        xmp_free_context(m_ctx);
+    }
+
+    // renders the song once through at the engine's rate, 16-bit stereo
+    bool Open(std::string &error)
+    {
+        if (xmp_load_module_from_memory(m_ctx, m_bytes->data(), static_cast<long>(m_bytes->size())) != 0)
+        {
+            error = "broken tracker module";
+            return false;
+        }
+        m_bLoaded = true;
+        if (xmp_start_player(m_ctx, Rate, 0) != 0)
+        {
+            error = "tracker module player failed to start";
+            return false;
+        }
+        xmp_frame_info fi;
+        xmp_get_frame_info(m_ctx, &fi);
+        channels = 2;
+        sampleRate = Rate;
+        frames = static_cast<uint64_t>(fi.total_time) * Rate / 1000;
+        return true;
+    }
+
+    uint64_t Read(float *pOut, const uint64_t frameCount) override
+    {
+        uint64_t done = 0;
+        int16_t pcm[2 * 1024];
+        while ((done < frameCount) && !m_bEnd)
+        {
+            const uint64_t n = std::min<uint64_t>(frameCount - done, 1024);
+            if (xmp_play_buffer(m_ctx, pcm, static_cast<int>(n * 4), 1) != 0)   // loop 1: once through, then the end
+            {
+                m_bEnd = true;
+                break;
+            }
+            for (uint64_t i = 0; i < 2 * n; i++)
+                pOut[2 * done + i] = pcm[i] / 32768.0f;
+            done += n;
+        }
+        return done;
+    }
+
+    bool Seek(const uint64_t frame) override
+    {
+        m_bEnd = false;
+        if (frame == 0)
+        {
+            xmp_restart_module(m_ctx);
+            xmp_play_buffer(m_ctx, nullptr, 0, 0);   // resets the loop count
+            return true;
+        }
+        return xmp_seek_time(m_ctx, static_cast<int>(frame * 1000 / Rate)) >= 0;
+    }
+
+private:
+    static const int Rate = 48000;
+    AudioBytes m_bytes;     // libxmp copies what it needs while loading
+    xmp_context m_ctx;
+    bool m_bLoaded, m_bEnd;
 };
 
 class Mp3Stream : public AudioStream
@@ -365,8 +466,16 @@ std::unique_ptr<AudioStream> AudioDecode::OpenStream(const AudioBytes &bytes, st
         break;
     }
 
+    case Format::Module:
+    {
+        std::unique_ptr<ModStream> mod(new ModStream(bytes));
+        if (mod->Open(error))
+            stream = std::move(mod);
+        break;
+    }
+
     default:
-        error = "unknown sound file format (WAV, OGG Vorbis, MP3 and FLAC are supported)";
+        error = "unknown sound file format (WAV, OGG Vorbis, MP3, FLAC and MOD, S3M, XM, IT modules are supported)";
         break;
     }
 

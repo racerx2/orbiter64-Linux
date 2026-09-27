@@ -31,6 +31,7 @@
 #include <QPainter>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <set>
 #endif // __linux__
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -56,11 +57,14 @@ OAPIFUNC LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
 class RenderWndHook: public QObject {
 public:
 	RenderWndHook (QWindow *hWnd, GraphicsClient *_gc): QObject (hWnd), gc (_gc)
-	{ setObjectName (strWndClass); hWnd->installEventFilter (this); }
+	{ setObjectName (strWndClass); hWnd->installEventFilter (this); live.insert (this); }
+	~RenderWndHook () { live.erase (this); }
 	bool eventFilter (QObject *obj, QEvent *event) override
 	{ return gc && gc->RenderWndProc (static_cast<QWindow*>(obj), event); }
 	GraphicsClient *gc;
+	static std::set<RenderWndHook*> live; // hooks whose window still exists
 };
+std::set<RenderWndHook*> RenderWndHook::live;
 #endif // __linux__
 
 #ifndef __linux__
@@ -122,9 +126,8 @@ GraphicsClient::~GraphicsClient ()
 	if (hVid) SetWindowLongPtr (hVid, GWLP_USERDATA, 0);
 #else // __linux__
 	// hVid userdata reset left out: the video tab disconnects the client's controls itself
-	if (hRenderWnd)
-		for (QObject *obj : hRenderWnd->children())
-			if (obj->objectName() == strWndClass) static_cast<RenderWndHook*>(obj)->gc = NULL;
+	for (RenderWndHook *hook : RenderWndHook::live) // not hRenderWnd: the session end deletes that window, the pointer is kept
+		if (hook->gc == this) hook->gc = NULL;
 #endif // __linux__
 	if (splashFont) clbkReleaseFont (splashFont);
 }

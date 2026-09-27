@@ -99,9 +99,6 @@ BOOL CShipeditDlg::OnInitDialog()
 {
 	ResDlg::OnInitDialog();
 
-	// MENU IDR_MAINMENU of the dialog template: menu bar on top, its commands go to OnCommand
-	oapiCreateResMenu(nullptr, IDR_MAINMENU, hDlg, [this](int nID, int nCode, QWidget*) { OnCommand(nID, nCode); });
-
 	// Add "About..." menu item to system menu.
 
 	// IDM_ABOUTBOX must be in the system command range.

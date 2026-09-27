@@ -3,7 +3,9 @@
 #include "ResDialog.h"
 #include "Util.h"
 #include "Log.h"
+#include <QAction>
 #include <QApplication>
+#include <QBuffer>
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -12,9 +14,12 @@
 #include <QFrame>
 #include <QGroupBox>
 #include <QImage>
+#include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
@@ -34,6 +39,8 @@
 #include <QTreeWidget>
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -54,7 +61,7 @@ namespace rs {
 	constexpr DWORD SS_CENTER = 0x1, SS_RIGHT = 0x2, SS_BLACKRECT = 0x4, SS_GRAYRECT = 0x5, SS_WHITERECT = 0x6,
 		SS_BLACKFRAME = 0x7, SS_GRAYFRAME = 0x8, SS_WHITEFRAME = 0x9, SS_SIMPLE = 0xB, SS_LEFTNOWORDWRAP = 0xC,
 		SS_ETCHEDHORZ = 0x10, SS_ETCHEDVERT = 0x11, SS_ETCHEDFRAME = 0x12, SS_REALSIZECONTROL = 0x40,
-		SS_NOPREFIX = 0x80, SS_CENTERIMAGE = 0x200, SS_SUNKEN = 0x1000;
+		SS_NOPREFIX = 0x80, SS_CENTERIMAGE = 0x200, SS_REALSIZEIMAGE = 0x800, SS_SUNKEN = 0x1000, SS_ICON = 0x3;
 	constexpr DWORD BS_DEFPUSHBUTTON = 0x1, BS_3STATE = 0x5, BS_AUTO3STATE = 0x6, BS_LEFT = 0x100, BS_RIGHT = 0x200,
 		BS_PUSHLIKE = 0x1000, BS_FLAT = 0x8000;
 	constexpr DWORD ES_CENTER = 0x1, ES_RIGHT = 0x2, ES_MULTILINE = 0x4, ES_PASSWORD = 0x20, ES_AUTOHSCROLL = 0x80,
@@ -67,6 +74,18 @@ namespace rs {
 	constexpr DWORD UDS_WRAP = 0x1, UDS_SETBUDDYINT = 0x2, UDS_ALIGNRIGHT = 0x4, UDS_ALIGNLEFT = 0x8, UDS_AUTOBUDDY = 0x10,
 		UDS_HORZ = 0x40;
 	constexpr DWORD PBS_VERTICAL = 0x4;
+	constexpr DWORD MF_GRAYED = 0x1, MF_DISABLED = 0x2, MF_CHECKED = 0x8, MF_POPUP = 0x10;
+}
+
+// defaults for programs that build ResDialog.cpp without the Orbiter core, whose own definitions take precedence
+__attribute__((weak)) void *ModuleProc (void *hModule, const char *name) { return dlsym (hModule, name); } // not upstream
+__attribute__((weak)) void LogOut_Warning (const char *func, const char *file, int line, const char *msg, ...) // not upstream
+{
+	va_list ap;
+	va_start (ap, msg);
+	vfprintf (stderr, msg, ap);
+	va_end (ap);
+	fputc ('\n', stderr);
 }
 
 struct CtrlClass { void *hModule; RESCTRLFACTORY create; };
@@ -113,6 +132,15 @@ const RESIMAGE *oapiFindResImage (void *hModule, int resId)
 	if (t)
 		for (size_t i = 0; i < t->nimg; i++)
 			if (t->img[i].id == resId) return t->img + i;
+	return nullptr;
+}
+
+const RESMENU *oapiFindResMenu (void *hModule, int resId)
+{
+	const RESTABLE *t = oapiResourceTable (hModule);
+	if (t)
+		for (size_t i = 0; i < t->nmenu; i++)
+			if (t->menu[i].id == resId) return t->menu + i;
 	return nullptr;
 }
 
@@ -184,6 +212,14 @@ int LoadModuleString (const char *modulefile, int id, char *buf, int buflen)
 void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler)
 {
 	for (QObject *o : hDlg->children()) {
+		if (QMenuBar *mb = qobject_cast<QMenuBar*> (o)) { // menu commands: WM_COMMAND with notification code 0
+			for (QAction *a : mb->findChildren<QAction*>()) {
+				if (!a->property ("resId").isValid()) continue;
+				int id = a->property ("resId").toInt();
+				QObject::connect (a, &QAction::triggered, hDlg, [handler, id]() { handler (id, RESN_CLICKED, nullptr); });
+			}
+			continue;
+		}
 		QWidget *w = qobject_cast<QWidget*> (o);
 		if (!w || !w->property ("resId").isValid()) continue;
 		int id = w->property ("resId").toInt();
@@ -300,6 +336,27 @@ QImage *oapiLoadResImage (void *hModule, int resId)
 	QImage img;
 	if (!img.loadFromData (ri->data, ri->size)) return nullptr;
 	return new QImage (img);
+}
+
+// LoadIcon counterpart for SS_ICON: the SM_CXICON (32x32) image of the .ico, else the first one scaled to it
+static QImage *LoadResIcon (void *hModule, int resId)
+{
+	const RESIMAGE *ri = oapiFindResImage (hModule, resId);
+	if (!ri) return nullptr;
+	QByteArray ba = QByteArray::fromRawData ((const char*)ri->data, ri->size);
+	QBuffer buf (&ba);
+	buf.open (QIODevice::ReadOnly);
+	QImageReader rd (&buf);
+	QImage first;
+	for (int i = 0; i < std::max (1, rd.imageCount()); i++) {
+		if (i && !rd.jumpToImage (i)) break;
+		QImage img = rd.read();
+		if (img.isNull()) break;
+		if (img.size() == QSize (32, 32)) return new QImage (img);
+		if (first.isNull()) first = img;
+	}
+	if (first.isNull()) return nullptr;
+	return new QImage (first.scaled (32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 }
 
 void oapiRegisterResControl (void *hModule, const char *cls, RESCTRLFACTORY create)
@@ -419,7 +476,7 @@ static QWidget *CreateControl (const RESCONTROL *c, QWidget *dlg, void *hModule,
 		} break;
 	case RES_STATICIMAGE: {
 		QLabel *l = new QLabel (dlg);
-		QImage *img = oapiLoadResImage (hModule, c->imgid);
+		QImage *img = ((st & 0x1F) == SS_ICON && !(st & SS_REALSIZEIMAGE) ? LoadResIcon (hModule, c->imgid) : oapiLoadResImage (hModule, c->imgid));
 		if (img) {
 			l->setPixmap (QPixmap::fromImage (*img));
 			if (!(st & (SS_REALSIZECONTROL | SS_CENTERIMAGE))) r.setSize (img->size()); // SS_BITMAP sizes the control to the image
@@ -590,7 +647,39 @@ static QWidget *CreateControl (const RESCONTROL *c, QWidget *dlg, void *hModule,
 	return w;
 }
 
-// labels that don't fit their .rc box in this font (and a larger check indicator) grow to the right into free space
+// wrapped multi-line labels that need more lines in this font grow down into free space; in a window the rows below make room
+static void FitLabelHeight (QWidget *dlg, const std::vector<std::pair<const RESCONTROL*, QWidget*>> &ctl, QLabel *l)
+{
+	QRect g = l->geometry();
+	int need = l->heightForWidth (g.width());
+	if (need <= g.height()) return;
+	int blimit = dlg->height() - 2;
+	for (auto &[oc, o] : ctl) {
+		if (o == l) continue;
+		QRect og = o->geometry();
+		if (oc->kind == RES_GROUPBOX) {
+			if (og.contains (g.center()) && og.bottom() > g.bottom()) blimit = std::min (blimit, og.bottom() - 4);
+		} else if (og.left() < g.right() && og.right() > g.left() && og.top() > g.top())
+			blimit = std::min (blimit, og.top() - 2);
+	}
+	int bottom = g.top() + need - 1;
+	if (bottom > blimit && dlg->isWindow()) {
+		int d = bottom - blimit, y0 = g.bottom();
+		for (auto &[oc, o] : ctl) {
+			if (o == l) continue;
+			QRect og = o->geometry();
+			if (og.top() > y0) o->move (og.x(), og.y() + d);
+			else if (og.bottom() > y0) o->resize (og.width(), og.height() + d); // group boxes around the label
+		}
+		if (dlg->minimumSize() == dlg->maximumSize()) dlg->setFixedSize (dlg->width(), dlg->height() + d);
+		else dlg->resize (dlg->width(), dlg->height() + d);
+		blimit = bottom;
+	}
+	g.setBottom (std::max (g.bottom(), std::min (bottom, blimit)));
+	l->setGeometry (g);
+}
+
+// labels that don't fit their .rc box in this font (and a larger check indicator) grow to the right, then to the left, into free space
 static void FitLabels (QWidget *dlg, const std::vector<std::pair<const RESCONTROL*, QWidget*>> &ctl)
 {
 	using namespace rs;
@@ -600,8 +689,12 @@ static void FitLabels (QWidget *dlg, const std::vector<std::pair<const RESCONTRO
 		if ((c->kind == RES_CHECKBOX || c->kind == RES_RADIOBUTTON) && !(c->style & BS_PUSHLIKE))
 			need = w->sizeHint().width();
 		else if (c->kind == RES_STATIC && (c->style & 0x1F) <= SS_RIGHT) {
-			QString s = static_cast<QLabel*>(w)->text();
-			if (s.contains ('\n') || w->height() >= 2*fm.height()) continue;
+			QLabel *l = static_cast<QLabel*>(w);
+			QString s = l->text();
+			if (s.contains ('\n') || w->height() >= 2*fm.height()) {
+				if (l->wordWrap()) FitLabelHeight (dlg, ctl, l);
+				continue;
+			}
 			need = fm.horizontalAdvance (s) + 2;
 		} else continue;
 		QRect g = w->geometry();
@@ -627,9 +720,56 @@ static void FitLabels (QWidget *dlg, const std::vector<std::pair<const RESCONTRO
 		else if (a == SS_CENTER) {
 			int h = std::min ((grow+1)/2, std::min (lfree, rfree));
 			g.adjust (-h, 0, h, 0);
-		} else g.setRight (g.right() + std::min (grow, rfree));
+		} else {
+			int r = std::min (grow, rfree);
+			g.setRight (g.right() + r);
+			if (r < grow) g.setLeft (g.left() - std::min (grow - r, lfree));
+		}
 		w->setGeometry (g);
 	}
+}
+
+// items of a menu template into a menu bar or popup; it: the next item, n: items at this level (-1: up to end)
+template<class M> static void AddMenuItems (M *m, const RESMENUITEM *&it, const RESMENUITEM *end, int n)
+{
+	using namespace rs;
+	for (int k = 0; it < end && (n < 0 || k < n); k++) {
+		const RESMENUITEM *item = it++;
+		if (!item->text) { // MF_MENUBARBREAK/MF_MENUBREAK columns and MF_HELP right alignment left out: Qt menus have neither
+			m->addSeparator();
+			continue;
+		}
+		QString text = QString::fromUtf8 (item->text);
+		if (item->flags & MF_POPUP) {
+			QMenu *sub = m->addMenu (text);
+			sub->menuAction()->setEnabled (!(item->flags & (MF_GRAYED | MF_DISABLED)));
+			AddMenuItems (sub, it, end, item->nsub);
+		} else {
+			QAction *a = m->addAction (text); // Qt takes '&' mnemonics and '\t' shortcut text as Win32 does
+			a->setProperty ("resId", item->id);
+			a->setEnabled (!(item->flags & (MF_GRAYED | MF_DISABLED)));
+			if (item->flags & MF_CHECKED) { a->setCheckable (true); a->setChecked (true); }
+		}
+	}
+}
+
+QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hWnd)
+{
+	const RESMENU *rm = oapiFindResMenu (hModule, resId);
+	if (!rm || !hWnd) return nullptr;
+	QMenuBar *bar = new QMenuBar (hWnd);
+	const RESMENUITEM *it = rm->item;
+	AddMenuItems (bar, it, rm->item + rm->nitem, -1);
+	// the menu is outside the client area: the controls keep their places below it, the window grows
+	int h = bar->sizeHint().height();
+	for (QObject *o : hWnd->children()) {
+		QWidget *w = qobject_cast<QWidget*> (o);
+		if (w && w != bar && !w->isWindow()) w->move (w->x(), w->y() + h);
+	}
+	bar->setGeometry (0, 0, hWnd->width(), h);
+	if (hWnd->minimumSize() == hWnd->maximumSize()) hWnd->setFixedSize (hWnd->width(), hWnd->height() + h);
+	else hWnd->resize (hWnd->width(), hWnd->height() + h);
+	return bar;
 }
 
 QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
@@ -702,6 +842,7 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
 		dlg->setGeometry (px(d->x), py(d->y), size.width(), size.height());
 	}
 	FitLabels (dlg, ctl);
+	if (d->menu >= 0) oapiCreateResMenu (hModule, d->menu, dlg);
 	if (d->style & WS_DISABLED) dlg->setEnabled (false);
 	if (d->style & WS_VISIBLE) dlg->show();
 	return dlg;

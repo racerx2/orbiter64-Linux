@@ -4,6 +4,8 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QProgressBar>
@@ -20,7 +22,12 @@
 
 // stubs: ResDialog.cpp logs through Log.cpp and finds module tables through Util.cpp
 static int nwarn = 0;
-void *ModuleProc (void*, const char*) { return nullptr; }
+static int menuModule; // stands in for the handle of a module whose table is ResMenu.Test.rc
+extern "C" const RESTABLE *TestMenuResources ();
+void *ModuleProc (void *hModule, const char *name)
+{
+	return (hModule == &menuModule && !strcmp (name, "oapiModuleResources") ? (void*)TestMenuResources : nullptr);
+}
 void LogOut_Warning (const char*, const char*, int, const char*, ...) { nwarn++; }
 
 static QApplication &App ()
@@ -270,4 +277,50 @@ TEST_CASE("module strings are read from the file without loading it", "[resdialo
 	REQUIRE(std::string (buf) == "Visual effects");
 	REQUIRE(LoadModuleString ("/proc/self/exe", 99999, buf, 64) == 0);
 	REQUIRE(LoadModuleString ("/nonexistent.so", IDS_TABVISUAL, buf, 64) == 0);
+}
+
+TEST_CASE("menu templates build menu bars", "[resdialog]")
+{
+	App();
+	void *hMod = &menuModule;
+	const RESMENU *rm = oapiFindResMenu (hMod, 200);
+	REQUIRE(rm);
+	REQUIRE(rm->nitem == 9);
+	REQUIRE(!oapiFindResMenu (nullptr, 200));
+	QWidget *dlg = oapiCreateResDialog (hMod, 202, nullptr);
+	REQUIRE(dlg);
+	QMenuBar *bar = dlg->findChild<QMenuBar*>();
+	REQUIRE(bar);
+	QLineEdit *edit = DlgItem<QLineEdit> (dlg, 400);
+	REQUIRE(edit);
+	REQUIRE(edit->y() >= bar->height()); // controls sit below the menu
+	QList<QAction*> top = bar->actions();
+	REQUIRE(top.size() == 2);
+	REQUIRE(top[0]->text() == "&File");
+	REQUIRE(!top[1]->isEnabled()); // INACTIVE popup
+	QList<QAction*> file = top[0]->menu()->actions();
+	REQUIRE(file.size() == 4);
+	REQUIRE(file[0]->text() == "&Open\tCtrl+O");
+	REQUIRE(!file[1]->isEnabled());
+	REQUIRE(file[2]->isSeparator());
+	REQUIRE(file[3]->menu());
+	REQUIRE(file[3]->menu()->actions().size() == 1);
+	REQUIRE(top[1]->menu()->actions()[1]->isChecked());
+	int got = 0, code = -1;
+	oapiConnectDlgCommands (dlg, [&](int id, int c, QWidget *w) { if (!w) got = id, code = c; });
+	file[3]->menu()->actions()[0]->trigger();
+	REQUIRE(got == 302);
+	REQUIRE(code == RESN_CLICKED);
+	file[0]->trigger();
+	REQUIRE(got == 300);
+	delete dlg;
+	QWidget w;
+	w.resize (100, 50);
+	QMenuBar *ex = oapiCreateResMenu (hMod, 201, &w);
+	REQUIRE(ex);
+	REQUIRE(w.height() == 50 + ex->height());
+	QList<QAction*> exitems = ex->actions()[0]->menu()->actions();
+	REQUIRE(exitems.size() == 3);
+	REQUIRE(exitems[1]->isSeparator());
+	REQUIRE((exitems[2]->isChecked() && !exitems[2]->isEnabled()));
 }

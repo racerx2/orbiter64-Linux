@@ -3,69 +3,17 @@
 //	stdafx.obj will contain the pre-compiled type information
 
 #include "StdAfx.h"
-#include "resource.h"
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QKeyEvent>
 #include <QLineEdit>
-#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
 #include <cfloat>
 #include <climits>
-#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
-
-// not upstream: ResDialog.cpp's links into the Orbiter core (module resource tables, log), as in Tests/ResDialog.Test.cpp
-void *ModuleProc (void*, const char*) { return nullptr; }
-void LogOut_Warning (const char*, const char*, int, const char *msg, ...)
-{
-	va_list ap;
-	va_start (ap, msg);
-	vfprintf (stderr, msg, ap);
-	va_end (ap);
-	fputc ('\n', stderr);
-}
-
-// not upstream: stand-in for oapiCreateResMenu (StdAfx.h) until rc2cpp compiles MENU resources; items of IDR_MAINMENU in Shipedit.rc
-QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hDlg, RESCOMMAND handler)
-{
-	static const struct { bool popup; const char *text; int id; } item[] = { // text nullptr: MENUITEM SEPARATOR
-		{true, "&File", 0},
-		{false, "&Load mesh ...", MID_LOAD}, {false, "Save As ...", MID_SAVEAS}, {false, nullptr, 0}, {false, "E&xit", MID_EXIT},
-		{true, "&Calc", 0},
-		{false, "Start/continue MC integration", MID_CALCSTART}, {false, "Stop MC integration", MID_CALCSTOP}, {false, nullptr, 0},
-		{false, "Grid integration ...", MID_VOXINT}, {false, nullptr, 0}, {false, "Check mesh", MID_CHECK},
-		{true, "&Transform", 0},
-		{false, "&Translate", MID_TRANSLATE}, {false, "&Rotate", MID_ROTATE}, {false, "&Mirror", MID_MIRROR}, {false, "&Scale", MID_SCALE},
-		{false, nullptr, 0}, {false, "Merge groups ...", MID_MERGEGRP}, {false, "Generate normals ...", MID_CALCNORMAL}, {false, nullptr, 0},
-		{false, "&Zero level", MID_ZEROLEVEL}
-	};
-	if (hModule || resId != IDR_MAINMENU || !hDlg) return nullptr;
-	QMenuBar *bar = new QMenuBar (hDlg);
-	QMenu *popup = nullptr;
-	for (auto &it : item) {
-		if (it.popup) popup = bar->addMenu (QString::fromUtf8 (it.text));
-		else if (!it.text) popup->addSeparator ();
-		else {
-			int id = it.id;
-			QAction *action = popup->addAction (QString::fromUtf8 (it.text));
-			QObject::connect (action, &QAction::triggered, hDlg, [handler, id]() { handler (id, RESN_CLICKED, nullptr); });
-		}
-	}
-	// the menu sits outside the template's client area: controls move down, the window grows
-	int h = bar->sizeHint ().height ();
-	for (QObject *o : hDlg->children ()) {
-		QWidget *w = qobject_cast<QWidget*> (o);
-		if (w && w != bar && !w->isWindow ()) w->move (w->x (), w->y () + h);
-	}
-	bar->setGeometry (0, 0, hDlg->width (), h);
-	if (hDlg->minimumSize () == hDlg->maximumSize ()) hDlg->setFixedSize (hDlg->width (), hDlg->height () + h);
-	else hDlg->resize (hDlg->width (), hDlg->height () + h);
-	return bar;
-}
 
 // not upstream: ResDlg (see StdAfx.h)
 

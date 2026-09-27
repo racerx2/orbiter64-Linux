@@ -92,6 +92,7 @@ add_unit_test(ResDialog.Test ${ORBITER_SOURCE_DIR}/ResDialog.cpp ${ORBITER_SOURC
 set_target_properties(ResDialog.Test PROPERTIES AUTOMOC ON)
 target_link_libraries(ResDialog.Test Qt6::Widgets DlgCtrl)
 orbiter_rc_resources(ResDialog.Test ${ORBITER_SOURCE_DIR}/Orbiter.rc EXE SYMBOL OrbiterResources)
+orbiter_rc_resources(ResDialog.Test ${CMAKE_CURRENT_SOURCE_DIR}/ResMenu.Test.rc SYMBOL TestMenuResources)
 set_tests_properties(ResDialog.Test PROPERTIES ENVIRONMENT QT_QPA_PLATFORM=offscreen)
 
 if (BUILD_ORBITER_SERVER)

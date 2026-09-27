@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# not upstream: compiles a Windows .rc resource script (dialogs, bitmaps, icons) into C++ resource tables
+# not upstream: compiles a Windows .rc resource script (dialogs, menus, bitmaps, icons, strings) into C++ resource tables
 # usage: rc2cpp.py input.rc output.cpp [--symbol NAME] [--exe] [--depfile FILE] [-I dir]...
 import os, re, sys
 
@@ -58,7 +58,13 @@ WIN = {
     'PBS_SMOOTH': 0x1, 'PBS_VERTICAL': 0x4,
     'IDOK': 1, 'IDCANCEL': 2, 'IDABORT': 3, 'IDRETRY': 4, 'IDIGNORE': 5, 'IDYES': 6, 'IDNO': 7, 'IDCLOSE': 8,
     'IDHELP': 9, 'IDC_STATIC': -1,
+    'MFT_STRING': 0x0, 'MFT_BITMAP': 0x4, 'MFT_MENUBARBREAK': 0x20, 'MFT_MENUBREAK': 0x40, 'MFT_OWNERDRAW': 0x100,
+    'MFT_RADIOCHECK': 0x200, 'MFT_SEPARATOR': 0x800, 'MFT_RIGHTORDER': 0x2000, 'MFT_RIGHTJUSTIFY': 0x4000,
+    'MFS_ENABLED': 0x0, 'MFS_UNCHECKED': 0x0, 'MFS_UNHILITE': 0x0, 'MFS_GRAYED': 0x3, 'MFS_DISABLED': 0x3,
+    'MFS_CHECKED': 0x8, 'MFS_HILITE': 0x80, 'MFS_DEFAULT': 0x1000,
 }
+# MENU item options -> MF_ flags
+MENUOPT = {'GRAYED': 0x1, 'INACTIVE': 0x2, 'CHECKED': 0x8, 'MENUBARBREAK': 0x20, 'MENUBREAK': 0x40, 'HELP': 0x4000}
 CLASSMACRO = {'TRACKBAR_CLASS': 'msctls_trackbar32', 'RICHEDIT_CLASS': 'RichEdit20A', 'PROGRESS_CLASS': 'msctls_progress32',
               'UPDOWN_CLASS': 'msctls_updown32', 'WC_TREEVIEW': 'SysTreeView32', 'WC_TABCONTROL': 'SysTabControl32',
               'WC_LISTVIEW': 'SysListView32', 'MSFTEDIT_CLASS': 'RICHEDIT50W'}
@@ -256,6 +262,7 @@ class Parser:
         self.images = []   # (kind, name, id, path)
         self.strings = []  # (id, text) from STRINGTABLE
         self.data = []     # (type, name, id, path) user-defined resource types with a file (TEXT, IMAGE, RCDATA, ...)
+        self.menus = []    # {'id', 'name', 'items': [[id, text, flags, nsub], ...]}
 
     def peek(self, k=0):
         return self.t[self.i+k] if self.i+k < len(self.t) else ('eof', None)
@@ -386,6 +393,9 @@ class Parser:
             if kind in ('DIALOG', 'DIALOGEX'):
                 self.get()
                 self.dialog(tok, kind == 'DIALOGEX')
+            elif kind in ('MENU', 'MENUEX'):
+                self.get()
+                self.menu(tok, kind == 'MENUEX')
             elif kind in ('BITMAP', 'ICON', 'PNG'):
                 self.get()
                 while self.peek()[0] == 'id' and self.peek()[1] in ('DISCARDABLE', 'MOVEABLE', 'PURE', 'PRELOAD', 'LOADONCALL', 'FIXED', 'IMPURE'):
@@ -395,12 +405,12 @@ class Parser:
                     rid, name = self.resource_id(tok)
                     path = rc_string(f)
                     self.images.append((kind, name, rid, path))
-            elif self.peek(1)[0] == 'str' and kind not in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO', 'MENU', 'MENUEX',
+            elif self.peek(1)[0] == 'str' and kind not in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO',
                           'ACCELERATORS', 'AFX_DIALOG_LAYOUT', 'TOOLBAR', 'DLGINIT', 'HTML', 'CURSOR', 'FONT'):
                 self.get()
                 rid, name = self.resource_id(tok)
                 self.data.append((kind, name, rid, rc_string(self.get())))
-            elif kind in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO', 'STRINGTABLE', 'MENU', 'MENUEX',
+            elif kind in ('TEXTINCLUDE', 'DESIGNINFO', 'VERSIONINFO', 'STRINGTABLE',
                           'ACCELERATORS', 'AFX_DIALOG_LAYOUT', 'RCDATA', 'TOOLBAR', 'DLGINIT', 'HTML'):
                 self.get()
                 # optional attributes/header up to BEGIN
@@ -439,7 +449,7 @@ class Parser:
             self.num()  # help id
         dlg = {'id': rid, 'name': name or str(rid), 'x': x, 'y': y, 'cx': cx, 'cy': cy,
                'style': 0x80000000 | 0x00C00000 | 0x00080000, 'exstyle': 0, 'caption': '',
-               'font': '', 'fontsize': 8, 'weight': 400, 'italic': 0, 'ctrls': []}
+               'font': '', 'fontsize': 8, 'weight': 400, 'italic': 0, 'ctrls': [], 'menu': -1}
         while True:
             tok = self.peek()
             if tok in (('id', 'BEGIN'), ('op', '{')):
@@ -462,7 +472,12 @@ class Parser:
                         dlg['italic'] = self.num()
                         if self.accept('op', ','):
                             self.num()
-            elif key in ('MENU', 'CLASS'):
+            elif key == 'MENU':
+                mid, mname = self.resource_id(self.get())
+                if mid is None:
+                    raise RcError('dialog %s: menu %s referenced by name is not supported' % (dlg['name'], mname))
+                dlg['menu'] = mid
+            elif key == 'CLASS':
                 self.get()
             elif key in ('LANGUAGE', 'CHARACTERISTICS', 'VERSION'):
                 self.get()
@@ -477,6 +492,83 @@ class Parser:
                 raise RcError('bad control statement %r in %s' % (tok, dlg['name']))
             dlg['ctrls'].append(self.control(tok[1], dlg))
         self.dialogs.append(dlg)
+
+    def menu(self, nametok, ex):
+        # MENU/MENUEX [attributes] BEGIN items END (the MENU keyword is already consumed)
+        rid, name = self.resource_id(nametok)
+        while self.peek()[0] != 'eof' and self.peek() not in (('id', 'BEGIN'), ('op', '{')):
+            self.get()
+        self.get()
+        items = []
+        self.menu_items(items, ex)
+        self.menus.append({'id': rid, 'name': name or str(rid), 'items': items})
+
+    def menu_options(self):
+        flags = 0
+        while True:
+            save = self.i
+            self.accept('op', ',')
+            t = self.peek()
+            if t[0] == 'id' and t[1] in MENUOPT:
+                self.get()
+                flags |= MENUOPT[t[1]]
+            else:
+                self.i = save
+                return flags
+
+    def menuex_args(self, n):
+        # MENUEX: [, id [, type [, state [, helpid]]]], any of them may be empty
+        v = [0] * n
+        for k in range(n):
+            if not self.accept('op', ','):
+                break
+            if self.peek() != ('op', ',') and self.peek()[0] in ('num', 'id', 'op'):
+                if self.peek()[0] == 'id' and self.peek()[1] in ('MENUITEM', 'POPUP', 'BEGIN', 'END'):
+                    break
+                v[k] = self.num()
+        return v
+
+    def menu_items(self, items, ex):
+        # items up to END; returns the number of direct items
+        n = 0
+        while True:
+            tok = self.get()
+            if tok in (('id', 'END'), ('op', '}')):
+                return n
+            if tok[0] == 'eof':
+                raise RcError('unterminated MENU')
+            if tok == ('id', 'MENUITEM'):
+                if not ex and self.peek() == ('id', 'SEPARATOR'):
+                    self.get()
+                    items.append([0, None, 0, 0])
+                else:
+                    text = rc_string(self.get())
+                    if ex:
+                        mid, typ, state = self.menuex_args(3)
+                        flags = (typ & 0x4060) | (state & 0xB)
+                        if typ & 0x800:
+                            text = None
+                    else:
+                        self.accept('op', ',')
+                        mid = self.num()
+                        flags = self.menu_options()
+                    items.append([mid, text, flags, 0])
+                n += 1
+            elif tok == ('id', 'POPUP'):
+                text = rc_string(self.get())
+                if ex:
+                    mid, typ, state, _ = self.menuex_args(4)
+                    flags = (typ & 0x4060) | (state & 0xB)
+                else:
+                    mid, flags = 0, self.menu_options()
+                k = len(items)
+                items.append([mid, text, flags | 0x10, 0])
+                if self.get() not in (('id', 'BEGIN'), ('op', '{')):
+                    raise RcError('POPUP %r without BEGIN' % text)
+                items[k][3] = self.menu_items(items, ex)
+                n += 1
+            else:
+                raise RcError('bad menu statement %r' % (tok,))
 
     def control(self, stmt, dlg):
         base = WIN['WS_CHILD'] | WIN['WS_VISIBLE']
@@ -611,17 +703,28 @@ def emit(parser, rcpath, symbol, exe):
                     c['imgid'] if c['imgid'] is not None else -1,
                     c['x'], c['y'], c['cx'], c['cy'], c['style'] & 0xFFFFFFFF, c['exstyle'] & 0xFFFFFFFF, cstr(c.get('idname'))))
             out.append('};')
-        dlgrows.append('\t{%d, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, 0x%08x, 0x%08x, %d, %s},' % (
+        dlgrows.append('\t{%d, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, 0x%08x, 0x%08x, %d, %s, %d},' % (
             d['id'] if d['id'] is not None else -1, cstr(d['name']), cstr(d['caption']), cstr(d['font'] or 'MS Shell Dlg'),
             d['fontsize'], d['weight'], d['italic'], d['x'], d['y'], d['cx'], d['cy'],
-            d['style'] & 0xFFFFFFFF, d['exstyle'] & 0xFFFFFFFF, len(d['ctrls']), 'dlg_%d_ctrl' % n if d['ctrls'] else 'nullptr'))
+            d['style'] & 0xFFFFFFFF, d['exstyle'] & 0xFFFFFFFF, len(d['ctrls']), 'dlg_%d_ctrl' % n if d['ctrls'] else 'nullptr',
+            d['menu']))
     if dlgrows:
         out += ['', 'static const RESDIALOG dialogs[] = {'] + dlgrows + ['};']
+    menurows = []
+    for n, m in enumerate(parser.menus):
+        out.append('static const RESMENUITEM menu_%d_item[] = { // %s' % (n, m['name']))
+        for mid, text, flags, nsub in m['items']:
+            out.append('\t{%d, %s, 0x%x, %d},' % (mid, cstr(text), flags, nsub))
+        out.append('};')
+        menurows.append('\t{%d, %s, %d, menu_%d_item},' % (m['id'] if m['id'] is not None else -1, cstr(m['name']), len(m['items']), n))
+    if menurows:
+        out += ['', 'static const RESMENU menus[] = {'] + menurows + ['};']
     out += ['', 'static const RESTABLE table = {',
             '\t%s, %s,' % ('sizeof(dialogs)/sizeof(dialogs[0])' if dlgrows else '0', 'dialogs' if dlgrows else 'nullptr'),
             '\t%s, %s,' % ('sizeof(images)/sizeof(images[0])' if imgrows else '0', 'images' if imgrows else 'nullptr'),
             '\t%s, %s,' % ('sizeof(resdata)/sizeof(resdata[0])' if datarows else '0', 'resdata' if datarows else 'nullptr'),
-            '\t%s, %s' % ('sizeof(strings)/sizeof(strings[0])' if strrows else '0', 'strings' if strrows else 'nullptr'),
+            '\t%s, %s,' % ('sizeof(strings)/sizeof(strings[0])' if strrows else '0', 'strings' if strrows else 'nullptr'),
+            '\t%s, %s' % ('sizeof(menus)/sizeof(menus[0])' if menurows else '0', 'menus' if menurows else 'nullptr'),
             '};', '']
     if exe:
         out.append('const RESTABLE *%s ()' % symbol)

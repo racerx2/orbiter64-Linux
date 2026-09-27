@@ -37,6 +37,7 @@ struct RESDIALOG {
 	DWORD style, exstyle;
 	int nctrl;
 	const RESCONTROL *ctrl;
+	int menu;             // MENU statement: menu resource id, -1 if none
 };
 
 struct RESIMAGE {
@@ -56,6 +57,21 @@ struct RESDATA {
 	int size;
 };
 
+// MENU/MENUEX item; a popup's nsub items follow it, each nested popup followed by its own items
+struct RESMENUITEM {
+	int id;               // command id (MENUEX popups may have one too)
+	const char *text;     // UTF-8, '&' marks the mnemonic, '\t' starts the shortcut text; nullptr for a separator
+	DWORD flags;          // MF_GRAYED 0x1, MF_DISABLED 0x2, MF_CHECKED 0x8, MF_POPUP 0x10, MF_MENUBARBREAK 0x20, MF_MENUBREAK 0x40, MF_HELP 0x4000
+	int nsub;
+};
+
+struct RESMENU {
+	int id;
+	const char *name;
+	int nitem;            // all items in .rc order (a popup's items right after it)
+	const RESMENUITEM *item;
+};
+
 // STRINGTABLE entry (UTF-8)
 struct RESSTRING {
 	int id;
@@ -71,10 +87,13 @@ struct RESTABLE {
 	const RESDATA *data;
 	size_t nstr;
 	const RESSTRING *str;
+	size_t nmenu;
+	const RESMENU *menu;
 };
 
 class QWidget;
 class QImage;
+class QMenuBar;
 
 // resource table of a module (dlopen handle, via its generated oapiModuleResources), or of Orbiter for hModule == 0
 OAPIFUNC const RESTABLE *oapiResourceTable (void *hModule);
@@ -83,6 +102,9 @@ OAPIFUNC const RESIMAGE *oapiFindResImage (void *hModule, int resId);
 
 // image resource as a QImage (LoadBitmap/LoadIcon counterpart); caller owns the image
 OAPIFUNC QImage *oapiLoadResImage (void *hModule, int resId);
+
+// MENU/MENUEX resource (FindResource counterpart)
+OAPIFUNC const RESMENU *oapiFindResMenu (void *hModule, int resId);
 
 // resource of a user-defined type (FindResource/LoadResource counterpart), type compared case-insensitively
 OAPIFUNC const RESDATA *oapiFindResData (void *hModule, const char *type, int resId);
@@ -93,6 +115,9 @@ OAPIFUNC int oapiLoadResString (void *hModule, int id, char *buf, int buflen);
 
 // builds the Qt widgets of a dialog template (CreateDialogParam counterpart, without the message procedure)
 OAPIFUNC QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent);
+
+// LoadMenu + SetMenu counterpart (also used for a template's MENU statement): bar on top, window grows; items reach oapiConnectDlgCommands
+OAPIFUNC QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hWnd);
 
 // dialog control by resource id (GetDlgItem counterpart)
 OAPIFUNC QWidget *oapiResDlgItem (QWidget *hDlg, int id);
@@ -118,8 +143,7 @@ enum RESNOTIFY {
 	RESN_EDITCHANGE  // editable combo box text changed by the user (CBN_EDITCHANGE)
 };
 
-// connects the command signals of a dialog's controls to one handler, called with the control's resource id,
-// the RESNOTIFY code and the control (the WM_COMMAND switch of a dialog procedure)
+// WM_COMMAND switch of a dialog procedure: one handler for its controls and menu items (resource id, RESNOTIFY code, control or nullptr)
 typedef std::function<void (int id, int code, QWidget *hCtrl)> RESCOMMAND;
 OAPIFUNC void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler);
 

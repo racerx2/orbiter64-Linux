@@ -8,19 +8,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
-#include <cstdarg>
 #include <cstdio>
-
-// not upstream: ResDialog.cpp's links into the Orbiter core (module resource tables, log), as in Tests/ResDialog.Test.cpp
-void *ModuleProc (void*, const char*) { return nullptr; }
-void LogOut_Warning (const char*, const char*, int, const char *msg, ...)
-{
-	va_list ap;
-	va_start (ap, msg);
-	vfprintf (stderr, msg, ap);
-	va_end (ap);
-	fputc ('\n', stderr);
-}
 
 // not upstream: ResDlg (see StdAfx.h)
 

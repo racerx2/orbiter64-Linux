@@ -22,11 +22,6 @@
 #include <string>
 #include "ResDialog.h"
 
-class QMenuBar;
-
-// LoadMenu + SetMenu: menu bar on top of hDlg, items call handler (id, RESN_CLICKED, nullptr); requested for ResDialog, stand-in in StdAfx.cpp
-QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hDlg, RESCOMMAND handler);
-
 // not upstream: the part of MFC's CDialog this app uses, on the Qt dialog ResDialog builds from the .rc template
 class ResDlg {
 public:

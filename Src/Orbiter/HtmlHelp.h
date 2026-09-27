@@ -5,6 +5,8 @@
 
 #include <QTextBrowser>
 #include <QUrl>
+#include <utility>
+#include <vector>
 
 class QWidget;
 
@@ -23,6 +25,19 @@ class ChmBrowser: public QTextBrowser {
 public:
 	using QTextBrowser::QTextBrowser;
 	QVariant loadResource (int type, const QUrl &name) override;
+	void SetPageHtml (const QString &html); // setHtml, with percentage image widths as the browser object sized them
+
+protected:
+	void doSetSource (const QUrl &name, QTextDocument::ResourceType type) override;
+	void resizeEvent (QResizeEvent *e) override;
+
+private:
+	QVariant LoadPage (int type, const QUrl &name);
+	int PageWidth () const;
+	QString PercentImages (const QString &html);
+	void FitPercentImages ();
+	std::vector<std::pair<QString,double>> pctImages; // <img width="N%"> of the page in order: src, N
+	int pctWidth = 0;                                // page width they were fitted to
 };
 
 #endif // !__HTMLHELP_H

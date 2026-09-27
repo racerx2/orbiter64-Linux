@@ -9,10 +9,16 @@
 #include <QHash>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QResizeEvent>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QStringDecoder>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QTextDocument>
+#include <QTextList>
 #include <QTreeWidget>
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -158,7 +164,109 @@ QUrl ChmUrlFromIts (const QString &its)
 	return ItsUrl (its, QString());
 }
 
+// Internet Explorer sizes <img width="N%"> to N% of its containing block; QTextBrowser takes pixel widths only
+QString ChmBrowser::PercentImages (const QString &html)
+{
+	static const QRegularExpression img ("<img\\b[^>]*>", QRegularExpression::CaseInsensitiveOption);
+	static const QRegularExpression pct ("\\bwidth\\s*=\\s*[\"']?\\s*([0-9.]+)\\s*%[\"']?", QRegularExpression::CaseInsensitiveOption);
+	static const QRegularExpression src ("\\bsrc\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))", QRegularExpression::CaseInsensitiveOption);
+	pctImages.clear();
+	pctWidth = PageWidth();
+	QString out;
+	qsizetype pos = 0;
+	auto it = img.globalMatch (html);
+	while (it.hasNext()) {
+		QRegularExpressionMatch m = it.next();
+		QString tag = m.captured();
+		QRegularExpressionMatch w = pct.match (tag);
+		QRegularExpressionMatch sm = src.match (tag);
+		if (w.hasMatch() && sm.hasMatch()) {
+			QString name = sm.captured (1) + sm.captured (2) + sm.captured (3);
+			double n = w.captured (1).toDouble();
+			pctImages.push_back ({name, n});
+			tag.replace (w.capturedStart(), w.capturedLength(), QString ("width=\"%1\"").arg (qRound (n * pctWidth / 100.0))); // first guess: the whole page
+		}
+		out += html.mid (pos, m.capturedStart() - pos) + tag;
+		pos = m.capturedEnd();
+	}
+	return out + html.mid (pos);
+}
+
+// the same width with or without the vertical scroll bar, so the layout can't flip between the two
+int ChmBrowser::PageWidth () const
+{
+	int w = viewport()->width();
+	if (!verticalScrollBar()->isVisible()) w -= verticalScrollBar()->sizeHint().width();
+	return std::max (1, w - 2*(int)document()->documentMargin());
+}
+
+// each percentage image gets its share of the width left in its paragraph (margins, list indents)
+void ChmBrowser::FitPercentImages ()
+{
+	if (pctImages.empty()) return;
+	QTextDocument *doc = document();
+	pctWidth = PageWidth();
+	struct Fit { int pos, len; QTextImageFormat fmt; };
+	std::vector<Fit> fits;
+	size_t k = 0;
+	for (QTextBlock b = doc->begin(); b.isValid() && k < pctImages.size(); b = b.next()) {
+		QTextBlockFormat bf = b.blockFormat();
+		double indent = bf.indent() + (b.textList() ? b.textList()->format().indent() : 0);
+		double avail = pctWidth - bf.leftMargin() - bf.rightMargin() - bf.textIndent() - indent * doc->indentWidth();
+		for (auto it = b.begin(); !it.atEnd() && k < pctImages.size(); ++it) {
+			QTextFragment f = it.fragment();
+			if (!f.isValid() || !f.charFormat().isImageFormat()) continue;
+			QTextImageFormat fmt = f.charFormat().toImageFormat();
+			if (fmt.name() != pctImages[k].first) continue;
+			int px = std::max (1, qRound (pctImages[k++].second * avail / 100.0));
+			if (qRound (fmt.width()) == px) continue;
+			fmt.setWidth (px);
+			fits.push_back ({f.position(), f.length(), fmt});
+		}
+	}
+	QTextCursor cur (doc);
+	for (auto &fit: fits) {
+		cur.setPosition (fit.pos);
+		cur.setPosition (fit.pos + fit.len, QTextCursor::KeepAnchor);
+		cur.setCharFormat (fit.fmt);
+	}
+}
+
+void ChmBrowser::SetPageHtml (const QString &html)
+{
+	setHtml (PercentImages (html));
+	FitPercentImages();
+}
+
+void ChmBrowser::doSetSource (const QUrl &name, QTextDocument::ResourceType type)
+{
+	QTextBrowser::doSetSource (name, type);
+	FitPercentImages();
+}
+
+void ChmBrowser::resizeEvent (QResizeEvent *e)
+{
+	QTextBrowser::resizeEvent (e);
+	if (!pctImages.empty() && PageWidth() != pctWidth) FitPercentImages();
+}
+
 QVariant ChmBrowser::loadResource (int type, const QUrl &name)
+{
+	QVariant v = LoadPage (type, name);
+	if (type != QTextDocument::HtmlResource || v.isNull()) return v;
+	QString s;
+	if (v.userType() == QMetaType::QString) s = v.toString();
+	else {
+		QByteArray b = v.toByteArray();
+		QStringDecoder dec = QStringDecoder::decoderForHtml (b); // BOM or meta charset
+		if (!dec.isValid()) dec = QStringDecoder (QStringDecoder::Utf8);
+		s = dec (b);
+		if (dec.hasError()) s = QString::fromLatin1 (b); // Windows-era pages
+	}
+	return PercentImages (s);
+}
+
+QVariant ChmBrowser::LoadPage (int type, const QUrl &name)
 {
 	QString chmfile, topic;
 	if (name.scheme() != "chm" || !SplitChmUrl (name, chmfile, topic)) return QTextBrowser::loadResource (type, name);

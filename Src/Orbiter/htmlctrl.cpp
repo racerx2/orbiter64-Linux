@@ -41,7 +41,8 @@ long DisplayHTMLStr(QWidget *hwnd, const char *string)
 {
 	QTextBrowser *tb = qobject_cast<QTextBrowser*> (hwnd);
 	if (!tb || !string) return -1;
-	tb->setHtml (QString::fromUtf8 (string));
+	if (ChmBrowser *cb = dynamic_cast<ChmBrowser*> (tb)) cb->SetPageHtml (QString::fromUtf8 (string));
+	else tb->setHtml (QString::fromUtf8 (string));
 	return 0;
 }
 

@@ -13,6 +13,7 @@
 #include <QFontMetrics>
 #include <QFrame>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QImage>
 #include <QImageReader>
 #include <QLabel>
@@ -23,6 +24,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPlainTextEdit>
+#include <QProxyStyle>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
@@ -32,6 +34,7 @@
 #include <QScrollBar>
 #include <QSlider>
 #include <QStringDecoder>
+#include <QStyleFactory>
 #include <QStyleOption>
 #include <QTextBrowser>
 #include <QTextEdit>
@@ -69,7 +72,7 @@ namespace rs {
 	constexpr DWORD CBS_SIMPLE = 0x1, CBS_DROPDOWN = 0x2, CBS_SORT = 0x100;
 	constexpr DWORD LBS_SORT = 0x2, LBS_MULTIPLESEL = 0x8, LBS_EXTENDEDSEL = 0x800, LBS_NOSEL = 0x4000;
 	constexpr DWORD SBS_VERT = 0x1;
-	constexpr DWORD TVS_LINESATROOT = 0x4, TVS_CHECKBOXES = 0x100;
+	constexpr DWORD TVS_LINESATROOT = 0x4, TVS_CHECKBOXES = 0x100, TVS_FULLROWSELECT = 0x1000, TVS_NOHSCROLL = 0x8000;
 	constexpr DWORD TBS_AUTOTICKS = 0x1, TBS_VERT = 0x2, TBS_TOP = 0x4, TBS_BOTH = 0x8, TBS_NOTICKS = 0x10;
 	constexpr DWORD UDS_WRAP = 0x1, UDS_SETBUDDYINT = 0x2, UDS_ALIGNRIGHT = 0x4, UDS_ALIGNLEFT = 0x8, UDS_AUTOBUDDY = 0x10,
 		UDS_HORZ = 0x40;
@@ -493,6 +496,33 @@ static void SetFill (QWidget *w, const QColor &col)
 }
 
 // creates one control; r is its rectangle in pixels (may be adjusted), prev the control created before it
+// a Win32 tree view without TVS_FULLROWSELECT highlights the selected item's label only, not its icon or indent
+class TreeLabelStyle: public QProxyStyle {
+public:
+	using QProxyStyle::QProxyStyle;
+	int styleHint (StyleHint hint, const QStyleOption *opt, const QWidget *w, QStyleHintReturn *ret) const override
+	{
+		if (hint == SH_ItemView_ShowDecorationSelected) return 0;
+		return QProxyStyle::styleHint (hint, opt, w, ret);
+	}
+	void drawPrimitive (PrimitiveElement pe, const QStyleOption *opt, QPainter *p, const QWidget *w) const override
+	{
+		const QStyleOptionViewItem *vo = qstyleoption_cast<const QStyleOptionViewItem*> (opt);
+		if (pe != PE_PanelItemViewItem || !vo || !(vo->state & State_Selected)) {
+			QProxyStyle::drawPrimitive (pe, opt, p, w);
+			return;
+		}
+		QStyleOptionViewItem o (*vo);
+		o.state &= ~State_Selected;
+		QProxyStyle::drawPrimitive (pe, &o, p, w);
+		QRect r = subElementRect (SE_ItemViewItemText, vo, w);
+		int m = pixelMetric (PM_FocusFrameHMargin, vo, w) + 1;
+		r.setWidth (std::min (r.width(), vo->fontMetrics.horizontalAdvance (vo->text) + 2*m));
+		QPalette::ColorGroup cg = !(vo->state & State_Enabled) ? QPalette::Disabled : (vo->state & State_Active) ? QPalette::Active : QPalette::Inactive;
+		p->fillRect (r, vo->palette.brush (cg, QPalette::Highlight));
+	}
+};
+
 static QWidget *CreateControl (const RESCONTROL *c, QWidget *dlg, void *hModule, QRect &r, QButtonGroup *&radiogroup, QWidget *prev)
 {
 	using namespace rs;
@@ -652,6 +682,17 @@ static QWidget *CreateControl (const RESCONTROL *c, QWidget *dlg, void *hModule,
 		tv->setRootIsDecorated (st & TVS_LINESATROOT);
 		tv->setProperty ("resCheckboxes", (bool)(st & TVS_CHECKBOXES));
 		if (!border) tv->setFrameStyle (QFrame::NoFrame);
+		tv->setTextElideMode (Qt::ElideNone); // Win32 trees clip long labels, and scroll sideways unless TVS_NOHSCROLL
+		if (!(st & TVS_NOHSCROLL)) {
+			tv->header()->setSectionResizeMode (QHeaderView::ResizeToContents);
+			tv->header()->setStretchLastSection (false);
+			tv->setHorizontalScrollMode (QAbstractItemView::ScrollPerPixel);
+		}
+		if (!(st & TVS_FULLROWSELECT)) {
+			QProxyStyle *ls = new TreeLabelStyle (QStyleFactory::create (QApplication::style()->name()));
+			ls->setParent (tv);
+			tv->setStyle (ls);
+		}
 		w = tv;
 		} break;
 	case RES_TABCONTROL:

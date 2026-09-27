@@ -12,9 +12,11 @@ Ubuntu/Debian package names; other distros have the same libraries under their o
 Lua 5.1, zlib 1.2.11, Dear ImGui, ImPlot and Tracy are fetched by CMake at the same tags
 upstream uses; Catch2 is v3.8.1 (see port-plan.md).
 
-If you want to build the Orbiter documentation, you need LaTeX (e.g. `texlive`).
+If you want to build the Orbiter documentation (`-DORBITER_MAKE_DOC=ON`), you need LaTeX:
+`texlive-latex-extra`, `texlive-fonts-recommended`, `texlive-fonts-extra`, `texlive-science`,
+`texlive-plain-generic`, `texlive-font-utils`, `ghostscript`.
 
-To build the code-level documentation, you need [Doxygen](https://www.doxygen.nl/index.html).
+To build the code-level documentation, you need [Doxygen](https://www.doxygen.nl/index.html) (`doxygen`, `graphviz`).
 
 
 BUILDING ORBITER

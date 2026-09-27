@@ -52,6 +52,9 @@ VkShaderEXT VkCreateShaderObject (VkDev *dev, const std::vector<uint32_t> &spirv
 class VkConstBuffer {
 public:
 	explicit VkConstBuffer (VkDev *dev);
+	~VkConstBuffer ();
+	VkConstBuffer (const VkConstBuffer&) = delete;
+	VkConstBuffer& operator= (const VkConstBuffer&) = delete;
 	void SetTable (const VkConstTable *t);
 	void SetValue (VkConstHandle h, const void *data, UINT bytes);
 	void GetValue (VkConstHandle h, void *data, UINT bytes) const;
@@ -59,6 +62,7 @@ public:
 	void ClearTextures ();
 	void Push (const std::vector<VkSamplerSlot> &samplers); // pushes the blocks and the listed sampler bindings
 	VkTex *GetTexture (int binding) const;
+	void DropTexture (const VkTex *t);                 // VkDev::ForgetTexture, under ConstLock
 	void Invalidate () { dirty = true; }
 	bool IsDirty () const { return dirty; }
 private:

@@ -180,6 +180,9 @@ public:
 	void SetRenderTargetN (UINT idx, VkSurf *color);  // SetRenderTarget(idx, s): 0 = SetRenderTarget(color, current depth), 1-3 extra MRT colour targets
 	VkSurf *GetRenderTargetN (UINT idx) const { return idx == 0 ? rtColor : (idx < 4 ? rtExtra[idx - 1] : NULL); }
 	void ForgetTarget (const VkSurf *s);             // a target surface is deleted: unbind it (a new VkSurf may reuse the address)
+	void ForgetTexture (const VkTex *t);             // a texture is deleted: drop it from the effects' sampler bindings (D3D9 effects held a reference)
+	void RegisterConstants (VkConstBuffer *cb, bool add); // the constant buffers ForgetTexture visits
+	std::mutex &ConstLock () { return constLock; }   // guards the constant buffers' texture bindings (textures die on loader threads too)
 	VkSurf *GetDepthStencil () const { return rtDepth; }
 	void BeginRendering ();                          // no-op while rendering to the same targets
 	void EndRendering ();
@@ -285,6 +288,9 @@ private:
 	VkSemaphore timeline;
 	uint64_t timelineValue;
 	VkCommandPool oneTimePool;
+	std::recursive_mutex oneTimeLock;                // held from BeginOneTime to EndOneTime: the pool is externally synchronized
+	std::mutex constLock;
+	std::vector<VkConstBuffer*> constBufs;
 	std::mutex queueLock;                            // D3DCREATE_MULTITHREADED: loader threads upload textures
 
 	VkSurf *rtColor, *rtDepth;

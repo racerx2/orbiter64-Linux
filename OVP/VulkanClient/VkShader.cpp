@@ -220,6 +220,12 @@ static const VkSamplerDesc defSampler = { VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK
 
 VkConstBuffer::VkConstBuffer (VkDev *_dev) : dev(_dev), dirty(true)
 {
+	dev->RegisterConstants (this, true);
+}
+
+VkConstBuffer::~VkConstBuffer ()
+{
+	dev->RegisterConstants (this, false);
 }
 
 void VkConstBuffer::SetTable (const VkConstTable *t)
@@ -253,18 +259,29 @@ void VkConstBuffer::GetValue (VkConstHandle h, void *p, UINT bytes) const
 
 void VkConstBuffer::SetTexture (int binding, VkTex *t, const VkSamplerDesc &s)
 {
+	std::lock_guard<std::mutex> lock (dev->ConstLock ());
 	tex[binding] = { t, s };
 	dirty = true;
 }
 
 VkTex *VkConstBuffer::GetTexture (int binding) const
 {
+	std::lock_guard<std::mutex> lock (dev->ConstLock ());
 	auto it = tex.find (binding);
 	return it == tex.end() ? NULL : it->second.tex;
 }
 
+void VkConstBuffer::DropTexture (const VkTex *t)
+{
+	for (auto it = tex.begin(); it != tex.end(); ) {
+		if (it->second.tex == t) it = tex.erase (it), dirty = true;
+		else ++it;
+	}
+}
+
 void VkConstBuffer::ClearTextures ()
 {
+	std::lock_guard<std::mutex> lock (dev->ConstLock ());
 	tex.clear ();
 	dirty = true;
 }
@@ -290,6 +307,7 @@ void VkConstBuffer::Push (const std::vector<VkSamplerSlot> &samplers)
 		w[n].pBufferInfo = &bi[nb];
 		n++, nb++;
 	}
+	std::lock_guard<std::mutex> lock (dev->ConstLock ());
 	for (auto &s : samplers) {
 		if (s.binding < VkDev::NUBOS || s.binding >= VkDev::MAXBINDINGS) continue;
 		auto it = tex.find (s.binding);

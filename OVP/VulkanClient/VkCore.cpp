@@ -299,6 +299,7 @@ void (*VkTex::uiRelease) (uint64_t set, DWORD gen) = NULL;
 
 VkTex::~VkTex ()
 {
+	dev->ForgetTexture (this);
 	if (uiSet && uiRelease) {
 		auto f = uiRelease;
 		uint64_t s = uiSet;
@@ -786,15 +787,13 @@ void VkDev::Flush ()
 
 VkCommandBuffer VkDev::BeginOneTime ()
 {
+	oneTimeLock.lock (); // loader threads record uploads too; released in EndOneTime
 	VkCommandBuffer cmd;
 	VkCommandBufferAllocateInfo ci = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
 	ci.commandPool = oneTimePool;
 	ci.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	ci.commandBufferCount = 1;
-	{
-		std::lock_guard<std::mutex> lock (queueLock);
-		VKCHECK(vkAllocateCommandBuffers (dev, &ci, &cmd));
-	}
+	VKCHECK(vkAllocateCommandBuffers (dev, &ci, &cmd));
 	VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	VKCHECK(vkBeginCommandBuffer (cmd, &bi));
@@ -818,8 +817,8 @@ void VkDev::EndOneTime (VkCommandBuffer cmd)
 	}
 	VKCHECK(vkWaitForFences (dev, 1, &fence, VK_TRUE, UINT64_MAX));
 	vkDestroyFence (dev, fence, NULL);
-	std::lock_guard<std::mutex> lock (queueLock);
 	vkFreeCommandBuffers (dev, oneTimePool, 1, &cmd);
+	oneTimeLock.unlock ();
 }
 
 VkDeviceSize VkDev::AllocTransient (VkDeviceSize n, VkDeviceSize align, void **ptr)
@@ -861,6 +860,20 @@ void VkDev::SetRenderTargetN (UINT idx, VkSurf *color)
 	EndRendering ();
 	rtExtra[idx - 1] = color;
 }
+void VkDev::ForgetTexture (const VkTex *t)
+{
+	std::lock_guard<std::mutex> lock (constLock);
+	for (auto cb : constBufs) cb->DropTexture (t);
+}
+
+void VkDev::RegisterConstants (VkConstBuffer *cb, bool add)
+{
+	std::lock_guard<std::mutex> lock (constLock);
+	if (add) constBufs.push_back (cb);
+	else constBufs.erase (std::remove (constBufs.begin(), constBufs.end(), cb), constBufs.end());
+	if (!add && cbActive == cb) cbActive = NULL;
+}
+
 void VkDev::ForgetTarget (const VkSurf *s)
 {
 	if (s != rtColor && s != rtDepth && s != rtExtra[0] && s != rtExtra[1] && s != rtExtra[2]) return;

@@ -25,6 +25,8 @@
 #include <zlib.h>
 #include "DrawAPI.h"
 #include <QImage>
+#include <QCoreApplication>
+#include <QThread>
 
 #include "Orbitersdk.h"
 
@@ -2337,6 +2339,7 @@ DLLEXPORT void oapiWriteLog (char *line)
 
 DLLEXPORT void oapiExitOrbiter(int code)
 {
+	if (QThread::currentThread() != QCoreApplication::instance()->thread()) { fflush(NULL); _Exit(code); } // not upstream: ExitProcess stops the other threads first, exit() here would run the destructors under the running main thread
 	exit(code);
 }
 

@@ -46,6 +46,7 @@
 #include "OrbiterResource.h"
 #include "VkTexFile.h"
 #include <QVulkanInstance>
+#include <QGuiApplication>
 #include <QVersionNumber>
 #include <QWindow>
 #include <QWidget>
@@ -421,6 +422,9 @@ D3D9Client::~D3D9Client()
 {
 	LogAlw("D3D9Client destructor called");
 	SAFE_DELETE(vtab);
+	if (g_pD3DObject && QGuiApplication::instance()) // not upstream: a window still made for this instance (fast exit) gives its VkSurfaceKHR back first
+		for (QWindow *w : QGuiApplication::allWindows())
+			if (w->vulkanInstance() == g_pD3DObject) w->destroy();
 	SAFE_DELETE(g_pD3DObject); // Release: the QVulkanInstance destroys the VkInstance
 }
 

@@ -381,6 +381,7 @@ void VkTex::Upload (UINT level, UINT layer, const void *data, VkDeviceSize size,
 	region.imageExtent = { lw, lh, depth };
 	vkCmdCopyBufferToImage (cmd, staging.buf, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 	Transition (cmd, keep);
+	Written (level);
 	dev->EndOneTime (cmd);
 }
 
@@ -897,6 +898,7 @@ void VkDev::BeginRendering ()
 		UINT n = 0;
 		for (; n < 4 && c[n]; n++) {
 			c[n]->tex->Transition (cmd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			c[n]->tex->Written (c[n]->level);
 			ca[n] = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 			ca[n].imageView = c[n]->view;
 			ca[n].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1270,6 +1272,11 @@ void VkDev::DrawIndexedPrimitiveUP (VkPrimitiveTopology t, UINT vertexCount, UIN
 
 void VkDev::PrepareSample (VkTex *t)
 {
+	if (t && recording && t->mipsDirty) { // D3DUSAGE_AUTOGENMIPMAP: the runtime rebuilds the sublevels when the texture is next used
+		EndRendering ();
+		t->GenerateMips (Cmd());
+		t->mipsDirty = false;
+	}
 	if (!t || !recording || t->layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) return;
 	EndRendering (); // no layout changes inside a rendering pass
 	t->Transition (Cmd(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1362,6 +1369,7 @@ void VkDev::StretchRect (VkSurf *src, const RECT *sr, VkSurf *dst, const RECT *d
 	bi.filter = filter;
 	vkCmdBlitImage2 (cmd, &bi);
 	TransferDone (cmd);
+	if (!ms) dst->tex->Written (dst->level);
 	if (ms) DrawCopy (ms, dst, d);
 	delete ms;
 	delete tmp;
@@ -1455,6 +1463,7 @@ void VkDev::CopySurface (VkSurf *src, const RECT *sr, VkSurf *dst, const POINT *
 	ci.pRegions = &c;
 	vkCmdCopyImage2 (cmd, &ci);
 	TransferDone (cmd);
+	dst->tex->Written (dst->level);
 }
 
 void VkDev::ColorFill (VkSurf *s, const RECT *r, DWORD argb)
@@ -1484,4 +1493,5 @@ void VkDev::ColorFill (VkSurf *s, const RECT *r, DWORD argb)
 	VkImageSubresourceRange rr = { VK_IMAGE_ASPECT_COLOR_BIT, s->level, 1, s->layer, 1 };
 	vkCmdClearColorImage (cmd, s->tex->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &c, 1, &rr); // whole level: images without attachment use can't clear a rectangle
 	TransferDone (cmd);
+	s->tex->Written (s->level);
 }

@@ -84,6 +84,7 @@ public:
 	void Transition (VkCommandBuffer cmd, VkImageLayout layout); // records a barrier to the new layout
 	void Upload (UINT level, UINT layer, const void *data, VkDeviceSize size, UINT rowPitch = 0); // whole mip level
 	void GenerateMips (VkCommandBuffer cmd); // D3DUSAGE_AUTOGENMIPMAP counterpart
+	void Written (UINT level) { if (!level && autoGenMips && levels > 1) mipsDirty = true; } // level 0 changed: sublevels out of date
 	VkImageAspectFlags Aspect () const;
 	bool IsDepth () const;
 	void SetSwizzle (VkComponentMapping swz);   // view channel mapping (X8, L8, A8 and A8L8 formats)
@@ -98,6 +99,8 @@ public:
 	VkImageLayout layout;
 	VkComponentMapping swizzle; // identity unless SetSwizzle
 	bool external;         // swapchain image: not owned
+	bool autoGenMips = false; // D3DUSAGE_AUTOGENMIPMAP: the sublevels follow level 0
+	bool mipsDirty = false;   // level 0 changed since the sublevels were made
 
 	VkTex (VkDev *dev, VkImage image, VkFormat fmt, UINT w, UINT h); // wraps an image owned elsewhere
 	VkTex (VkDev *dev, VkFormat fmt, UINT w, UINT h, UINT d, VkImageUsageFlags usage); // volume texture, one level

@@ -465,6 +465,7 @@ SurfNative::SurfNative(VkTex *pRes, DWORD flags, VkSurf *_pDepth) :
 	desc.SysMem = (flags & OAPISURFACE_SYSMEM) != 0;
 	desc.MultiSampleType = pRes->samples;
 	Mipmaps = pRes->levels;
+	pRes->autoGenMips = desc.AutoGenMipMap;
 }
 
 
@@ -720,6 +721,7 @@ bool SurfNative::GenerateMipMaps()
 			if (!pDevice->IsRecording()) return false;
 			pDevice->EndRendering();
 			pTex->GenerateMips(pDevice->Cmd()); // GenerateMipSubLevels
+			pTex->mipsDirty = false;
 			return true;
 		}
 		else {

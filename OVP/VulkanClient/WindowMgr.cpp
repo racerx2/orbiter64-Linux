@@ -477,7 +477,7 @@ WindowManager::WindowManager(QWindow *hAppMainWindow, void *_hInst, bool bWindow
 
 	if (file.IsInvalid()) {
 		snprintf(path, 256, "%sgcGUI.cfg", OapiExtension::GetConfigDir());
-		file.pFile = fopen(path, "r");
+		file.pFile = fopen(oapiResolvePath(path).c_str(), "r"); // ConfigDir may be written with '\\'
 	}
 
 	if (!file.IsInvalid()) {

@@ -271,8 +271,8 @@ int CD3DFramework9::Initialize(QWindow *_hWnd, GraphicsClient::VIDEODATA *vData)
 	caps.MaxTextureWidth = lim.maxImageDimension2D;
 	caps.MaxTextureHeight = lim.maxImageDimension2D;
 	caps.MaxTextureRepeat = 8192; // Vulkan has no repeat limit; the value upstream's users clamp against
-	caps.MaxPrimitiveCount = lim.maxDrawIndexedIndexValue;
-	caps.MaxVertexIndex = lim.maxDrawIndexedIndexValue;
+	caps.MaxPrimitiveCount = std::min(lim.maxDrawIndexedIndexValue, 0xFFFFFu); // D3D9 drivers' 20-bit value: callers add it to counts (2^32-1 wrapped the star chunking)
+	caps.MaxVertexIndex = std::min(lim.maxDrawIndexedIndexValue, 0xFFFFFFu); // D3D9 drivers' 24-bit value, same reason
 	caps.MaxAnisotropy = (DWORD)lim.maxSamplerAnisotropy;
 
 	// AA CAPS Checks --------------------------------------------------

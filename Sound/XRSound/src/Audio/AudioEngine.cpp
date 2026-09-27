@@ -114,24 +114,13 @@ bool AudioEngine::Start(const char *pAppName, std::string &error)
         error = std::string("can't create a PipeWire context: ") + strerror(errno);
         return false;
     }
-    if (pw_thread_loop_start(m_pw->pLoop) < 0)
+    // connect before the loop thread starts: stopping a just-started thread loop can hang in pw_thread_loop_stop
+    m_pw->pCore = pw_context_connect(m_pw->pContext, nullptr, 0);   // fails at once when no daemon listens on the socket
+    if (!m_pw->pCore)
     {
-        error = "can't start the PipeWire thread loop";
+        error = std::string("no PipeWire daemon: ") + strerror(errno);
         return false;
     }
-
-    pw_thread_loop_lock(m_pw->pLoop);
-    auto fail = [this, &error](const std::string &text)
-    {
-        error = text;
-        pw_thread_loop_unlock(m_pw->pLoop);
-        return false;
-    };
-
-    // fails at once when no daemon listens on the socket
-    m_pw->pCore = pw_context_connect(m_pw->pContext, nullptr, 0);
-    if (!m_pw->pCore)
-        return fail(std::string("no PipeWire daemon: ") + strerror(errno));
     pw_core_add_listener(m_pw->pCore, &m_pw->coreListener, &PipeWire::coreEvents, this);
 
     pw_properties *pProps = pw_properties_new(
@@ -144,7 +133,10 @@ bool AudioEngine::Start(const char *pAppName, std::string &error)
         nullptr);
     m_pw->pStream = pw_stream_new(m_pw->pCore, "XRSound", pProps);   // takes pProps
     if (!m_pw->pStream)
-        return fail(std::string("can't create a PipeWire stream: ") + strerror(errno));
+    {
+        error = std::string("can't create a PipeWire stream: ") + strerror(errno);
+        return false;
+    }
     pw_stream_add_listener(m_pw->pStream, &m_pw->streamListener, &PipeWire::streamEvents, this);
 
     uint8_t podBuffer[1024];
@@ -160,7 +152,24 @@ bool AudioEngine::Start(const char *pAppName, std::string &error)
 
     const pw_stream_flags flags = static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS);
     if (pw_stream_connect(m_pw->pStream, PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1) < 0)
-        return fail("can't connect the PipeWire playback stream");
+    {
+        error = "can't connect the PipeWire playback stream";
+        return false;
+    }
+
+    if (pw_thread_loop_start(m_pw->pLoop) < 0)
+    {
+        error = "can't start the PipeWire thread loop";
+        return false;
+    }
+
+    pw_thread_loop_lock(m_pw->pLoop);
+    auto fail = [this, &error](const std::string &text)
+    {
+        error = text;
+        pw_thread_loop_unlock(m_pw->pLoop);
+        return false;
+    };
 
     // PAUSED means the daemon made our node; STREAMING follows once the session manager links it to a sink
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(ConnectTimeoutSeconds);

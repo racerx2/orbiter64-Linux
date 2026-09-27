@@ -8,6 +8,7 @@
 #include "OrbiterResource.h"
 #include <QFont>
 #include <QKeyEvent>
+#include <QResizeEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QVariant>
@@ -307,7 +308,7 @@ void DlgProc (QWidget *hDlg, void *context)
 {
 	// WM_INITDIALOG
 		((MFDWindow*)context)->Initialise (hDlg);
-	// WM_SIZING left out: Qt can't adjust the window manager's resize drag; CheckAspect still runs from Initialise
+	// WM_SIZING: Qt can't adjust the drag rectangle, so the size a drag step gives is fitted afterwards (QEvent::Resize)
 	// WM_COMMAND
 	auto command = [hDlg](int id, int code, QWidget *hCtrl) {
 		switch (id) {
@@ -325,9 +326,23 @@ void DlgProc (QWidget *hDlg, void *context)
 	oapiConnectDlgCommands (hDlg, command);
 	new DlgEvents (hDlg, [hDlg, command](QEvent *e) -> bool {
 		switch (e->type()) {
-		case QEvent::Resize: // WM_SIZE
-			((MFDWindow*)oapiGetDialogContext(hDlg))->Resize();
+		case QEvent::Resize: { // WM_SIZE
+			MFDWindow *mfd = (MFDWindow*)oapiGetDialogContext(hDlg);
+			if (hDlg->property("aspectFit").toBool())
+				hDlg->setProperty("aspectFit", false); // the fitted size arriving
+			else if (static_cast<QResizeEvent*>(e)->oldSize().isValid() && hDlg->isVisible()) { // WM_SIZING, WMSZ_BOTTOMRIGHT
+				QRect g = hDlg->frameGeometry();
+				RECT r = { g.left(), g.top(), g.left() + g.width(), g.top() + g.height() };
+				mfd->CheckAspect(&r, WMSZ_BOTTOMRIGHT);
+				QSize sz((r.right - r.left) - (g.width() - hDlg->width()), (r.bottom - r.top) - (g.height() - hDlg->height()));
+				if (sz != hDlg->size()) {
+					hDlg->setProperty("aspectFit", true);
+					hDlg->resize(sz);
+				}
+			}
+			mfd->Resize();
 			return false;
+		}
 		case QEvent::Close: // not upstream: DefDlgProc's WM_CLOSE -> IDCANCEL to this procedure
 			e->ignore();
 			command (IDCANCEL, RESN_CLICKED, NULL);

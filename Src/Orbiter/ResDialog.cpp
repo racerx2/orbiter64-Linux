@@ -874,6 +874,7 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent, QWindow
 		dlg = qd;
 	} else {
 		dlg = new QWidget (parent);
+		dlg->setAutoFillBackground (true); // a Win32 child dialog paints its own background (WM_CTLCOLORDLG), whatever its parent shows
 	}
 	QFont font = DialogFont (d);
 	dlg->setFont (font);
@@ -930,6 +931,15 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent, QWindow
 	}
 	if (d->style & WS_VISIBLE) dlg->show();
 	return dlg;
+}
+
+int oapiExecOwned (QDialog *dlg, QWindow *owner)
+{
+	if (owner) { // the owner is set before the first show (Wayland takes it only then)
+		dlg->winId();
+		if (dlg->windowHandle()) dlg->windowHandle()->setTransientParent (owner);
+	}
+	return dlg->exec();
 }
 
 // ======================================================================

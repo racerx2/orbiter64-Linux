@@ -138,7 +138,8 @@ BOOL ToolKit::DlgProc(QWidget *hDlg, WORD id, WORD code, void *lParam)
 		case IDC_STARTIMPORT:
 		{
 			if (selection.selw == 0 || selection.selh == 0) {
-				QMessageBox(QMessageBox::NoIcon, "Info", "You need to drag a box around the import area first.", QMessageBox::Ok).exec(); // MessageBox (render window, MB_OK)
+				QMessageBox box(QMessageBox::NoIcon, "Info", "You need to drag a box around the import area first.", QMessageBox::Ok);
+				oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBox (render window, MB_OK)
 				break;
 			}
 			if (CreateOverlays())
@@ -157,7 +158,8 @@ BOOL ToolKit::DlgProc(QWidget *hDlg, WORD id, WORD code, void *lParam)
 
 		case IDC_OPENELEV:
 		{
-			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
+			QMessageBox box(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok);
+			oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBox (render window, MB_OK)
 			//OpenImage(Layer::LayerType::ELEVATION);
 			return true;
 		}
@@ -176,13 +178,15 @@ BOOL ToolKit::DlgProc(QWidget *hDlg, WORD id, WORD code, void *lParam)
 
 		case IDC_OPENMESH:
 		{
-			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
+			QMessageBox box(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok);
+			oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBox (render window, MB_OK)
 			return true;
 		}
 
 		case IDC_EDITELEV:
 		{
-			QMessageBox(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok).exec();
+			QMessageBox box(QMessageBox::NoIcon, "Info", "This feature is not yet implemented.", QMessageBox::Ok);
+			oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBox (render window, MB_OK)
 			return true;
 		}
 
@@ -348,7 +352,8 @@ bool ToolKit::Initialize()
 
 	// Must Initialize the base class
 	if (gcGUIApp::Initialize() == false) {
-		QMessageBox(QMessageBox::NoIcon, "Error", "gcGUI is disabled, can't launch", QMessageBox::Ok).exec(); // MessageBox (render window, MB_OK)
+		QMessageBox box(QMessageBox::NoIcon, "Error", "gcGUI is disabled, can't launch", QMessageBox::Ok);
+		oapiExecOwned(&box, hAppMainWnd); // MessageBox (render window, MB_OK)
 		pCore = NULL;
 		hAppMainWnd = NULL;
 		return false;

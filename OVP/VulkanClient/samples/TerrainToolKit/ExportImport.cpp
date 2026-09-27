@@ -114,7 +114,8 @@ void ToolKit::ExportElev()
 		if (!pElev) {
 			char msg[256];
 			snprintf(msg, 256, "Tile (iLng=%d, iLat=%d) has no elevation for level %d", se.pNode->ilng, se.pNode->ilat, selection.slvl);
-			QMessageBox(QMessageBox::NoIcon, "Error:", msg, QMessageBox::Ok).exec(); // MessageBoxA (render window, MB_OK)
+			QMessageBox box(QMessageBox::NoIcon, "Error:", msg, QMessageBox::Ok);
+			oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBoxA (render window, MB_OK)
 			return;
 		}
 	}
@@ -133,7 +134,8 @@ void ToolKit::ExportElev()
 		}
 
 		if (type == 0) {
-			QMessageBox(QMessageBox::NoIcon, "Error:", "Invalid File Type", QMessageBox::Ok).exec();
+			QMessageBox box(QMessageBox::NoIcon, "Error:", "Invalid File Type", QMessageBox::Ok);
+			oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBoxA (render window, MB_OK)
 			return;
 		}
 
@@ -143,7 +145,8 @@ void ToolKit::ExportElev()
 
 		if (hSrf) {
 			if (!pCore->SaveSurface(SaveImage.lpstrFile, hSrf)) {
-				QMessageBox(QMessageBox::NoIcon, "Error:", "Failed to Save a file", QMessageBox::Ok).exec();
+				QMessageBox box(QMessageBox::NoIcon, "Error:", "Failed to Save a file", QMessageBox::Ok);
+				oapiExecOwned(&box, pCore->GetRenderWindow()); // MessageBoxA (render window, MB_OK)
 				return;
 			}	
 			oapiReleaseTexture(hSrf);
@@ -157,7 +160,8 @@ void ToolKit::ExportElev()
 void ToolKit::BakeImport()
 {
 
-	if (QMessageBox(QMessageBox::Warning, "Are you sure", "Bake and Write the tiles in 'OrbiterRoot/TerrainToolKit/' Folder ?", QMessageBox::Yes | QMessageBox::No).exec() != QMessageBox::Yes) return; // MB_YESNO | MB_ICONEXCLAMATION
+	QMessageBox box(QMessageBox::Warning, "Are you sure", "Bake and Write the tiles in 'OrbiterRoot/TerrainToolKit/' Folder ?", QMessageBox::Yes | QMessageBox::No);
+	if (oapiExecOwned(&box, pCore->GetRenderWindow()) != QMessageBox::Yes) return; // MessageBox (render window, MB_YESNO | MB_ICONEXCLAMATION)
 
 	bool bWater = IsLayerValid(Layer::LayerType::WATER);
 	bool bNight = IsLayerValid(Layer::LayerType::NIGHT);
@@ -297,7 +301,8 @@ void ToolKit::OpenImage(Layer::LayerType lr)
 
 			if (!hSrf) {
 				snprintf(buf, 32 + MAX_PATH, "Unable to load file [%s]", SaveImage.lpstrFile);
-				QMessageBox(QMessageBox::NoIcon, "Error:", buf, QMessageBox::Ok).exec();
+				QMessageBox box(QMessageBox::NoIcon, "Error:", buf, QMessageBox::Ok);
+				oapiExecOwned(&box, hAppMainWnd); // MessageBoxA (render window, MB_OK)
 				return;
 			}
 

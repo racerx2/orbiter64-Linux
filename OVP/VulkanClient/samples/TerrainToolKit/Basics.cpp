@@ -19,7 +19,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QProgressBar>
-#include <QWindow>
 #include <cstring>
 #include <vector>
 #include <list>
@@ -412,9 +411,7 @@ static bool FileDlg(FileDlgSpec &ofn, bool bSave)
 	dlg.setFileMode(bSave ? QFileDialog::AnyFile : QFileDialog::ExistingFile);
 	dlg.setOptions(ofn.bOverwritePrompt ? QFileDialog::Options() : QFileDialog::DontConfirmOverwrite);
 	if (!sel.isEmpty()) dlg.selectNameFilter(sel);
-	dlg.winId();
-	if (dlg.windowHandle()) dlg.windowHandle()->setTransientParent(ofn.hwndOwner); // hwndOwner: the render window, a QWindow
-	if (dlg.exec() != QDialog::Accepted || dlg.selectedFiles().isEmpty()) return false;
+	if (oapiExecOwned(&dlg, ofn.hwndOwner) != QDialog::Accepted || dlg.selectedFiles().isEmpty()) return false; // hwndOwner: the render window
 	QString f = dlg.selectedFiles().first();
 	sel = dlg.selectedNameFilter();
 	snprintf(ofn.lpstrFile, ofn.nMaxFile, "%s", f.toUtf8().constData());

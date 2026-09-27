@@ -26,6 +26,7 @@
 #include "D3D9Util.h"
 #include "D3D9Config.h"
 #include "D3D9Client.h"
+#include "OrbiterResource.h"
 
 FILE *d3d9client_log = NULL;
 
@@ -81,7 +82,8 @@ void RuntimeError(const char* File, const char* Fnc, UINT Line)
 	if (Config->DebugLvl == 0) return;
 	char buf[256];
 	snprintf(buf, 256, "[%s] [%s] Line: %u See Orbiter.log for details.", File, Fnc, Line);
-	QMessageBox::critical(NULL, "Critical Error:", buf);
+	QMessageBox box(QMessageBox::NoIcon, "Critical Error:", buf, QMessageBox::Ok);
+	oapiExecOwned(&box, g_client ? g_client->GetWindow() : NULL); // MessageBoxA (render window, MB_OK)
 	raise(SIGTRAP); // DebugBreak
 }
 

@@ -119,6 +119,10 @@ OAPIFUNC int oapiLoadResString (void *hModule, int id, char *buf, int buflen);
 // builds the Qt widgets of a dialog template (CreateDialogParam counterpart, without the message procedure); owner: hWndParent of a popup
 OAPIFUNC QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent, QWindow *owner = nullptr);
 
+// runs a modal dialog owned by a window that isn't a widget, e.g. the render window (MessageBox/GetOpenFileName hWndOwner)
+class QDialog;
+OAPIFUNC int oapiExecOwned (QDialog *dlg, QWindow *owner);
+
 // LoadMenu + SetMenu counterpart (also used for a template's MENU statement): bar on top, window grows; items reach oapiConnectDlgCommands
 OAPIFUNC QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hWnd);
 

@@ -118,6 +118,6 @@ install(DIRECTORY ${THUMBNAIL_SOURCE_DIR}/
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/Images/Vessels/Default
 )
 
-if(ORBITER_MAKE_DOC)
+if(ORBITER_MAKE_DOC OR ORBITER_MAKE_HELP) # not upstream: ORBITER_MAKE_HELP
 	add_subdirectory(Help)
 endif()

@@ -2,6 +2,7 @@
 // Upstream embedded the Internet Explorer OLE browser object; QTextBrowser renders the pages here.
 
 #include "htmlctrl.h"
+#include "HtmlHelp.h"
 #include "OrbiterResource.h"
 #include <QFileInfo>
 #include <QTextBrowser>
@@ -13,7 +14,7 @@ static bool g_active = true;
 static QWidget *CreateHtmlCtrl (const RESCONTROL*, QWidget *parent)
 {
 	if (!g_active) return new QWidget (parent); // WindowProcDummy
-	QTextBrowser *tb = new QTextBrowser (parent);
+	QTextBrowser *tb = new ChmBrowser (parent); // also shows pages inside help files ("its:" URLs)
 	tb->setOpenLinks (true);          // internal links navigate inside the control, like the browser object
 	tb->setOpenExternalLinks (true);  // web links go to the desktop browser
 	tb->setContextMenuPolicy (Qt::NoContextMenu); // the pop-up context menu was disabled
@@ -27,7 +28,8 @@ long DisplayHTMLPage(QWidget *hwnd, const char *webPageName)
 	if (!tb || !webPageName) return -1;
 	QString name = QString::fromUtf8 (webPageName);
 	QUrl url (name);
-	if (url.scheme().size() <= 1) // plain path (a one-letter scheme would be a Windows drive)
+	if (name.contains (".chm::", Qt::CaseInsensitive)) url = ChmUrlFromIts (name); // page inside a help file
+	else if (url.scheme().size() <= 1) // plain path (a one-letter scheme would be a Windows drive)
 		url = QUrl::fromLocalFile (QFileInfo (name).absoluteFilePath());
 	tb->setSource (url);
 	return 0;

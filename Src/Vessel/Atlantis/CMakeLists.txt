@@ -5,7 +5,7 @@ add_subdirectory(Atlantis)
 add_subdirectory(Atlantis_SRB)
 add_subdirectory(Atlantis_Tank)
 add_subdirectory(AtlantisConfig)
-if(ORBITER_MAKE_DOC)
+if(ORBITER_MAKE_DOC OR ORBITER_MAKE_HELP) # not upstream: ORBITER_MAKE_HELP
 	add_subdirectory(Help)
 endif()
 

@@ -480,13 +480,12 @@ void orbiter::ScenarioTab::ScenarioChanged ()
 					url_ref[255] = '\0';
 					path = strtok(url_ref, ",");
 					topic = strtok(NULL, "\n");
-					// the pages of help file Html/Scenarios/<path>.chm are in the folder Html/Scenarios/<path>
 					if (topic)
-						snprintf(url, 512, "Html/Scenarios/%s/%s.htm", path, topic);
+						snprintf(url, 512, "its:Html\\Scenarios\\%s.chm::%s.htm", path, topic);
 					else
 						snprintf(url, 512, "%s/Html/Scenarios/%s.htm", getcwd(cwd, 256), path);
 					for (char *c = url; *c; c++) if (*c == '\\') *c = '/';
-					DisplayHTMLPage(oapiResDlgItem(hTab, IDC_SCN_HTML), oapiResolvePath(url).c_str());
+					DisplayHTMLPage(oapiResDlgItem(hTab, IDC_SCN_HTML), topic ? url : oapiResolvePath(url).c_str()); // "its:" URLs resolve in DisplayHTMLPage
 					have_info = true;
 				}
 				else {

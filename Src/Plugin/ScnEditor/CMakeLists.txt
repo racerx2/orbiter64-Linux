@@ -57,6 +57,6 @@ install(FILES ScnEdit.png
 # not upstream: also in the build tree, so Orbiter run from there finds it
 file(COPY ScnEdit.png DESTINATION ${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar)
 
-if(ORBITER_MAKE_DOC)
+if(ORBITER_MAKE_DOC OR ORBITER_MAKE_HELP) # not upstream: ORBITER_MAKE_HELP
 	add_subdirectory(Help)
 endif()

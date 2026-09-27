@@ -87,7 +87,9 @@ set(EXTERN_DIR "${CMAKE_SOURCE_DIR}/Extern")
 
 set(ORBITER_TOOL_MESHC "$<TARGET_FILE:meshc>")
 # packages/ldoc: CopyLDoc writes lower case, upstream's LDoc only resolves on a case-insensitive disk
-set(ldoc $<TARGET_FILE:lua::exe> ${ORBITER_BINARY_ROOT_DIR}/packages/ldoc/ldoc.lua -v --multimodule)
+# LUA_PATH/LUA_CPATH: Windows Lua also searches its own folder ('!' in its default paths), where CopyLDoc puts Penlight and lfs
+set(ldoc ${CMAKE_COMMAND} -E env "LUA_PATH='${ORBITER_BINARY_ROOT_DIR}/?.lua$<SEMICOLON>${ORBITER_BINARY_ROOT_DIR}/?/init.lua$<SEMICOLON>$<SEMICOLON>'"
+	"LUA_CPATH='${ORBITER_BINARY_ROOT_DIR}/?.so$<SEMICOLON>$<SEMICOLON>'" $<TARGET_FILE:lua::exe> ${ORBITER_BINARY_ROOT_DIR}/packages/ldoc/ldoc.lua -v --multimodule)
 
 # OpenGL lookup left out: graphics are Vulkan only
 # HTMLHelp and MFC lookups left out: Windows-only
@@ -123,6 +125,9 @@ set_target_properties(CopyData
 )
 
 # hhc_fix.bat and pdftex_fix.bat left out: they work around Windows doc tool exit codes
+# not upstream: the Html Help compiler is cmake/hhc.py; its .chm is a zip of the project's pages, which Orbiter's help viewer reads
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(HHC_CMD ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/hhc.py)
 
 set(OrbiterTgt Orbiter)
 set(ORBITER_LIB "") # no import library on ELF: modules bind the exe's exported oapi* symbols at dlopen
@@ -170,6 +175,12 @@ option(
 option(ORBITER_MAKE_DOC
 	"Create documentation"
 	OFF
+)
+
+# not upstream: the help files need only Python here, so they come with every build
+option(ORBITER_MAKE_HELP
+	"Create the help files (.chm)"
+	ON
 )
 
 option(ORBITER_MAKE_TESTS
@@ -265,13 +276,12 @@ add_subdirectory(Extern)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
-# not ported yet: Html
 add_subdirectory(Src)
 add_subdirectory(Utils)
 add_subdirectory(Orbitersdk)
 add_subdirectory(OVP)
 add_subdirectory(Sound)
-#add_subdirectory(Html)
+add_subdirectory(Html)
 
 if(ORBITER_MAKE_DOC)
 	add_subdirectory(Doc)

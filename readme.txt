@@ -43,16 +43,24 @@ contains the executable (Orbiter), its launcher (OpenOrbiter)
 and, among other files, the Config, Meshes, Scenarios and Textures
 subfolders.
 
-To uninstall Orbiter, simply remove the Orbiter folders with
-all contents and subdirectories. This will completely remove
-Orbiter from your hard drive.
+To uninstall Orbiter, run ./OpenOrbiter --remove-menu, then
+simply remove the Orbiter folders with all contents and
+subdirectories. This will completely remove Orbiter from your
+hard drive.
 
 
 3. Launching Orbiter
 --------------------
 The Orbiter simulator is launched with the OpenOrbiter launcher
 in the Orbiter folder (it starts the Orbiter executable from its
-own folder). Graphics come from the included VulkanClient plugin
+own folder). The first time, it checks what Orbiter needs, offers
+to install anything missing from your distribution's own
+repositories, and puts Orbiter in your app menu, so after that it
+starts from the menu like any other program. Orbiter runs on its
+own: its output goes to ~/.cache/orbiter64-linux/orbiter.log
+(./OpenOrbiter --verbose keeps it in the terminal), and
+./OpenOrbiter --remove-menu takes it out of the app menu.
+Graphics come from the included VulkanClient plugin
 (a Vulkan 1.4 driver is required): select it as graphics engine
 on the Video tab of the Launchpad. Without a graphics engine,
 Orbiter runs in console mode.

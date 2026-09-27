@@ -1,6 +1,10 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
+# not upstream: module dialogs and drawing are Qt (the SDK's HWND/HDC are QWidget/QPainter)
+set(CMAKE_AUTOMOC ON)
+link_libraries(Qt6::Widgets)
+
 # The target location for all vessel modules
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_VESSEL_DIR})
 
@@ -8,21 +12,20 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_VESSEL_DIR})
 set(VESSEL_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Common)
 
 # The individual vessel projects
-# not ported yet (Phase 7): all vessels but ShuttlePB
-#add_subdirectory(Atlantis)
-#add_subdirectory(Carina)
-#add_subdirectory(DeltaGlider)
-#add_subdirectory(Dragonfly)
-#add_subdirectory(HST)
-#add_subdirectory(ISS)
-#add_subdirectory(LDEF)
-#add_subdirectory(Leonardo)
-#add_subdirectory(MMU)
-#add_subdirectory(Quadcopter)
-#add_subdirectory(ScriptVessel)
-#add_subdirectory(ShuttleA)
+add_subdirectory(Atlantis)
+add_subdirectory(Carina)
+add_subdirectory(DeltaGlider)
+add_subdirectory(Dragonfly)
+add_subdirectory(HST)
+add_subdirectory(ISS)
+add_subdirectory(LDEF)
+add_subdirectory(Leonardo)
+add_subdirectory(MMU)
+add_subdirectory(Quadcopter)
+add_subdirectory(ScriptVessel)
+add_subdirectory(ShuttleA)
 add_subdirectory(ShuttlePB)
-#add_subdirectory(Solarsail)
+add_subdirectory(Solarsail)
 
 
 

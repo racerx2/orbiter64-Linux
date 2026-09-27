@@ -1195,7 +1195,7 @@ void Pane::SetVCNeighbours (int left, int right, int top, int bottom)
 
 void Pane::InitState (const char *scn)
 {
-	ifstream ifs (scn);
+	ifstream ifs (oapiResolvePath (scn));
 	if (ifs) Read (ifs);
 }
 

@@ -9,9 +9,10 @@
 // Panel interface ADI ball
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "adiball.h"
 #include "attref.h"
+#include <string.h>
 
 using std::min;
 using std::max;

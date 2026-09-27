@@ -1,5 +1,9 @@
+# not upstream: module dialogs and drawing are Qt (the SDK's HWND/HDC are QWidget/QPainter)
+set(CMAKE_AUTOMOC ON)
+link_libraries(Qt6::Widgets)
+
 # The target directory for plugin DLLs
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR})
 
 # Common routines for inclusion by plugins
 set(MODULE_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Common)
@@ -15,7 +19,8 @@ add_subdirectory(Meshdebug)
 add_subdirectory(Rcontrol)
 add_subdirectory(ScnEditor)
 add_subdirectory(ScriptMFD)
-add_subdirectory(TrackIR)
+# TrackIR left out: NaturalPoint's NPClient library and its registry lookup are Windows only
+#add_subdirectory(TrackIR)
 add_subdirectory(TransX)
 add_subdirectory(Notes)
 

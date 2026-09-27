@@ -28,10 +28,12 @@ set_target_properties(Rcontrol
 
 # Installation
 install(TARGETS Rcontrol
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
 install(FILES Rcontrol.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+# not upstream: also in the build tree, so Orbiter run from there finds it
+file(COPY Rcontrol.png DESTINATION ${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar)

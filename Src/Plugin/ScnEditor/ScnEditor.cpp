@@ -11,19 +11,21 @@
 // This allows creation, deleting and configuration of vessels.
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "resource.h"
 #include "Editor.h"
 #include "DlgCtrl.h"
+#include <QImage>
 
 // ==============================================================
 // Global variables and constants
 // ==============================================================
 
 ScnEditor *g_editor = 0;   // scenario editor instance pointer
-HBITMAP g_hPause;          // "pause" button bitmap
+QImage *g_hPause;          // "pause" button bitmap
 
 // ==============================================================
 // API interface
@@ -32,10 +34,9 @@ HBITMAP g_hPause;          // "pause" button bitmap
 // ==============================================================
 // Initialise module
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
-	INITCOMMONCONTROLSEX cc = {sizeof(INITCOMMONCONTROLSEX),ICC_TREEVIEW_CLASSES};
-	InitCommonControlsEx(&cc);
+	// InitCommonControlsEx left out: the tree view is a Qt widget
 	// Windows tree view control registration
 
 	// Create editor instance
@@ -45,13 +46,14 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	oapiRegisterCustomControls (hDLL);
 
 	// Load the bitmap for the "pause" title button
-	g_hPause = (HBITMAP)LoadImage (hDLL, MAKEINTRESOURCE (IDB_PAUSE), IMAGE_BITMAP, 15, 30, 0);
+	g_hPause = oapiLoadResImage (hDLL, IDB_PAUSE);
+	if (g_hPause) *g_hPause = g_hPause->scaled (15, 30); // LoadImage size
 }
 
 // ==============================================================
 // Clean up module
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Delete editor instance
 	delete g_editor;
@@ -61,7 +63,7 @@ DLLCLBK void ExitModule (HINSTANCE hDLL)
 	oapiUnregisterCustomControls (hDLL);
 
 	// Free bitmap resources
-	DeleteObject (g_hPause);
+	delete g_hPause;
 }
 
 // ==============================================================

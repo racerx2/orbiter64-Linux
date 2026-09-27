@@ -77,8 +77,9 @@ set(ORBITER_INSTALL_UTILS_DIR ${ORBITER_INSTALL_ROOT_DIR}/Utils)
 set(ORBITER_INSTALL_SDK_DIR ${ORBITER_INSTALL_ROOT_DIR}/Orbitersdk)
 
 set(ORBITER_SDK_LIB $<TARGET_FILE:Orbitersdk>)
-set(ORBITER_DLGCTRL_LIB $<TARGET_FILE:DlgCtrl>)
-set(LUAINTERPRETER_LIB $<TARGET_LINKER_FILE:LuaInterpreter>)
+# not upstream: by target name (a path to a prefix-less .so links as -l<name>; the target also carries Qt)
+set(ORBITER_DLGCTRL_LIB DlgCtrl)
+set(LUAINTERPRETER_LIB LuaInterpreter)
 
 set(EXTERN_DIR "${CMAKE_SOURCE_DIR}/Extern")
 
@@ -97,8 +98,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 # /we4311 left out: g++ already rejects pointer-to-smaller-int casts; NOMINMAX has no counterpart
 set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
-# Windows finds DLLs next to the exe and in Modules (Orbiter adds it to PATH); $ORIGIN/.. reaches Modules from Modules/<sub>
-set(CMAKE_INSTALL_RPATH "$ORIGIN" "$ORIGIN/..")
+# Windows finds DLLs next to the exe and in Modules (Orbiter adds it to PATH); $ORIGIN/.. reaches Modules from Modules/<sub>, $ORIGIN/../.. the exe folder
+set(CMAKE_INSTALL_RPATH "$ORIGIN" "$ORIGIN/.." "$ORIGIN/../..")
 # DLL naming: modules are <name>.so, as upstream loads <name>.dll
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
 set(CMAKE_SHARED_MODULE_PREFIX "")
@@ -264,12 +265,12 @@ add_subdirectory(Extern)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
-# not ported yet: Utils, Sound, Html
+# not ported yet: Html
 add_subdirectory(Src)
-#add_subdirectory(Utils)
+add_subdirectory(Utils)
 add_subdirectory(Orbitersdk)
 add_subdirectory(OVP)
-#add_subdirectory(Sound)
+add_subdirectory(Sound)
 #add_subdirectory(Html)
 
 if(ORBITER_MAKE_DOC)

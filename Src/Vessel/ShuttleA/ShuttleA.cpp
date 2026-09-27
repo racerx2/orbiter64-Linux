@@ -9,12 +9,13 @@
 // Reference implementation of Shuttle-A vessel class module
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
 #include "ShuttleA.h"
 #include "ScnEditorAPI.h"
 #include "DlgCtrl.h"
+#include "OrbiterResource.h"
 #include "attref.h"
 #include "mfdbutton.h"
 #include "navbutton.h"
@@ -34,11 +35,14 @@
 #include "meshres.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
+#include <QAbstractButton>
 
 using std::min;
 using std::max;
 
-#define LOADBMP(id) (LoadBitmap (g_Param.hDLL, MAKEINTRESOURCE (id)))
+#define LOADBMP(id) (oapiLoadResImage (g_Param.hDLL, id))
 
 // ==============================================================
 // Global parameters
@@ -1228,10 +1232,10 @@ void ShuttleA::clbkSetClassCaps (FILEHANDLE cfg)
 
 	// ************************ Meshes ****************************
 
-	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA")), MESHVIS_EXTERNAL);
-	SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_vc")), MESHVIS_VC);
+	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal ("ShuttleA/ShuttleA")), MESHVIS_EXTERNAL);
+	SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("ShuttleA/ShuttleA_vc")), MESHVIS_VC);
 	hPanelMesh0 = 0;
-	hPanelMesh1 = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_2dpanel1");
+	hPanelMesh1 = oapiLoadMeshGlobal ("ShuttleA/ShuttleA_2dpanel1");
 
 
 	// ************************ Blit Ship Name ****************************
@@ -1293,25 +1297,25 @@ void ShuttleA::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "PODANGLE", 8)) {
+		if (!strncasecmp (line, "PODANGLE", 8)) {
 			sscanf (line+8, "%lf%lf", pod_angle+0, pod_angle+1);
-		} else if (!_strnicmp (line, "DOCKSTATE", 9)) {
+		} else if (!strncasecmp (line, "DOCKSTATE", 9)) {
 			sscanf (line+9, "%d%lf", &dock_status, &dock_proc);
-		} else if (!_strnicmp (line, "AIRLOCK", 7)) {
+		} else if (!strncasecmp (line, "AIRLOCK", 7)) {
 			sscanf (line+7, "%d%lf", &lock_status[0], &lock_proc[0]);
-		} else if (!_strnicmp (line, "IAIRLOCK", 8)) {
+		} else if (!strncasecmp (line, "IAIRLOCK", 8)) {
 			sscanf (line+8, "%d%lf", &lock_status[1], &lock_proc[1]);
-		} else if (!_strnicmp (line, "GEAR", 4)) {
+		} else if (!strncasecmp (line, "GEAR", 4)) {
 			sscanf (line+4, "%d%lf", &gear_status, &gear_proc);
-		} else if (!_strnicmp (line, "PAYLOAD MASS", 12)) {
+		} else if (!strncasecmp (line, "PAYLOAD MASS", 12)) {
 			sscanf (line+12, "%lf%d", &payload_mass,&cargo_arm_status);
-		} else if (!_strnicmp (line, "ATTREF", 6)) {
+		} else if (!strncasecmp (line, "ATTREF", 6)) {
 			int mode, tgtmode, navid;
 			sscanf (line+6, "%d%d%d", &mode, &tgtmode, &navid);
 			attref->SetMode (mode);
 			attref->SetTgtmode (tgtmode);
 			attref->SetNavid (navid);
-		} else if (!_strnicmp (line, "ADI_LAYOUT", 10)) {
+		} else if (!strncasecmp (line, "ADI_LAYOUT", 10)) {
 			int layout = 0;
 			if (sscanf (line+10, "%d", &layout) && layout >= 0 && layout <= 1)
 				adi_layout = layout;
@@ -1374,33 +1378,33 @@ void ShuttleA::clbkSaveState (FILEHANDLE scn)
 // --------------------------------------------------------------
 bool ShuttleA::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "DOCK")) {
-		ActivateDockingPort (!_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
+	if (!strcasecmp (event_type, "DOCK")) {
+		ActivateDockingPort (!strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
 		return true;
-	} else if (!_stricmp (event_type, "AIRLOCK")) {
-		ActivateAirlock (0, !_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
+	} else if (!strcasecmp (event_type, "AIRLOCK")) {
+		ActivateAirlock (0, !strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
 		return true;
-	} else if (!_stricmp (event_type, "IAIRLOCK")) {
-		ActivateAirlock (1, !_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
+	} else if (!strcasecmp (event_type, "IAIRLOCK")) {
+		ActivateAirlock (1, !strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
 		return true;
-	} else if (!_stricmp (event_type, "GEAR")) {
-		ActivateLandingGear (!_stricmp (event, "UP") ? DOOR_CLOSING : DOOR_OPENING);
+	} else if (!strcasecmp (event_type, "GEAR")) {
+		ActivateLandingGear (!strcasecmp (event, "UP") ? DOOR_CLOSING : DOOR_OPENING);
 		return true;
-	} else if (!_stricmp (event_type, "POD")) {
+	} else if (!strcasecmp (event_type, "POD")) {
 		UINT which;
 		double angle;
 		char action[256];
 		sscanf (event, "%d %s %lf", &which, action, &angle);
-		if (!_stricmp (action, "SET")) CommandPodAngle (which, angle);
-		else if (!_stricmp (action, "FWD")) CommandPodAngle (which, PI);
-		else if (!_stricmp (action, "BACK")) CommandPodAngle (which, 0);
+		if (!strcasecmp (action, "SET")) CommandPodAngle (which, angle);
+		else if (!strcasecmp (action, "FWD")) CommandPodAngle (which, PI);
+		else if (!strcasecmp (action, "BACK")) CommandPodAngle (which, 0);
 		return true;
-	} else if (!_stricmp (event_type, "CARGO")) {
-		if (!_strnicmp (event, "ARM", 3))
+	} else if (!strcasecmp (event_type, "CARGO")) {
+		if (!strncasecmp (event, "ARM", 3))
 			ActivateCargo (1);
-		else if (!_strnicmp (event, "DISARM", 6))
+		else if (!strncasecmp (event, "DISARM", 6))
 			ActivateCargo (0);
-		else if (!_strnicmp (event, "GRAPPLE", 7)) {
+		else if (!strncasecmp (event, "GRAPPLE", 7)) {
 			int grapple;
 			sscanf (event+7, "%d", &grapple);
 			ToggleGrapple (grapple);
@@ -2432,7 +2436,7 @@ void ShuttleA::PaintMarkings (SURFHANDLE tex)
 // --------------------------------------------------------------
 // Module initialisation
 // --------------------------------------------------------------
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	g_Param.hDLL = hModule;
 	oapiRegisterCustomControls (hModule);
@@ -2446,15 +2450,15 @@ DLLCLBK void InitModule (HINSTANCE hModule)
 	g_Param.pBrush[1] = oapiCreateBrush(RGB(0, 0, 0));
 
 	// load 2D panel texture
-	ShuttleA::panel2dtex = oapiLoadTexture ("ShuttleA\\panel2d.dds");
-	ShuttleA::paneleltex = oapiLoadSurfaceEx("ShuttleA\\panel_el.dds", OAPISURFACE_TEXTURE | OAPISURFACE_RENDERTARGET);
-	ShuttleA::aditex = oapiLoadTexture ("Common\\adiball_grey.dds");
+	ShuttleA::panel2dtex = oapiLoadTexture ("ShuttleA/panel2d.dds");
+	ShuttleA::paneleltex = oapiLoadSurfaceEx("ShuttleA/panel_el.dds", OAPISURFACE_TEXTURE | OAPISURFACE_RENDERTARGET);
+	ShuttleA::aditex = oapiLoadTexture ("Common/adiball_grey.dds");
 }
 
 // --------------------------------------------------------------
 // Module cleanup
 // --------------------------------------------------------------
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 	int i;
 	// deallocate Sketchpad resources
@@ -2489,124 +2493,119 @@ DLLCLBK void ovcExit (VESSEL *vessel)
 // Scenario editor interface
 // ==============================================================
 
-ShuttleA *GetV (HWND hDlg)
+ShuttleA *GetV (QWidget *hDlg)
 {
 	// retrieve DG interface from scenario editor
 	OBJHANDLE hVessel;
-	SendMessage (hDlg, WM_SCNEDITOR, SE_GETVESSEL, (LPARAM)&hVessel);
+	ScnEditorMsg (hDlg, SE_GETVESSEL, (LPARAM)&hVessel);
 	return (ShuttleA*)oapiGetVesselInterface (hVessel);
 }
 
-void UpdatePodSliders (HWND hDlg, ShuttleA *v)
+void UpdatePodSliders (QWidget *hDlg, ShuttleA *v)
 {
 	int lpos = (int)(v->GetPodAngle(0)/PI*100.0+0.5);
 	int rpos = (int)(v->GetPodAngle(1)/PI*100.0+0.5);
-	oapiSetGaugePos (GetDlgItem (hDlg, IDC_LAUX_POS), lpos);
-	oapiSetGaugePos (GetDlgItem (hDlg, IDC_RAUX_POS), rpos);
-	oapiSetGaugePos (GetDlgItem (hDlg, IDC_AUX_POS), (lpos+rpos)/2);
+	oapiSetGaugePos (oapiResDlgItem (hDlg, IDC_LAUX_POS), lpos);
+	oapiSetGaugePos (oapiResDlgItem (hDlg, IDC_RAUX_POS), rpos);
+	oapiSetGaugePos (oapiResDlgItem (hDlg, IDC_AUX_POS), (lpos+rpos)/2);
 }
 
-void InitEdPg1 (HWND hDlg, OBJHANDLE hVessel)
+void InitEdPg1 (QWidget *hDlg, OBJHANDLE hVessel)
 {
 	ShuttleA *v = (ShuttleA*)oapiGetVesselInterface (hVessel);
 	GAUGEPARAM gp = { 0, 100, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-	oapiSetGaugeParams (GetDlgItem (hDlg, IDC_LAUX_POS), &gp);
-	oapiSetGaugeParams (GetDlgItem (hDlg, IDC_RAUX_POS), &gp);
-	oapiSetGaugeParams (GetDlgItem (hDlg, IDC_AUX_POS), &gp);
-	ShowWindow (GetDlgItem (hDlg, IDC_LAUX_POS), SW_HIDE);
-	ShowWindow (GetDlgItem (hDlg, IDC_RAUX_POS), SW_HIDE);
-	ShowWindow (GetDlgItem (hDlg, IDC_AUX_POS), SW_SHOW);
-	SendDlgItemMessage (hDlg, IDC_AUX_SYNC, BM_SETCHECK, BST_CHECKED, 0);
+	oapiSetGaugeParams (oapiResDlgItem (hDlg, IDC_LAUX_POS), &gp);
+	oapiSetGaugeParams (oapiResDlgItem (hDlg, IDC_RAUX_POS), &gp);
+	oapiSetGaugeParams (oapiResDlgItem (hDlg, IDC_AUX_POS), &gp);
+	oapiResDlgItem (hDlg, IDC_LAUX_POS)->hide();
+	oapiResDlgItem (hDlg, IDC_RAUX_POS)->hide();
+	oapiResDlgItem (hDlg, IDC_AUX_POS)->show();
+	DlgItem<QAbstractButton>(hDlg, IDC_AUX_SYNC)->setChecked (true);
 	UpdatePodSliders (hDlg, v);
 }
 
 // --------------------------------------------------------------
 // Message procedure for editor page 1 (animation settings)
 // --------------------------------------------------------------
-INT_PTR CALLBACK EdPg1Proc (HWND hTab, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void EdPg1Proc (QWidget *hTab, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		InitEdPg1 (hTab, (OBJHANDLE)lParam);
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	InitEdPg1 (hTab, (OBJHANDLE)context);
+
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDC_GEAR_UP:
 			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_OPEN);
-			return TRUE;
+			return;
 		case IDC_GEAR_DOWN:
 			GetV(hTab)->ActivateLandingGear (ShuttleA::DOOR_CLOSED);
-			return TRUE;
+			return;
 		case IDC_DPORT_CLOSE:
 			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_CLOSED);
-			return TRUE;
+			return;
 		case IDC_DPORT_OPEN:
 			GetV(hTab)->ActivateDockingPort (ShuttleA::DOOR_OPEN);
-			return TRUE;
+			return;
 		case IDC_OLOCK_CLOSE:
 			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_CLOSED);
-			return TRUE;
+			return;
 		case IDC_OLOCK_OPEN:
 			GetV(hTab)->ActivateAirlock (0, ShuttleA::DOOR_OPEN);
-			return TRUE;
+			return;
 		case IDC_AUX_RETRO: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, 0.0);
 			UpdatePodSliders (hTab, v);
-			} return TRUE;
+			} return;
 		case IDC_AUX_HOVER: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, PI05);
 			UpdatePodSliders (hTab, v);
-			} return TRUE;
+			} return;
 		case IDC_AUX_FWD: {
 			ShuttleA *v = GetV(hTab);
 			v->SetPodAngle (3, PI);
 			UpdatePodSliders (hTab, v);
-			} return TRUE;
+			} return;
 		case IDC_AUX_SYNC:
-			if (SendDlgItemMessage (hTab, IDC_AUX_SYNC, BM_GETCHECK, 0, 0) == BST_CHECKED) {
-				ShowWindow (GetDlgItem (hTab, IDC_LAUX_POS), SW_HIDE);
-				ShowWindow (GetDlgItem (hTab, IDC_RAUX_POS), SW_HIDE);
-				ShowWindow (GetDlgItem (hTab, IDC_AUX_POS), SW_SHOW);
-				GetV(hTab)->SetPodAngle (3, oapiGetGaugePos (GetDlgItem (hTab, IDC_AUX_POS))*0.01*PI);
+			if (DlgItem<QAbstractButton>(hTab, IDC_AUX_SYNC)->isChecked()) {
+				oapiResDlgItem (hTab, IDC_LAUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_RAUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_AUX_POS)->show();
+				GetV(hTab)->SetPodAngle (3, oapiGetGaugePos (oapiResDlgItem (hTab, IDC_AUX_POS))*0.01*PI);
 			} else {
-				ShowWindow (GetDlgItem (hTab, IDC_AUX_POS), SW_HIDE);
-				ShowWindow (GetDlgItem (hTab, IDC_LAUX_POS), SW_SHOW);
-				ShowWindow (GetDlgItem (hTab, IDC_RAUX_POS), SW_SHOW);
+				oapiResDlgItem (hTab, IDC_AUX_POS)->hide();
+				oapiResDlgItem (hTab, IDC_LAUX_POS)->show();
+				oapiResDlgItem (hTab, IDC_RAUX_POS)->show();
 			}
 		}
-		break;
-	case WM_HSCROLL: {
-		ShuttleA *v = GetV (hTab);
-		int id = GetDlgCtrlID ((HWND)lParam);
-		switch (id) {
-		case IDC_LAUX_POS:
-		case IDC_RAUX_POS:
-		case IDC_AUX_POS:
-			switch (LOWORD (wParam)) {
-			case SB_THUMBTRACK:
-			case SB_LINELEFT:
-			case SB_LINERIGHT:
+	});
+
+	// WM_HSCROLL
+	for (int id : {IDC_LAUX_POS, IDC_RAUX_POS, IDC_AUX_POS}) {
+		QObject::connect (DlgItem<GaugeCtrl>(hTab, id), &GaugeCtrl::scrolled, hTab, [hTab, id](int request, int pos) {
+			ShuttleA *v = GetV (hTab);
+			switch (request) {
+			case GAUGE_THUMBTRACK:
+			case GAUGE_LINEDEC:
+			case GAUGE_LINEINC:
 				if (id == IDC_LAUX_POS || id == IDC_AUX_POS)
-					v->SetPodAngle (1, HIWORD(wParam)*0.01*PI);
+					v->SetPodAngle (1, pos*0.01*PI);
 				if (id == IDC_RAUX_POS || id == IDC_AUX_POS)
-					v->SetPodAngle (2, HIWORD(wParam)*0.01*PI);
+					v->SetPodAngle (2, pos*0.01*PI);
 				UpdatePodSliders (hTab, v);
-				return TRUE;
+				return;
 			}
-			break;
-		}
-		} break;
+		});
 	}
-	return FALSE;
 }
 
 // --------------------------------------------------------------
 // Add vessel-specific pages into scenario editor
 // --------------------------------------------------------------
-DLLCLBK void secInit (HWND hEditor, OBJHANDLE hVessel)
+DLLCLBK void secInit (QWidget *hEditor, OBJHANDLE hVessel)
 {
 	EditorPageSpec eps1 = {"Animations", g_Param.hDLL, IDD_EDITOR_PG1, EdPg1Proc};
-	SendMessage (hEditor, WM_SCNEDITOR, SE_ADDPAGEBUTTON, (LPARAM)&eps1);
+	ScnEditorMsg (hEditor, SE_ADDPAGEBUTTON, (LPARAM)&eps1);
 }

@@ -9,7 +9,7 @@
 
 #include <unordered_map>
 
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include "XRSound.h"            // for enums
 #include "VesselXRSoundEngine.h"
 
@@ -21,36 +21,36 @@ class SoundPreStep
 public:
     SoundPreStep(VesselXRSoundEngine *pEngine) : m_pEngine(pEngine)
     { 
-        _ASSERTE(pEngine); 
+        assert(pEngine); 
     }
 
     XRSoundConfigFileParser &GetConfig()
     {
-        _ASSERTE(m_pEngine);
+        assert(m_pEngine);
         return m_pEngine->GetConfig();
     }
 
     bool HasFocus() const
     {
-        _ASSERTE(m_pEngine);
+        assert(m_pEngine);
         return m_pEngine->HasFocus();
     }
 
     bool InCockpitView() const
     {
-        _ASSERTE(m_pEngine);
+        assert(m_pEngine);
         return m_pEngine->InCockpitView();
     }
 
     void WriteLog(const char *pMsg)
     {
-        _ASSERTE(m_pEngine);
+        assert(m_pEngine);
         m_pEngine->WriteLog(pMsg);
     }
     
     VESSEL *GetVessel()
     {
-        _ASSERTE(m_pEngine);
+        assert(m_pEngine);
         return m_pEngine->GetVessel();
     }
 

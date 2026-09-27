@@ -15,6 +15,7 @@
 
 #include "HST.h"
 #include <stdio.h>
+#include <strings.h>
 
 using std::min;
 using std::max;
@@ -130,11 +131,11 @@ void HST::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "ANT", 3)) {
+		if (!strncasecmp (line, "ANT", 3)) {
 			sscanf (line+3, "%d%lf", &ant_status, &ant_proc);
-		} else if (!_strnicmp (line, "HATCH", 5)) {
+		} else if (!strncasecmp (line, "HATCH", 5)) {
 			sscanf (line+5, "%d%lf", &hatch_status, &hatch_proc);
-		} else if (!_strnicmp (line, "FOLD", 4)) {
+		} else if (!strncasecmp (line, "FOLD", 4)) {
 			sscanf (line+5, "%d%lf", &array_status, &array_proc);
 		} else {
 			ParseScenarioLineEx (line, vs);

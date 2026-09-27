@@ -1,10 +1,11 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "LuaMFD.h"
+#include <cstring>
 
 using std::min;
 
@@ -206,7 +207,7 @@ OAPI_MSGTYPE ScriptMFD::MsgProc (UINT msg, UINT mfd, WPARAM wparam, LPARAM lpara
 // ==============================================================
 // API interface
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	MFDMODESPECEX spec;
 	spec.name = (char*)"Terminal MFD";
@@ -217,7 +218,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	g_IList = new InterpreterList;
 }
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	oapiUnregisterMFDMode (g_MFDmode);
 	delete g_IList;
@@ -230,7 +231,7 @@ DLLCLBK void opcPostStep (double simt, double simdt, double mjd)
 	}
 }
 
-DLLCLBK void opcOpenRenderViewport (HWND hWnd, DWORD w, DWORD h, BOOL bFullscreen)
+DLLCLBK void opcOpenRenderViewport (QWindow *hWnd, DWORD w, DWORD h, BOOL bFullscreen)
 {
 }
 

@@ -16,6 +16,7 @@
 
 #include "Atlantis.h"
 #include "math.h"
+#include <string.h>
 
 static const int ntdvtx = 15;
 static const TOUCHDOWNVTX tdvtx[ntdvtx] = {
@@ -45,7 +46,7 @@ Atlantis_Tank::Atlantis_Tank (OBJHANDLE hObj)
 : VESSEL2(hObj)
 {
 	// preload mesh
-	hTankMesh = oapiLoadMeshGlobal ("Atlantis\\Atlantis_tank");
+	hTankMesh = oapiLoadMeshGlobal ("Atlantis/Atlantis_tank");
 
 	// The fuel tank. Note that this is accessed remotely by the orbiter
 	// while it is connected

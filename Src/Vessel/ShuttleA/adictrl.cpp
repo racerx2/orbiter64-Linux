@@ -13,8 +13,9 @@
 #include "adictrl.h"
 #include "attref.h"
 #include "paneltext.h"
+#include <string.h>
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 
 static const float texw = (float)PANEL2D_TEXW;
 static const float texh = (float)PANEL2D_TEXH;

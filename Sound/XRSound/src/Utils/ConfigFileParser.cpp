@@ -22,6 +22,8 @@
 #include <string>
 #include <ctime>
 #include <chrono>
+#include <cerrno>
+#include <QMessageBox>
 
 // Constructor
 // pDefaultFilename = path to default config file; may be relative to Orbiter root or absolute
@@ -39,7 +41,7 @@ ConfigFileParser::ConfigFileParser(const char *pDefaultFilename, const char *pLo
         {
             char temp[256];
             sprintf(temp, "Error opening log file '%s' for writing; attempting to continue", pLogFilename);
-            MessageBox(nullptr, temp, "XR Framework Warning", MB_OK | MB_SETFOREGROUND);
+            QMessageBox::warning(nullptr, "XR Framework Warning", temp);
         }
     }
 }
@@ -64,7 +66,7 @@ bool ConfigFileParser::ParseFile(const char *pFilename)
     if (pFilename == nullptr)
         pFilename = GetDefaultFilename();
 
-    const bool bParsingOverrideFile = (_stricmp(pFilename, GetDefaultFilename()) != 0);  // true if we are parsing an override file
+    const bool bParsingOverrideFile = (strcasecmp(pFilename, GetDefaultFilename()) != 0);  // true if we are parsing an override file
 
     static char temp[256]; // reused for messages
 
@@ -72,11 +74,11 @@ bool ConfigFileParser::ParseFile(const char *pFilename)
     sprintf(temp, "Parsing config file '%s'", pFilename);
     WriteLog(temp);
 
-    FILE *pFile = fopen(pFilename, "rt");
+    FILE *pFile = fopen(oapiResolvePath(pFilename).c_str(), "rt");   // paths relative to $ORBITER_ROOT may use '\' and any letter case
 
     if (pFile == nullptr)
     {
-        sprintf(temp, "ERROR: fopen failed for '%s'; GetLastError=0x%X", pFilename, GetLastError());
+        sprintf(temp, "ERROR: fopen failed for '%s'; errno=%d (%s)", pFilename, errno, strerror(errno));
         WriteLog(temp);
         m_parseFailed = true;
         return false;       // could not open file
@@ -273,7 +275,7 @@ void ConfigFileParser::WriteLog(const char *pMsg) const
     std::tm tm{};
 
 	// Warning MS BS, POSIX is localtime_r(&t, &tm);
-    localtime_s(&tm, &t);
+    localtime_r(&t, &tm);
 
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         now.time_since_epoch()) % 1000;
@@ -288,7 +290,7 @@ void ConfigFileParser::WriteLog(const char *pMsg) const
         csPrefix, pMsg);
 
     // no point in checking for error here
-    OutputDebugString(csMsg);   // send to debug console
+    // OutputDebugString left out: Linux has no debugger message channel; the log file gets the same line
     fwrite(csMsg, 1, strlen(csMsg), m_pLogFile);
 
     // flush to disk in case we crash or are terminated

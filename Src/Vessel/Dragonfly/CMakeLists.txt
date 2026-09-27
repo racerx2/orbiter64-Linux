@@ -4,6 +4,10 @@ set(TEXTURE2_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Textures2)
 set(CONFIG_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Config)
 set(THUMBNAIL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Thumbnail)
 
+# not upstream: the root lookup is left out (Vulkan graphics), but the ADI ball is drawn offscreen with OpenGL
+find_package(OpenGL)
+find_package(Qt6 COMPONENTS OpenGL)
+
 if(OPENGL_FOUND) # OpenGL is required for this target
 
 add_library(Dragonfly SHARED
@@ -16,8 +20,8 @@ add_library(Dragonfly SHARED
 	Hsystems.cpp
 	Thermal.cpp
 	Esystems.cpp
-	panel.rc
 )
+orbiter_rc_resources(Dragonfly panel.rc)
 
 set_target_properties(Dragonfly
 	PROPERTIES
@@ -33,6 +37,7 @@ target_link_libraries(Dragonfly
 	${ORBITER_SDK_LIB}
 	OpenGL::GL
 	OpenGL::GLU
+	Qt6::OpenGL # not upstream: QOpenGLContext/QOffscreenSurface/QOpenGLFramebufferObject replace WGL and the DIB section
 )
 
 add_dependencies(Dragonfly
@@ -47,7 +52,7 @@ add_custom_command(
 
 add_custom_command(
 	TARGET Dragonfly PRE_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_directory ${MESH_SOURCE_DIR}/ ${CMAKE_BINARY_DIR}/Meshes
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${MESH_SOURCE_DIR}/ ${CMAKE_BINARY_DIR}/Meshes/Dragonfly # not upstream: was Meshes, but the module loads "Dragonfly/Dragonfly" (install uses Meshes/Dragonfly)
 )
 
 add_custom_command(
@@ -66,7 +71,7 @@ add_custom_command(
 )
 
 install(TARGETS Dragonfly
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

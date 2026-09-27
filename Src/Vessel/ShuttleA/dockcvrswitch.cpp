@@ -9,7 +9,7 @@
 // User interface dockingport cover switch
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "dockcvrswitch.h"
 
 // ==============================================================

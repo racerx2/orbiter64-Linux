@@ -12,6 +12,8 @@
 
 #include "Instrument.h"
 #include "Orbitersdk.h"
+#include <string.h>
+#include <strings.h>
 
 PanelElement::PanelElement (VESSEL3 *v)
 {
@@ -250,7 +252,7 @@ void AnimState2::SaveState (FILEHANDLE scn, const char *label)
 
 bool AnimState2::ParseScenarioLine (const char *line, const char *label)
 {
-	if (!_strnicmp (line, label, strlen(label))) {
+	if (!strncasecmp (line, label, strlen(label))) {
 		sscanf (line+strlen(label), "%lf%lf", &state, &speed);
 		return true;
 	}

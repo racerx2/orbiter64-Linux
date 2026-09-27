@@ -42,6 +42,7 @@ private:
 // Control selector dial
 // ==============================================================
 
+class RcsModeDial; // g++: a friend declaration does not declare the name
 class RcsModeSelector: public DGSubsystem {
 	friend class RcsModeDial;
 

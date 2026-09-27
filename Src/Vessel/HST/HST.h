@@ -14,8 +14,8 @@
 #ifndef __HST_H
 #define __HST_H
 
-#define STRICT
-#include "orbitersdk.h"
+// STRICT left out: windows.h handle type-checking switch
+#include "Orbitersdk.h"
 
 // ==============================================================
 // Some parameters and capabilities

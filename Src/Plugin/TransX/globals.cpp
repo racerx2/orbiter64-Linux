@@ -18,12 +18,13 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include <cstring> // str* functions (windows.h brought in string.h)
 #include <cstdio>
 #include <cmath>
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "shiplist.h"
 #include <list>
 
@@ -34,7 +35,7 @@ using namespace std;
 // ==============================================================
 // API interface
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
     static char name[] = "TransX";
 	MFDMODESPECEX spec;
@@ -43,7 +44,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	spec.context = NULL;
 	//Code contributed by Dave Robotham
 	ifstream kstream;
-	kstream.open("Config\\MFD\\TransX.cfg",NULL);
+	kstream.open(oapiResolvePath("Config/MFD/TransX.cfg"),ios_base::openmode(0)); // NULL mode: g++ has no int to openmode conversion
 	if( kstream )
 	{
 		try
@@ -97,7 +98,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 
 }//end code from Dave Robotham
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	oapiUnregisterMFDMode (mode);
 }
@@ -120,7 +121,7 @@ DLLCLBK void opcCloseRenderViewport()
 
 static int choose = 0;
 
-DLLCLBK void opcOpenRenderViewport(HWND renderWnd,DWORD width,DWORD height,BOOL fullscreen)
+DLLCLBK void opcOpenRenderViewport(QWindow *renderWnd,DWORD width,DWORD height,BOOL fullscreen)
 {
 	mapfunction *temp=mapfunction::getthemap();//kicks off the process of map creation
 	choose = 0;

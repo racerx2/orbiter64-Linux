@@ -12,7 +12,7 @@
 #ifndef __AUXPODCTRL_H
 #define __AUXPODCTRL_H
 
-#include "..\Common\Instrument.h"
+#include "../Common/Instrument.h"
 
 // ==============================================================
 

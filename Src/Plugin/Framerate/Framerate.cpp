@@ -33,7 +33,7 @@ namespace oapi {
 
 		void OnDraw();
 
-		Framerate(HINSTANCE hDLL);
+		Framerate(void *hDLL);
 
 		~Framerate();
 
@@ -62,7 +62,7 @@ static oapi::Framerate *fr;
 
 /// \brief Module entry point 
 /// \param hDLL module handle
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	// Create and register the module
 	fr = new oapi::Framerate(hDLL);
@@ -71,7 +71,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 
 /// \brief Module exit point 
 /// \param hDLL module handle
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Delete the module
 	delete fr;
@@ -79,7 +79,7 @@ DLLCLBK void ExitModule (HINSTANCE hDLL)
 
 // --------------------------------------------------------------
 
-oapi::Framerate::Framerate(HINSTANCE hDLL)
+oapi::Framerate::Framerate(void *hDLL)
 	: Module(hDLL), ImGuiDialog("Orbiter Performance Meter", {500,350})
 {
 	// Register the custom command for the plugin

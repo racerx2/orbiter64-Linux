@@ -35,7 +35,7 @@ namespace oapi {
 		void OnDraw();
 
 		/// \param hDLL module instance handle
-		RControl(HINSTANCE hDLL);
+		RControl(void *hDLL);
 
 		/// \brief Protected destructor
 		~RControl();
@@ -61,7 +61,7 @@ namespace oapi {
 static oapi::RControl *g_rcontrol;
 /// \brief Module entry point 
 /// \param hDLL module handle
-DLLCLBK void InitModule(HINSTANCE hDLL)
+DLLCLBK void InitModule(void *hDLL)
 {
 	// Create and register the module
 	g_rcontrol = new oapi::RControl(hDLL);
@@ -70,7 +70,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 
 /// \brief Module exit point 
 /// \param hDLL module handle
-DLLCLBK void ExitModule(HINSTANCE hDLL)
+DLLCLBK void ExitModule(void *hDLL)
 {
 	// Delete the module
 	delete g_rcontrol;
@@ -83,7 +83,7 @@ void oapi::RControl::hookOpenDlg(void *ctx) {
 
 // --------------------------------------------------------------
 
-oapi::RControl::RControl(HINSTANCE hDLL)
+oapi::RControl::RControl(void *hDLL)
 	: Module(hDLL), ImGuiDialog("Orbiter Remote Vessel Control", {344,328})
 {
 	// Register the custom command for the plugin

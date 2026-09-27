@@ -9,18 +9,22 @@
 // Reference implementation of "Dragonfly" class space tug
 // ==============================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 
 #include "Dragonfly.h"
 #include <stdio.h>
 #include <math.h>
-#include "internal.h"
+#include <string.h>
+#include <strings.h>
+#include <dlfcn.h>
+#include <QPainter>
+#include "Internal.h"
 //#include "glstuff.cpp"
 
 using std::min;
 using std::max;
 
-HINSTANCE hDLL; 
+void *hDLL; 
 double Lsim;
 
 // ==============================================================
@@ -203,21 +207,21 @@ void Dragonfly::SetClassCaps (FILEHANDLE cfg)
     
 	// ******************************** mesh ***************************************
 
-	AddMesh (oapiLoadMeshGlobal ("Dragonfly\\Dragonfly"));
+	AddMesh (oapiLoadMeshGlobal ("Dragonfly/Dragonfly"));
 };
 
 void Dragonfly::LoadState (FILEHANDLE scn, void *vs)
 {
     char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-        if (!strnicmp (line, "UPPERANT", 8)) {
+        if (!strncasecmp (line, "UPPERANT", 8)) {
 			sscanf (line+8, "%f %f %i %i %i", &UP_pos ,&UY_pos,&UP_handle, &UY_handle,&UAnt_handle);
-		} else if (!strnicmp (line, "LOWERANT", 8)) {
+		} else if (!strncasecmp (line, "LOWERANT", 8)) {
 			sscanf (line+8, "%f %f %i %i %i", &LP_pos, &LY_pos,&LP_handle,&LY_handle,&LAnt_handle);
 			//SetGearParameters (gear_proc);
-		} else if (!strnicmp (line, "HATCH", 5)) {
+		} else if (!strncasecmp (line, "HATCH", 5)) {
 			sscanf (line+5, "%f %i", &dock_latched, &latch_handle);
-		} else if (!strnicmp (line, "ANTTRG", 6)) {
+		} else if (!strncasecmp (line, "ANTTRG", 6)) {
 			Dock_target_object=oapiGetObjectByName(line+7);
 			//sscanf (line+5, "%f %i", &dock_latched, &latch_handle);
         } else {
@@ -796,28 +800,28 @@ void Dragonfly::RedrawPanel_SensorInfo (SURFHANDLE surf)
 {
 	bool engaged = false;
 	OBJHANDLE hObj = GetDockStatus (GetDockHandle (0));
-	HDC hDC = oapiGetDC (surf);
+	QPainter *hDC = oapiGetDC (surf);
 //	SelectObject (hDC, g_Param.font[1]);
-	SetTextColor (hDC, RGB(0,255,0));
-	SetBkMode (hDC, TRANSPARENT);
+	hDC->setPen (QColor (0,255,0)); // SetTextColor: QPainter draws text with the pen
+	hDC->setBackgroundMode (Qt::TransparentMode);
 	if (!sensormode) {
-		TextOut (hDC, 0, 0, "LOCAL", 5);
+		hDC->drawText (QRect (0, 0, 0, 0), Qt::TextDontClip, QString::fromLatin1 ("LOCAL", 5));
 		engaged = (hObj != NULL);
 	} else {
-		TextOut (hDC, 0, 0, "REMOTE", 6);
+		hDC->drawText (QRect (0, 0, 0, 0), Qt::TextDontClip, QString::fromLatin1 ("REMOTE", 6));
 		if (remoteport >= 0) {
 			char cbuf[20];
 			sprintf (cbuf, "DOCK %d", remoteport+1);
-			TextOut (hDC, 0, 10, cbuf, strlen(cbuf));
+			hDC->drawText (QRect (0, 10, 0, 0), Qt::TextDontClip, QString::fromLatin1 (cbuf, strlen(cbuf)));
 			engaged = (GetDockStatus (oapiGetDockHandle (hObj, remoteport)) != NULL);
 		} else 
-			TextOut (hDC, 0, 10, "NO DATA", 7);
+			hDC->drawText (QRect (0, 10, 0, 0), Qt::TextDontClip, QString::fromLatin1 ("NO DATA", 7));
 	}
 	if (engaged) {
-		SetTextColor (hDC, 0);
-		SetBkColor (hDC, RGB(255,255,0));
-		SetBkMode (hDC, OPAQUE);
-		TextOut (hDC, 50, 0, "ENG", 3);
+		hDC->setPen (QColor (0,0,0));
+		hDC->setBackground (QColor (255,255,0));
+		hDC->setBackgroundMode (Qt::OpaqueMode);
+		hDC->drawText (QRect (50, 0, 0, 0), Qt::TextDontClip, QString::fromLatin1 ("ENG", 3));
 	}
 	oapiReleaseDC (surf, hDC);
 };
@@ -825,15 +829,17 @@ void Dragonfly::RedrawPanel_SensorInfo (SURFHANDLE surf)
 void Dragonfly::RedrawPanel_CGIndicator (SURFHANDLE surf)
 {
 	char cbuf[20];
-	HDC hDC = oapiGetDC (surf);
+	QPainter *hDC = oapiGetDC (surf);
 //	SelectObject (hDC, g_Param.font[1]);
-	SetTextColor (hDC, RGB(0,255,0));
-	SetBkMode (hDC, TRANSPARENT);
+	QPen pen = hDC->pen(); // text colour is not the pen in GDI: keep the DC's pen for the lines
+	hDC->setPen (QColor (0,255,0)); // SetTextColor
+	hDC->setBackgroundMode (Qt::TransparentMode);
 	sprintf (cbuf, "%0.1f m", cgofs);
-	TextOut (hDC, 30, 0, cbuf, strlen (cbuf));
+	hDC->drawText (QRect (30, 0, 0, 0), Qt::TextDontClip, QString::fromLatin1 (cbuf, strlen (cbuf)));
 	int loc = 4+min ((int)(cgofs*3.784), 74);
 //	SelectObject (hDC, g_Param.pen[0]);
-	MoveToEx (hDC, loc, 15, NULL); LineTo (hDC, loc-3, 22); LineTo (hDC, loc+3, 22); LineTo (hDC, loc, 15);
+	hDC->setPen (pen);
+	const QPoint tri[4] = {{loc, 15}, {loc-3, 22}, {loc+3, 22}, {loc, 15}}; hDC->drawPolyline (tri, 4); // MoveToEx/LineTo
 	oapiReleaseDC (surf, hDC);
 };
 
@@ -1001,12 +1007,13 @@ DLLCLBK void ovcExit (VESSEL *vessel)
 	if (vessel) delete (Dragonfly*)vessel;
 }
 
-BOOL WINAPI DllMain (HINSTANCE hModule,
-					 DWORD ul_reason_for_call,
-					 LPVOID lpReserved)
+// DllMain counterpart: ELF constructor (DLL_PROCESS_ATTACH) and destructor (DLL_PROCESS_DETACH) of the module
+__attribute__((constructor)) static void DllMain_ProcessAttach ()
 {
-	switch (ul_reason_for_call) {
-	case DLL_PROCESS_ATTACH:
+	Dl_info self;
+	void *hModule = (dladdr ((void*)&DllMain_ProcessAttach, &self) ? dlopen (self.dli_fname, RTLD_NOW | RTLD_NOLOAD) : 0);
+	if (hModule) dlclose (hModule); // same handle as the loader's dlopen; drop the extra reference
+	{
 	    hDLL = hModule;
 		// allocate GDI resources
 		
@@ -1019,11 +1026,11 @@ BOOL WINAPI DllMain (HINSTANCE hModule,
 	//	Internals.Init();
 	//	Internals.MakePanels();
 
-			break;
-	case DLL_PROCESS_DETACH:
+	}
+}
+
+__attribute__((destructor)) static void DllMain_ProcessDetach ()
+{
 		// deallocate GDI resources
 //		CloseGLWindow();
-		break;
-	}
-	return TRUE;
 }

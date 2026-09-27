@@ -60,7 +60,7 @@ add_custom_command(
 
 #Installation
 install(TARGETS HST
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

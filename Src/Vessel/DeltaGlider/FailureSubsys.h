@@ -18,6 +18,7 @@
 // Failure subsystem
 // ==============================================================
 
+class MwsButton; // g++: a friend declaration does not declare the name
 class FailureSubsystem: public DGSubsystem {
 	friend class MwsButton;
 

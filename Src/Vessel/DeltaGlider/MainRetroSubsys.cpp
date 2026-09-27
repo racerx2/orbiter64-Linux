@@ -439,7 +439,7 @@ void GimbalControl::clbkSaveState (FILEHANDLE scn)
 
 bool GimbalControl::clbkParseScenarioLine (const char *line)
 {
-	if (!_strnicmp (line, "MGIMBALMODE", 11)) {
+	if (!strncasecmp (line, "MGIMBALMODE", 11)) {
 		double pg[2], yg[2];
 		int n = sscanf (line+11, "%d%lf%lf%lf%lf", &mode, pg+0, pg+1, yg+0, yg+1);
 		if (mode ==2 && n == 5) // copy manual settings
@@ -1088,8 +1088,8 @@ bool RetroCoverControl::clbkLoadVC (int vcid)
 
 bool RetroCoverControl::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "RCOVER")) {
-		if (!_stricmp (event, "CLOSE")) CloseRetroCover();
+	if (!strcasecmp (event_type, "RCOVER")) {
+		if (!strcasecmp (event, "CLOSE")) CloseRetroCover();
 		else                            OpenRetroCover();
 		return true;
 	}

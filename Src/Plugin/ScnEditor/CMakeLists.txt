@@ -5,8 +5,8 @@ add_library(ScnEditor SHARED
 	ScnEditor.cpp
 	Editor.cpp
 	Convert.cpp
-	ScnEditor.rc
 )
+orbiter_rc_resources(ScnEditor ScnEditor.rc)
 
 target_include_directories(ScnEditor
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -16,7 +16,7 @@ target_link_libraries(ScnEditor
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
 	${ORBITER_DLGCTRL_LIB}
-	comctl32.lib
+	# comctl32 left out: the common controls are Qt widgets
 )
 
 set_target_properties(ScnEditor
@@ -44,7 +44,7 @@ add_dependencies(ScnEditor
 
 # Installation
 install(TARGETS ScnEditor
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 install(FILES ScnEditorAPI.h
@@ -54,6 +54,8 @@ install(FILES ScnEditorAPI.h
 install(FILES ScnEdit.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+# not upstream: also in the build tree, so Orbiter run from there finds it
+file(COPY ScnEdit.png DESTINATION ${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar)
 
 if(ORBITER_MAKE_DOC)
 	add_subdirectory(Help)

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include "XRSoundEngine.h"
 
 // Defines the master map of all known Orbiter vessels (handles) -> XRSoundEngine * for it.
@@ -26,7 +26,7 @@ typedef pair<std::string, ModuleXRSoundEngine *> CString_XRSoundEnginePtr_Pair;
 class XRSoundDLL : public oapi::Module
 {
 public:
-    XRSoundDLL(HINSTANCE hDLL);
+    XRSoundDLL(void *hDLL);
     virtual ~XRSoundDLL();
 
     static XRSoundDLL *s_pInstance;  // our singleton DLL object
@@ -49,7 +49,7 @@ public:
     // This is the same principle as oapiGetSimTime except that it always returns a value >= the previous frame's value.
     static double GetAbsoluteSimTime() 
     { 
-        _ASSERTE(s_pInstance);
+        assert(s_pInstance);
         return s_pInstance->m_absoluteSimTime; 
     }
 
@@ -69,7 +69,7 @@ public:
     static void ParseGlobalConfigFile();
 
 protected:
-    HINSTANCE m_hDLL;  // our DLL's handle
+    void *m_hDLL;  // our DLL's handle
     double m_nextSoundEnginesRefreshSimt;
     double m_nextIrrKlangUpdateRealtime;
     double m_absoluteSimTime;   // replaces simt and oapiGetSimTime(), both of which are unreliable!  See note in XRSoundDLL::clbkPreStep.

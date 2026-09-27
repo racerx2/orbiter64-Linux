@@ -9,7 +9,7 @@
 
 #include <unordered_map>
 
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include "XRSound.h"            // for enums
 #include "VesselXRSoundEngine.h"
 #include "SoundPreSteps.h"

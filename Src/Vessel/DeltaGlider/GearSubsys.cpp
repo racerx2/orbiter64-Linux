@@ -269,8 +269,8 @@ bool GearControl::clbkDrawHUD (int mode, const HUDPAINTSPEC *hps, oapi::Sketchpa
 
 bool GearControl::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "GEAR")) {
-		if (!_stricmp (event, "UP")) RaiseGear();
+	if (!strcasecmp (event_type, "GEAR")) {
+		if (!strcasecmp (event, "UP")) RaiseGear();
 		else                         LowerGear();
 		return true;
 	}

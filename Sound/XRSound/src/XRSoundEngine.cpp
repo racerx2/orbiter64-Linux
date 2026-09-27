@@ -11,10 +11,11 @@
 #include "DefaultSoundGroupPreSteps.h"
 #include "AnimationState.h"
 #include "XRSoundDLL.h"   // for XRSoundDLL::GetAbsoluteSimTime()
+#include <cctype>
 
 // static data and methods
 
-ISoundEngine *XRSoundEngine::s_pKlangEngine = nullptr;
+AudioEngine *XRSoundEngine::s_pKlangEngine = nullptr;
 XRSoundConfigFileParser XRSoundEngine::s_globalConfig;
 bool XRSoundEngine::s_bIrrKlangEngineNeedsInitialization = true;
 WavContext *XRSoundEngine::s_pMusicFolderWavContext = nullptr;  // this global, vessel-independent context will exist until the irrKlang engine is terminated
@@ -36,25 +37,24 @@ static bool equalsIgnoreCase(const std::string& a, const std::string& b) {
 // Returns: true on success, false on error (which means no sounds will play).
 bool XRSoundEngine::InitializeIrrKlangEngine()
 {
-    _ASSERTE(!XRSoundEngine::IsKlangEngineInitialized());
+    assert(!XRSoundEngine::IsKlangEngineInitialized());
 
     if (!XRSoundEngine::IsKlangEngineInitialized())
     {
         // Note: we do NOT want to use multi-threading here: that opens up possible timing gaps / race conditions between the time 
         // we query a given sound's state in our thread and when the OTHER thread updates that state.
         // TODO: if and when we want to support 3D sounds, will need to add ESEO_USE_3D_BUFFERS flag below as well
-        s_pKlangEngine = createIrrKlangDevice(
-            ESOD_AUTO_DETECT,
-            ESEO_LOAD_PLUGINS | ESEO_PRINT_DEBUG_INFO_TO_DEBUGGER
-        );
+        // our engine mixes on the PipeWire thread, but every sound state change and query takes its lock, so no gap opens
+        std::string error;
+        s_pKlangEngine = AudioEngine::Create("Orbiter", error);    // nullptr when no PipeWire daemon answers: sound stays disabled
 
         char logMsg[256];   // can't use CString easily here b/c Orbiter's oapiWriteLog takes a char * instead of const char * for some bizarre reason.
         if (s_pKlangEngine)
-            sprintf_s(logMsg, "%s initialized using sound driver %s; irrKlang version = %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)", 
-                GetVersionStr(), XRSoundEngine::GetSoundDriverName(), IRR_KLANG_VERSION, 
+            snprintf(logMsg, sizeof(logMsg), "%s initialized using sound driver %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)", 
+                GetVersionStr(), XRSoundEngine::GetSoundDriverName(), 
                 s_globalConfig.UpdateInterval, (1.0 / s_globalConfig.UpdateInterval));
         else
-            sprintf_s(logMsg, "%s ERROR: could not initialize default sound device.", GetVersionStr());
+            snprintf(logMsg, sizeof(logMsg), "%s ERROR: could not initialize default sound device (%s).", GetVersionStr(), error.c_str());
 
         oapiWriteLog(logMsg);
         s_globalConfig.WriteLog("----------------------------------------------------------------------------");
@@ -76,7 +76,7 @@ bool XRSoundEngine::InitializeIrrKlangEngine()
 void XRSoundEngine::DestroyIrrKlangEngine()
 {
     char logMsg[256];   // can't use CString easily here b/c Orbiter's oapiWriteLog takes a char * instead of const char * for some bizarre reason.
-    sprintf_s(logMsg, "%s terminating.", GetVersionStr());
+    snprintf(logMsg, sizeof(logMsg), "%s terminating.", GetVersionStr());
 
     oapiWriteLog(logMsg);
     s_globalConfig.WriteLog(logMsg);
@@ -92,7 +92,7 @@ void XRSoundEngine::DestroyIrrKlangEngine()
         }
 
         // free and reset the engine
-        s_pKlangEngine->drop();
+        delete s_pKlangEngine;
         s_pKlangEngine = nullptr;
         s_bIrrKlangEngineNeedsInitialization = true;    // need to reinitialize the engine on next LoadWav call
     }
@@ -105,13 +105,14 @@ bool XRSoundEngine::IsKlangEngineInitialized()
 
 // Returns the name of the sound driver, like 'ALSA' for the alsa device.
 // Possible returned strings are "nullptr", "ALSA", "CoreAudio", "winMM", "DirectSound" and "DirectSound8".
+// ours is always "PipeWire <library version> (<format>)"
 //
 // Returns nullptr if Klang engine not initialized
 const char *XRSoundEngine::GetSoundDriverName()
 {
     const char *pDriverName = nullptr;
     if (IsKlangEngineInitialized())
-        pDriverName = s_pKlangEngine->getDriverName();
+        pDriverName = s_pKlangEngine->GetDriverName();
 
     return pDriverName;
 }
@@ -244,13 +245,13 @@ bool XRSoundEngine::PlayWav(const int soundID, const bool bLoop, const float vol
     pContext->volume = adjustedVolume;
     pContext->bPaused = false;      // PlayWav *always* unpauses the sound
 
-    ISound *pISound = pContext->pISound;   // will be nullptr if this sound is not currently playing
+    AudioVoice *pISound = pContext->pISound;   // will be nullptr if this sound is not currently playing
     if (pISound)
     {
-        if (pISound->isFinished())
+        if (pISound->IsFinished())
         {
             // this means the previous sound in this slot has finished, but its pISound interface was not freed yet
-            pISound->drop();
+            pISound->Release();
             pISound = nullptr;     // we'll obtain a new pISound below
         }
         // else sound is already playing, so we will just update its volume and loop settings later
@@ -260,10 +261,12 @@ bool XRSoundEngine::PlayWav(const int soundID, const bool bLoop, const float vol
     {
         // sound is not playing, so let's start immediately and track it via its pISound interface
         // NOTE: we start this paused so that we can set the proper volume level before starting it via UpdateSoundState
-        pISound = pContext->pISound = s_pKlangEngine->play2D(pContext->csSoundFilename.c_str(), bLoop, true, true);
+        // sound paths are relative to $ORBITER_ROOT and may use '\' and any letter case
+        std::string error;
+        pISound = pContext->pISound = s_pKlangEngine->Play(oapiResolvePath(pContext->csSoundFilename.c_str()).c_str(), bLoop, true, error);
         if (pISound == nullptr)   // this means the sound could not be played; e.g., corrupt file, etc.
         {
-            VERBOSE_LOG(this, "XRSoundEngine::PlayWav ERROR: could not play sound %s", pContext->ToStr().c_str());
+            VERBOSE_LOG(this, "XRSoundEngine::PlayWav ERROR: could not play sound %s: %s", pContext->ToStr().c_str(), error.c_str());
             return false;
         }
         UpdateSoundState(*pContext);        // update volume immediately and unpause it w/o waiting for the next timestep
@@ -305,13 +308,13 @@ void XRSoundEngine::SetAllWavPaused(const bool bPaused)
     for (auto it = m_allWavsMap.begin(); it != m_allWavsMap.end(); it++)
     {
         WavContext &context = it->second;
-        ISound *pISound = context.pISound;
+        AudioVoice *pISound = context.pISound;
         if (pISound)
         {
             // Don't change the state in the WavContext of the sounds here: 1) we don't need to because Orbiter will no longer call our PreStep while it
             // is paused, and 2) We want to preserve the current state of each sounds's bPaused flag anyway so that each will be unpaused or remain paused 
             // as desired when Orbiter unpauses.
-            pISound->setIsPaused(bPaused);
+            pISound->SetPaused(bPaused);
         }
     }
 }
@@ -340,20 +343,20 @@ bool XRSoundEngine::StopWav(const int soundID)
 // Returns: true if wav stopped, false if wav was not playing to begin with.
 bool XRSoundEngine::StopWavImpl(WavContext *pContext, XRSoundEngine *pEngine)
 {
-    _ASSERTE(pContext);
+    assert(pContext);
 
     bool bStopped = false;
-    ISound *pISound = pContext->pISound;
+    AudioVoice *pISound = pContext->pISound;
     if (pISound)   // was sound ever started via PlayWav?
     {
-        if (!pISound->isFinished())
+        if (!pISound->IsFinished())
         {
             bStopped = true;
             if (pEngine)
                 VERBOSE_LOG(pEngine, "XRSoundEngine::StopWavImpl: stopping sound %s", pContext->ToStr().c_str());
-            pISound->stop();
+            pISound->Stop();
         }
-        pISound->drop();    // free irrKlang resources for this sound
+        pISound->Release();    // free irrKlang resources for this sound
         pContext->ResetPlaybackFields();  // reset all playback fields to their initial state, indicating the context is not in use
     }
     return bStopped;
@@ -369,9 +372,9 @@ bool XRSoundEngine::IsWavPlaying(const int soundID)
     const WavContext *pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound *pISound = pContext->pISound;
+        AudioVoice *pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
-            bIsPlaying = !pISound->isFinished();
+            bIsPlaying = !pISound->IsFinished();
     }
     return bIsPlaying;
 }
@@ -461,7 +464,7 @@ bool XRSoundEngine::IsDefaultSoundOrGroup(const int soundID) const
 // Writes to our XRSound.log
 void XRSoundEngine::WriteLog(const char *pMsg)
 {
-    _ASSERTE(m_pConfig);
+    assert(m_pConfig);
 
     // prefix the vessel ID to the log message if we can get it
     char msg[256];
@@ -512,9 +515,9 @@ WavContext *XRSoundEngine::FindWavContext(const int soundID)
 // Note: level may be outside range of 0..1; this is not an error, but it will be limited to between 0 and 1.
 float XRSoundEngine::ComputeVariableVolume(const double minVolume, const double maxVolume, double level)
 {
-    _ASSERTE(minVolume >= 0);
-    _ASSERTE(maxVolume <= 1.0);
-    _ASSERTE(minVolume <= maxVolume);
+    assert(minVolume >= 0);
+    assert(maxVolume <= 1.0);
+    assert(minVolume <= maxVolume);
 
     if (level < 0)
         level = 0;
@@ -551,7 +554,7 @@ const char *XRSoundEngine::GetVersionStr()
 // Returns vector of valid sound filename extensions; e.g., ".flac", ".mp3", etc.
 vector<std::string> XRSoundEngine::GetValidSoundFileExtensions()
 {
-    _ASSERTE(m_pConfig);
+    assert(m_pConfig);
     return m_pConfig->SupportedSoundFileTypesAsVector();
 }
 
@@ -562,7 +565,7 @@ void XRSoundEngine::UpdateIrrKlangEngine()
     if (!XRSoundEngine::IsKlangEngineInitialized())
         return;     // edge case: there are no sound-enabled vessels in Orbiter yet, so nothing to do
 
-    s_pKlangEngine->update();
+    s_pKlangEngine->Update();   // frees finished sounds; the mixing itself runs on the PipeWire thread
 }
 
 // Reset any static data for a simulation restart (e.g., one-shot timers, etc.)
@@ -581,7 +584,7 @@ bool XRSoundEngine::PauseOrReumseMusic(const bool bPause)
     // has any vessel played music yet since simulation start AND should music be currently playing?
     if (s_pMusicFolderWavContext && !s_pMusicFolderWavContext->bPaused)  
     {
-        ISound *pISound = s_pMusicFolderWavContext->pISound;
+        AudioVoice *pISound = s_pMusicFolderWavContext->pISound;
         if (pISound)
         {
             bRetVal = true;
@@ -593,12 +596,12 @@ bool XRSoundEngine::PauseOrReumseMusic(const bool bPause)
             if (bPause)
             {
                 snprintf(msg, 256, "Pausing global music slot %s", static_cast<const char *>(s_pMusicFolderWavContext->ToStr().c_str()));
-                pISound->setIsPaused(true);
+                pISound->SetPaused(true);
             }
             else
             {
                 snprintf(msg, 256, "Unpausing global music slot %s", static_cast<const char*>(s_pMusicFolderWavContext->ToStr().c_str()));
-                pISound->setIsPaused(false);
+                pISound->SetPaused(false);
             }
             XRSoundDLL::WriteLog(msg);
         }

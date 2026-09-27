@@ -12,7 +12,7 @@
 // RMS, grappling and MMU capabilities by Robert Conley
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 #include "Atlantis.h"
 #include "PlBayOp.h"
@@ -21,6 +21,7 @@
 #include "meshres_vc.h"
 #include "DrawAPI.h"
 #include <stdio.h>
+#include <strings.h>
 #include <fstream>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -309,9 +310,9 @@ Atlantis::~Atlantis ()
 void Atlantis::LoadMeshes()
 {
 	// Retrieve mesh handles
-	hOrbiterMesh        = oapiLoadMeshGlobal ("Atlantis\\Atlantis");
-	hOrbiterCockpitMesh = oapiLoadMeshGlobal ("Atlantis\\AtlantisCockpit");
-	hOrbiterVCMesh      = oapiLoadMeshGlobal ("Atlantis\\AtlantisVC");
+	hOrbiterMesh        = oapiLoadMeshGlobal ("Atlantis/Atlantis");
+	hOrbiterCockpitMesh = oapiLoadMeshGlobal ("Atlantis/AtlantisCockpit");
+	hOrbiterVCMesh      = oapiLoadMeshGlobal ("Atlantis/AtlantisVC");
 
 	// Load meshes
 	mesh_cockpit = AddMesh (hOrbiterCockpitMesh);
@@ -1445,30 +1446,30 @@ void Atlantis::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	spdb_status = AnimState::CLOSED; spdb_proc = 0.0;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-        if (!_strnicmp (line, "CONFIGURATION", 13)) {
+        if (!strncasecmp (line, "CONFIGURATION", 13)) {
             sscanf (line+13, "%d", &status);
-		//} else if (!_strnicmp (line, "MET", 3)) {
+		//} else if (!strncasecmp (line, "MET", 3)) {
 		//	sscanf (line+3, "%lf", &met);
-		} else if (!_strnicmp (line, "GEAR", 4)) {
+		} else if (!strncasecmp (line, "GEAR", 4)) {
 			sscanf (line+4, "%d%lf", &action, &gear_proc);
 			gear_status = (AnimState::Action)(action+1);
-		} else if (!_strnicmp (line, "SPEEDBRAKE", 10)) {
+		} else if (!strncasecmp (line, "SPEEDBRAKE", 10)) {
 			sscanf (line+10, "%d%lf", &action, &spdb_proc);
 			spdb_status = (AnimState::Action)(action+1);
-		} else if (!_strnicmp (line, "SRB_IGNITION_TIME", 17)) {
+		} else if (!strncasecmp (line, "SRB_IGNITION_TIME", 17)) {
 			sscanf (line+17, "%lf", &srbtime);
-		} else if (!_strnicmp (line, "SAT_OFS_X", 9)) {
+		} else if (!strncasecmp (line, "SAT_OFS_X", 9)) {
 			sscanf (line+9, "%lf", &sts_sat_x);
-		} else if (!_strnicmp (line, "SAT_OFS_Y", 9)) {
+		} else if (!strncasecmp (line, "SAT_OFS_Y", 9)) {
 			sscanf (line+9, "%lf", &sts_sat_y);
-		} else if (!_strnicmp (line, "SAT_OFS_Z", 9)) {
+		} else if (!strncasecmp (line, "SAT_OFS_Z", 9)) {
 			sscanf (line+9, "%lf", &sts_sat_z);
-		} else if (!_strnicmp (line, "CARGO_STATIC_MESH", 17)) {
+		} else if (!strncasecmp (line, "CARGO_STATIC_MESH", 17)) {
 			sscanf (line+17, "%s", cargo_static_mesh_name);
 			do_cargostatic = true;
-		} else if (!_strnicmp (line, "CARGO_STATIC_OFS", 16)) {
+		} else if (!strncasecmp (line, "CARGO_STATIC_OFS", 16)) {
 			sscanf (line+16, "%lf%lf%lf", &cargo_static_ofs.x, &cargo_static_ofs.y, &cargo_static_ofs.z);
-		} else if (!_strnicmp (line, "ARM_STATUS", 10)) {
+		} else if (!strncasecmp (line, "ARM_STATUS", 10)) {
 			sscanf (line+10, "%lf%lf%lf%lf%lf%lf", &arm_sy, &arm_sp, &arm_ep, &arm_wp, &arm_wy, &arm_wr);
         } else {
 			if      (plop->ParseScenarioLine (line)) continue;  // offer the line to bay door operations
@@ -1832,38 +1833,38 @@ void Atlantis::clbkPreStep (double simt, double simdt, double mjd)
 // --------------------------------------------------------------
 bool Atlantis::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "JET")) {
-		if (!_stricmp (event, "SRB")) {
+	if (!strcasecmp (event_type, "JET")) {
+		if (!strcasecmp (event, "SRB")) {
 			bManualSeparate = true;
 			return true;
 		}
-		else if (!_stricmp (event, "ET")) {
+		else if (!strcasecmp (event, "ET")) {
 			bManualSeparate = true;
 			return true;
 		}
-	} else if (!_stricmp (event_type, "STATUS")) {
-		if (!_stricmp (event, "SRB_IGNITION")) {
+	} else if (!strcasecmp (event_type, "STATUS")) {
+		if (!strcasecmp (event, "SRB_IGNITION")) {
 			status = 1;
 			t0 = event_t + SRB_STABILISATION_TIME;
 			return true;
 		}
-	} else if (!_stricmp (event_type, "ADJUST_LAUNCHTIME")) {
+	} else if (!strcasecmp (event_type, "ADJUST_LAUNCHTIME")) {
 		sscanf (event, "%lf", &t0);
 		return true;
-	} else if (!_stricmp (event_type, "CARGODOOR")) {
-		if (!_stricmp(event, "OPEN"))       plop->SetDoorAction (AnimState::OPENING, true);
-		else if (!_stricmp(event, "CLOSE")) plop->SetDoorAction (AnimState::CLOSING, true);
-		else if (!_stricmp(event, "ISOPEN")) plop->SetDoorAction (AnimState::OPEN, true);
-		else if (!_stricmp(event, "ISCLOSED")) plop->SetDoorAction (AnimState::CLOSED, true);
+	} else if (!strcasecmp (event_type, "CARGODOOR")) {
+		if (!strcasecmp(event, "OPEN"))       plop->SetDoorAction (AnimState::OPENING, true);
+		else if (!strcasecmp(event, "CLOSE")) plop->SetDoorAction (AnimState::CLOSING, true);
+		else if (!strcasecmp(event, "ISOPEN")) plop->SetDoorAction (AnimState::OPEN, true);
+		else if (!strcasecmp(event, "ISCLOSED")) plop->SetDoorAction (AnimState::CLOSED, true);
 		return true;
-	} else if (!_stricmp (event_type, "GEAR")) {
-		OperateLandingGear (!_stricmp (event, "UP") ? AnimState::CLOSING : AnimState::OPENING);
+	} else if (!strcasecmp (event_type, "GEAR")) {
+		OperateLandingGear (!strcasecmp (event, "UP") ? AnimState::CLOSING : AnimState::OPENING);
 		return true;
-	} else if (!_stricmp (event_type,"SPEEDBRAKE")) {
-		OperateSpeedbrake (!_stricmp (event, "CLOSE") ? AnimState::CLOSING : AnimState::OPENING);
+	} else if (!strcasecmp (event_type,"SPEEDBRAKE")) {
+		OperateSpeedbrake (!strcasecmp (event, "CLOSE") ? AnimState::CLOSING : AnimState::OPENING);
 		return true;
-	} else if (!_stricmp (event_type, "KUBAND")) {
-		plop->SetKuAntennaAction (!_stricmp (event, "CLOSE") ? AnimState::CLOSING : AnimState::OPENING);
+	} else if (!strcasecmp (event_type, "KUBAND")) {
+		plop->SetKuAntennaAction (!strcasecmp (event, "CLOSE") ? AnimState::CLOSING : AnimState::OPENING);
 		return true;
 	}
 
@@ -2332,7 +2333,7 @@ int Atlantis::clbkConsumeBufferedKey (DWORD key, bool down, char *kstate)
 // --------------------------------------------------------------
 // Module initialisation
 // --------------------------------------------------------------
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	g_Param.hDLL = hModule;
 	g_Param.tkbk_label = oapiLoadTexture("Atlantis/tkbk_label.bmp");
@@ -2342,7 +2343,7 @@ DLLCLBK void InitModule (HINSTANCE hModule)
 	g_Param.brush[0] = oapiCreateBrush(0x000000);
 }
 
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 	oapiDestroySurface (g_Param.tkbk_label);
 }

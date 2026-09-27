@@ -10,8 +10,12 @@
 
 #pragma once
 
-#include <Windows.h>
+// Windows.h left out: strings.h, errno and Qt stand in for what it declared
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
+#include <cassert>
+#include "Orbitersdk.h"   // oapiResolvePath
 
 #include <fstream>      // for ifstream
 #include <string>
@@ -61,7 +65,7 @@ public:
         if (!pFilename || !*pFilename)
             return false;
 
-        std::ifstream file(pFilename);
+        std::ifstream file(oapiResolvePath(pFilename));   // paths relative to $ORBITER_ROOT may use '\' and any letter case
         return file.good();
     }
 

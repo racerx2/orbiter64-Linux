@@ -1,12 +1,12 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_STARTUP_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_STARTUP_DIR})
 
 add_library(AtmConfig SHARED
 	AtmConfig.cpp
-	AtmConfig.rc
 )
+orbiter_rc_resources(AtmConfig AtmConfig.rc)
 
 target_include_directories(AtmConfig
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -30,6 +30,6 @@ set_target_properties(AtmConfig
 
 # Installation
 install(TARGETS AtmConfig
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}/Startup
 )

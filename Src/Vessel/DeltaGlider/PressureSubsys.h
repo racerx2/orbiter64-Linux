@@ -74,6 +74,8 @@ private:
 // Airlock controls
 // ==============================================================
 
+class OuterLockSwitch; // g++: a friend declaration does not declare the name
+class InnerLockSwitch;
 class AirlockCtrl: public DGSubsystem {
 	friend class PressureSubsystem;
 	friend class OuterLockSwitch;
@@ -143,6 +145,7 @@ private:
 // Top hatch controls
 // ==============================================================
 
+class HatchCtrlSwitch;
 class TophatchCtrl: public DGSubsystem {
 	friend class PressureSubsystem;
 	friend class HatchCtrlSwitch;

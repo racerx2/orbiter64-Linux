@@ -14,7 +14,7 @@
 
 #define ORBITER_MODULE
 #include "MFDWindow.h"
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
 // ==============================================================
 // Global variables
@@ -37,7 +37,7 @@ void OpenDlgClbk (void *context);
 // This function is called when Orbiter starts or when the module
 // is activated.
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	// To allow the user to open our new dialog box, we create
 	// an entry in the "Custom Functions" list which is accessed
@@ -53,7 +53,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // This function is called when Orbiter shuts down or when the
 // module is deactivated
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the custom function in Orbiter
 	oapiUnregisterCustomCmd (g_dwCmd);

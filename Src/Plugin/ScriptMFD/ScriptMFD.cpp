@@ -10,11 +10,14 @@
 // This module loads MFD modes defined via Lua scripts.
 // ==============================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "windows.h"
-#include "orbitersdk.h"
+// windows.h left out: the SDK headers carry the types
+#include "Orbitersdk.h"
 #include "ScriptMFD.h"
+#include <fstream>
+#include <cstring>
+#include <strings.h>
 
 #undef DLLEXPORT
 #define DLLEXPORT  // hack - this could be solved a bit more elegantly
@@ -38,7 +41,7 @@ struct VINTERP { // list of vessel-based interpreters
 } **vinterp;
 int nvinterp = 0;
 
-static const char *cfgfile = "Config\\MFD\\ScriptMFD.cfg";
+static const char *cfgfile = "Config/MFD/ScriptMFD.cfg";
 
 // clears the global list of vessel-based interpreters
 static void ClearVinterpList()
@@ -80,14 +83,15 @@ int LuaCall(lua_State *L, int narg, int nres)
 // ==============================================================
 // API interface
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	int i;
 	char cbuf[256], name[256], script[256], key[256], persist[256];
 
 	// Scan the list of script MFD modes
-	ifstream ifs (cfgfile);
+	ifstream ifs (oapiResolvePath (cfgfile));
 	while (ifs.getline (cbuf, 256)) {
+		cbuf[strcspn (cbuf, "\r")] = '\0'; // CRLF cfg: Linux streams keep the '\r'
 		FILEHANDLE hFile = oapiOpenFile (cbuf, FILE_IN, CONFIG);
 		if (oapiReadItem_string (hFile, (char*)"Name", name) &&
 			oapiReadItem_string (hFile, (char*)"Script", script) &&
@@ -109,7 +113,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 					sscanf (key, "%d", &modespec[nmode].key);
 				modespec[nmode].persist = 0;
 				if (oapiReadItem_string (hFile, (char*)"Persist", persist))
-					if (!_stricmp(persist, "vessel"))
+					if (!strcasecmp(persist, "vessel"))
 						modespec[nmode].persist = 1;
 				nmode++;
 		}
@@ -128,7 +132,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	nvinterp = 0;
 }
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	int i;
 	for (i = 0; i < nmode; i++) {
@@ -137,7 +141,7 @@ DLLCLBK void ExitModule (HINSTANCE hDLL)
 	ClearVinterpList();
 }
 
-DLLCLBK void opcOpenRenderViewport(HWND,DWORD,DWORD,BOOL)
+DLLCLBK void opcOpenRenderViewport(QWindow*,DWORD,DWORD,BOOL)
 {
 }
 

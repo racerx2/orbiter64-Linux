@@ -14,7 +14,7 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "imgui.h"
 #include "imgui_extras.h"
 #include "implot.h"
@@ -133,7 +133,7 @@ namespace oapi {
 			return m_graphs.emplace_back(title, left, right, right2);
 		}
 	public:
-		FlightData(HINSTANCE hDLL):Module(hDLL),ImGuiDialog("Flight Data Monitor") {
+		FlightData(void *hDLL):Module(hDLL),ImGuiDialog("Flight Data Monitor") {
 			m_pVessel = NULL;
 			m_sysT = 0.0;
 			m_DT = 0.1f;
@@ -386,7 +386,7 @@ namespace oapi {
 static oapi::FlightData *g_fData;
 /// \brief Module entry point 
 /// \param hDLL module handle
-DLLCLBK void InitModule(HINSTANCE hDLL)
+DLLCLBK void InitModule(void *hDLL)
 {
 	// Create and register the module
 	g_fData = new oapi::FlightData(hDLL);
@@ -395,7 +395,7 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 
 /// \brief Module exit point 
 /// \param hDLL module handle
-DLLCLBK void ExitModule(HINSTANCE hDLL)
+DLLCLBK void ExitModule(void *hDLL)
 {
 	// Delete the module
 	delete g_fData;

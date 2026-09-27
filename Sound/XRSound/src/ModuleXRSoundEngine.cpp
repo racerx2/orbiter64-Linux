@@ -15,8 +15,8 @@
 // This also handles static one-time initialization of our singleton irrKlang engine.
 ModuleXRSoundEngine *ModuleXRSoundEngine::CreateInstance(const char *pUniqueModuleName)
 {
-    _ASSERTE(pUniqueModuleName);
-    _ASSERTE(*pUniqueModuleName);
+    assert(pUniqueModuleName);
+    assert(*pUniqueModuleName);
 
     if (!pUniqueModuleName || !*pUniqueModuleName)
         return nullptr;
@@ -37,8 +37,8 @@ ModuleXRSoundEngine::ModuleXRSoundEngine(const char *pUniqueModuleName) :
     XRSoundEngine(),
     m_csModuleName(pUniqueModuleName)
 {
-    _ASSERTE(pUniqueModuleName);
-    _ASSERTE(*pUniqueModuleName);
+    assert(pUniqueModuleName);
+    assert(*pUniqueModuleName);
 
     // Note: there are no "overrides" applicable to modules, so there is no need to parse module configuration override .cfg files
     m_pConfig = new XRSoundConfigFileParser();  // for [SYSTEM] settings and logging
@@ -93,20 +93,20 @@ void ModuleXRSoundEngine::UpdateSoundState(WavContext &context)
 {
     // NOTE: If you update this method, check/update the same method in VesselXRSoundEngine as well.
 
-    ISound *pISound = context.pISound;  // will be nullptr if sound was never played yet, or was stopped before finishing
+    AudioVoice *pISound = context.pISound;  // will be nullptr if sound was never played yet, or was stopped before finishing
     if (pISound)    // sound was marked to play or is playing now?
     {
-        if (!pISound->isFinished())
+        if (!pISound->IsFinished())
         {
             // update the irrKlang state for this sound
-            pISound->setVolume(context.volume);  // Note: context.volume has already been adjusted for MasterVolume setting in config
-            pISound->setIsLooped(context.bLoop);
-            pISound->setIsPaused(context.bPaused);
+            pISound->SetVolume(context.volume);  // Note: context.volume has already been adjusted for MasterVolume setting in config
+            pISound->SetLooped(context.bLoop);
+            pISound->SetPaused(context.bPaused);
         }
         else
         {
             // sound has finished, so release its resources
-            pISound->drop();
+            pISound->Release();
             context.pISound = nullptr;
         }
     }

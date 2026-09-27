@@ -16,11 +16,15 @@
 
 #include "ScnEditorAPI.h"
 #include "Convert.h"
-#include <commctrl.h>
+// commctrl.h left out: the common controls are Qt widgets
+#include <QPixmap>
+#include <QPointer>
+#include <vector>
 #include <filesystem>
 namespace fs = std::filesystem;
 
 class ScnEditorTab;
+class QTreeWidgetItem;
 typedef void (*CustomButtonFunc)(OBJHANDLE);
 
 // ==============================================================
@@ -29,33 +33,33 @@ typedef void (*CustomButtonFunc)(OBJHANDLE);
 
 class ScnEditor {
 public:
-	ScnEditor (HINSTANCE hDLL);
+	ScnEditor (void *hDLL);
 	~ScnEditor ();
 	void OpenDialog ();
 	void CloseDialog ();
-	void InitDialog (HWND hDlg);
+	void InitDialog (QWidget *hDlg);
 	DWORD AddTab (ScnEditorTab *newTab);
 	void DelCustomTabs ();
 	void ShowTab (DWORD t);
-	bool SaveScenario (HWND hDlg);
-	INT_PTR MsgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	bool SaveScenario (QWidget *hDlg);
+	void MsgProc (QWidget *hDlg);
 
-	HWND DlgHandle () const { return hDlg; }
-	HINSTANCE InstHandle () const { return hInst; }
+	QWidget *DlgHandle () const { return hDlg; }
+	void *InstHandle () const { return hInst; }
 
-	void ScanCBodyList (HWND hDlg, int hList, OBJHANDLE hSelect);
-	void ScanPadList (HWND hDlg, int hList, OBJHANDLE hBase);
-	void SetBasePosition (HWND hDlg);
-	void SelectBase (HWND hDlg, int hList, OBJHANDLE hRef, OBJHANDLE hBase);
+	void ScanCBodyList (QWidget *hDlg, int hList, OBJHANDLE hSelect);
+	void ScanPadList (QWidget *hDlg, int hList, OBJHANDLE hBase);
+	void SetBasePosition (QWidget *hDlg);
+	void SelectBase (QWidget *hDlg, int hList, OBJHANDLE hRef, OBJHANDLE hBase);
 	bool CreateVessel (char *name, char *classname);
 	void VesselDeleted (OBJHANDLE hV);
 	void Pause (bool pause);
 	char *ExtractVesselName (char *str);
-	HINSTANCE LoadVesselLibrary (const VESSEL *vessel);
+	void *LoadVesselLibrary (const VESSEL *vessel);
 
 public:
 	OBJHANDLE hVessel;   // vessel being edited
-	HIMAGELIST imglist;  // image list for tree control icons
+	std::vector<QPixmap> imglist; // image list for tree control icons
 	int treeicon_idx[4]; // tree view icons
 
 private:
@@ -65,9 +69,9 @@ private:
 	DWORD nTab0;         // number of standard tabs (excluding custom)
 	ScnEditorTab **pTab; // array of tab instances
 	ScnEditorTab *cTab;  // currently displayed tab
-	HWND  hDlg;          // main dialog handle
-	HINSTANCE hInst;     // module instance handle
-	HINSTANCE hEdLib;    // vessel editor library instance handle
+	QPointer<QWidget> hDlg; // main dialog handle (QPointer: the core destroys the dialog at session end)
+	void *hInst;         // module instance handle
+	void *hEdLib;        // vessel editor library instance handle
 };
 
 
@@ -81,25 +85,25 @@ public:
 	virtual ~ScnEditorTab ();
 	ScnEditor *Editor() { return ed; }
 	VESSEL *Vessel() { return oapiGetVesselInterface (ed->hVessel); }
-	HWND CreateTab (HINSTANCE hInst, WORD ResId, DLGPROC TabProc);
-	HWND CreateTab (WORD ResId, DLGPROC TabProc);
+	QWidget *CreateTab (void *hInst, WORD ResId, DLGINIT TabProc);
+	QWidget *CreateTab (WORD ResId, DLGINIT TabProc);
 	void DestroyTab ();
 	virtual void InitTab () {}
-	HWND TabHandle () const { return hTab; }
+	QWidget *TabHandle () const { return hTab; }
 	void SwitchTab (int newtab);
 	virtual char *HelpTopic ();
 	virtual void OpenHelp ();
 	void Show ();
 	void Hide ();
-	virtual INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static ScnEditorTab *TabPointer (HWND, UINT, WPARAM, LPARAM);
+	virtual void TabProc (QWidget *hDlg);
+	static ScnEditorTab *TabPointer (QWidget *hDlg, void *context = 0);
 
 protected:
 	void ScanVesselList (int ResId, bool detail = false, OBJHANDLE hExclude = NULL);
 	OBJHANDLE GetVesselFromList (int ResId);
 
 	ScnEditor *ed;        // associated editor
-	HWND hTab;            // tab window handle
+	QPointer<QWidget> hTab; // tab window handle (QPointer: the core destroys the dialog at session end)
 };
 
 
@@ -112,11 +116,11 @@ public:
 	EditorTab_Vessel (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void TabProc (QWidget *hDlg);
 	void SelectVessel (OBJHANDLE hV);
 	void VesselSelected ();
 	void VesselDeleted (OBJHANDLE hV);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	static void DlgProc (QWidget*, void*);
 	
 protected:
 	void ScanVesselList ();
@@ -135,11 +139,11 @@ public:
 	~EditorTab_New ();
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
-	void ScanConfigDir (const fs::path &dir, HTREEITEM hti);
+	void ScanConfigDir (const fs::path &dir, QTreeWidgetItem *hti);
 	void RefreshVesselTpList ();
 	int GetSelVesselTp (char *name, int len);
 	void VesselTpChanged ();
@@ -148,7 +152,7 @@ protected:
 	void DrawVesselBmp ();
 
 private:
-	HBITMAP hVesselBmp;
+	QImage *hVesselBmp;
 	int imghmax;
 };
 
@@ -164,8 +168,8 @@ public:
 	char *HelpTopic ();
 	BOOL AddFuncButton (EditorFuncSpec *efs);
 	BOOL AddPageButton (EditorPageSpec *eps);
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 private:
 	OBJHANDLE hVessel;
@@ -183,8 +187,8 @@ class EditorTab_Save: public ScnEditorTab {
 public:
 	EditorTab_Save (ScnEditor *editor);
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 };
 
 
@@ -197,8 +201,8 @@ public:
 	EditorTab_Date (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void Apply ();
@@ -235,8 +239,8 @@ public:
 	EditorTab_Elements (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void Apply ();
@@ -259,8 +263,8 @@ public:
 	EditorTab_Statevec (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void ScanVesselList ();
@@ -279,13 +283,13 @@ public:
 	EditorTab_Landed (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void ScanVesselList ();
-	void ScanCBodyList (HWND hDlg, int hList, OBJHANDLE hSelect);
-	void ScanBaseList (HWND hDlg, int hList, OBJHANDLE hRef);
+	void ScanCBodyList (QWidget *hDlg, int hList, OBJHANDLE hSelect);
+	void ScanBaseList (QWidget *hDlg, int hList, OBJHANDLE hRef);
 	void SelectCBody (OBJHANDLE hBody);
 	void Refresh (OBJHANDLE hV = NULL);
 	void Apply ();
@@ -301,8 +305,8 @@ public:
 	EditorTab_Orientation (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void Refresh ();
@@ -320,8 +324,8 @@ public:
 	EditorTab_AngularVel (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void Refresh ();
@@ -338,8 +342,8 @@ public:
 	EditorTab_Propellant (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	void Refresh ();
@@ -361,8 +365,8 @@ public:
 	EditorTab_Docking (ScnEditor *editor);
 	void InitTab ();
 	char *HelpTopic ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	UINT DockNo ();
@@ -382,13 +386,13 @@ protected:
 
 class EditorTab_Custom: public ScnEditorTab {
 public:
-	EditorTab_Custom (ScnEditor *editor, HINSTANCE hInst, WORD ResId, DLGPROC UserProc);
+	EditorTab_Custom (ScnEditor *editor, void *hInst, WORD ResId, DLGINIT UserProc);
 	void OpenHelp ();
-	INT_PTR TabProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void TabProc (QWidget *hDlg);
+	static void DlgProc (QWidget*, void*);
 
 private:
-	DLGPROC usrProc;
+	DLGINIT usrProc;
 };
 
 #endif // !__SCNEDITOR_H

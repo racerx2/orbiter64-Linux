@@ -9,7 +9,7 @@
 // User interface: throttle slider pair
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "sliderpair.h"
 
 static const float texw = (float)PANELEL_TEXW;

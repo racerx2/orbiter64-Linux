@@ -8,13 +8,16 @@ add_library(XRSound_dll SHARED
 	XRSoundDLL.cpp
 	XRSoundEngine.cpp
 	XRSoundEngine30.cpp
-	Resource.rc
 	Utils/ConfigFileParser.cpp
 	Utils/FileList.cpp
+	# not upstream: the PipeWire mixer and decoders that replace irrKlang
+	Audio/AudioDecode.cpp
+	Audio/AudioEngine.cpp
 )
+orbiter_rc_resources(XRSound_dll Resource.rc)
 
 set_target_properties(XRSound_dll PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR}
 	OUTPUT_NAME XRSound
 	COMPILE_DEFINITIONS "XRSOUND_DLL_BUILD;_CRT_SECURE_NO_WARNINGS;_USRDLL;XRSOUNDDLL_EXPORTS"
 )
@@ -22,13 +25,15 @@ set_target_properties(XRSound_dll PROPERTIES
 target_include_directories(XRSound_dll PUBLIC
 	${ORBITER_SOURCE_SDK_INCLUDE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/Utils
-	${IRRKLANG_DIR}/include
+	${AUDIO_DECODER_INCLUDE_DIRS}
 )
 
+# PipeWire replaces irrKlang; Qt Widgets for ConfigFileParser's QMessageBox
 target_link_libraries(XRSound_dll
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
-	${IRRKLANG_LIB}
+	PkgConfig::PIPEWIRE
+	Qt6::Widgets
 )
 
 add_dependencies(XRSound_dll
@@ -37,7 +42,7 @@ add_dependencies(XRSound_dll
 )
 
 install(TARGETS XRSound_dll
-	RUNTIME DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
+	LIBRARY DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
 ## XRSound_lib
@@ -50,6 +55,7 @@ set_target_properties(XRSound_lib
 	PROPERTIES
 	ARCHIVE_OUTPUT_DIRECTORY ${ORBITER_BINARY_SDK_DIR}/$<1:XRSound>
 	OUTPUT_NAME XRSound
+	POSITION_INDEPENDENT_CODE ON # linked into .so modules
 )
 
 target_include_directories(XRSound_lib PUBLIC

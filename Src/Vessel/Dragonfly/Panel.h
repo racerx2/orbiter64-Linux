@@ -4,7 +4,7 @@
 #ifndef __PANELS_H_
 #define __PANELS_H_
 
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "instruments.h"
 
 typedef struct
@@ -36,10 +36,10 @@ class Panel
    int Wdth,Hght;		//Width & Height of the panel;
    int ATT_mode;
    SURFHANDLE surf;		//surface of background;
-   HBITMAP hBitmap;		//handle to background bitmap; 
-   HINSTANCE hModule;	//handle to program instance // ??need this to load resource bitmaps.. ugh.. windows is idiot!!!
-   HDC hDC,hDC2;
-   HDC hDC3;
+   QImage *hBitmap;		//handle to background bitmap; 
+   void *hModule;	//handle to program instance // ??need this to load resource bitmaps.. ugh.. windows is idiot!!!
+   QPainter *hDC,*hDC2;
+   QPainter *hDC3;
    TEXT_LIST* Text_list;
    SCREW_LIST* Screw_list;
    CTEXT_LIST* CText_list;
@@ -67,7 +67,7 @@ class Panel
    void Save (FILEHANDLE scn);
 };   
 
-void PANEL_InitGDIResources(HINSTANCE hModule);
+void PANEL_InitGDIResources(void *hModule);
 void PANEL_ReleaseGDIResources();
 void PANEL_DLLAtach();
 

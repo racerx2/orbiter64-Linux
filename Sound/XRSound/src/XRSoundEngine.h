@@ -9,8 +9,9 @@
 #pragma once
 
 #include <unordered_map>
+#include <cassert>
 
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include "XRSoundEngine30.h"   // latest interface version 
 
 using namespace std;
@@ -24,13 +25,12 @@ class ModuleXRSoundEngine;
 #define oapiGetSimTime ERROR! "Do not invoke oapiGetSimTime: see comment block in XRSoundDLL::clbkPreStep for details"
 
 #ifdef XRSOUND_DLL_BUILD
-#include <irrKlang.h>
-using namespace irrklang;
+#include "Audio/AudioEngine.h"   // our PipeWire engine replaces irrKlang
 #include "XRSoundConfigFileParser.h"
 #else
 // we're compiling XRSoundLib, so all we need is a forward reference (and we don't want to include the full class definition on the .lib side!)
-class ISoundEngine;
-class ISound;
+class AudioEngine;
+class AudioVoice;
 class XRSoundConfigFileParser;
 #endif
 
@@ -119,7 +119,7 @@ struct WavContext
     float volume;       // 0..1.0; note that this always contains the *original requested volume*, never and *adjusted volume*
     bool bPaused;
     bool bEnabled;      // NOTE this is *only* used to enable or disable default sounds, NEVER for other sounds
-    ISound *pISound;    // used to control and retrieve the state of the sound effect
+    AudioVoice *pISound;    // used to control and retrieve the state of the sound effect
 };
 
 // Abstract base class for all XRSoundEngine objects; Implements the XRSoundEngine 2.0/3.0 interface.
@@ -203,7 +203,7 @@ public:
     void StopAllWav();     
     void SetAllWavPaused(const bool bPaused);     
     
-    XRSoundConfigFileParser &GetConfig() { _ASSERTE(m_pConfig);  return *m_pConfig; }
+    XRSoundConfigFileParser &GetConfig() { assert(m_pConfig);  return *m_pConfig; }
     vector<std::string> GetValidSoundFileExtensions();    // e.g., ".flac", ".wav", ".mp3", etc.
     const char *GetWavFilename(const int soundID);
     
@@ -234,7 +234,7 @@ protected:
     static bool StopWavImpl(WavContext *pContext, XRSoundEngine *pEngine);
     
     // data
-    static ISoundEngine *s_pKlangEngine;        // initialized by InitializeIrrKlangEngine
+    static AudioEngine *s_pKlangEngine;        // initialized by InitializeIrrKlangEngine
     static bool s_bIrrKlangEngineNeedsInitialization; // used to handle one-time startup items
 
     XRSoundConfigFileParser *m_pConfig;   // this is per-engine instance instead of static so that we can per-vessel or per-module configuration overrides if we want to    
@@ -260,7 +260,7 @@ private:
     if (pEngine->GetConfig().EnableVerboseLogging)  \
     {                                               \
         char msg[256];                              \
-		snprintf(msg, 256, str, __VA_ARGS__);       \
+		snprintf(msg, 256, str __VA_OPT__(,) __VA_ARGS__);       \
         pEngine->WriteLog(msg);                     \
     }                                               \
 }
@@ -271,6 +271,7 @@ private:
 
 // These are used to dynamically bind to DLL-exported methods.  Note that DLLCLBK specifies 'extern "C"', which uses the __cdecl
 // calling convention, NOT the normal __stdcall that C++ uses.
-extern "C" typedef XRSoundEngine* (__cdecl* VesselXRSoundEngineInstanceFuncPtr)(OBJHANDLE hVessel);
-extern "C" typedef XRSoundEngine* (__cdecl* ModuleXRSoundEngineInstanceFuncPtr)(const char* pUniqueModuleName);
+// __cdecl left out: x86-64 Linux has a single C calling convention
+extern "C" typedef XRSoundEngine* (*VesselXRSoundEngineInstanceFuncPtr)(OBJHANDLE hVessel);
+extern "C" typedef XRSoundEngine* (*ModuleXRSoundEngineInstanceFuncPtr)(const char* pUniqueModuleName);
 

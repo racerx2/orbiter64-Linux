@@ -5,6 +5,8 @@
 #define __MFDINTERPRETER_H
 
 #include "Interpreter.h"
+#include <thread>
+#include <future>
 
 #define NCHAR 80 // characters per line in console buffer
 #define NLINE 50 // number of buffered lines
@@ -52,9 +54,10 @@ public:
 		~Environment();
 		MFDInterpreter *CreateInterpreter (OBJHANDLE hV);
 		MFDInterpreter *interp;
-		HANDLE hThread;
+		std::thread *hThread;
+		std::future<unsigned int> thExit; // not upstream: thread end, for the timed wait on the thread
 		char cmd[1024];
-		static unsigned int WINAPI InterpreterThreadProc (LPVOID context);
+		static unsigned int InterpreterThreadProc (void *context);
 	};
 	struct VesselInterp {
 		OBJHANDLE hVessel;

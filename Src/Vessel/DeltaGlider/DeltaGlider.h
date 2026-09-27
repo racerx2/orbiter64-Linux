@@ -19,10 +19,12 @@
 #ifndef __DELTAGLIDER_H
 #define __DELTAGLIDER_H
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 
-#include "orbitersdk.h"
-#include "..\Common\Instrument.h"
+#include "Orbitersdk.h"
+#include "../Common/Instrument.h"
+#include <memory> // g++ needs it for std::unique_ptr
+#include <string.h> // came with windows.h (str*, mem*, strcasecmp)
 
 // ==============================================================
 // Some vessel class caps
@@ -336,7 +338,7 @@ private:
 // ==============================================================
 
 typedef struct {
-	HINSTANCE hDLL;
+	void *hDLL;
 	DWORD col[4];
 	oapi::Pen *pen[2];
 	SURFHANDLE surf;

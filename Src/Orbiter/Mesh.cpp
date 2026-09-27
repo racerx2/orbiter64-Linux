@@ -809,7 +809,7 @@ istream &operator>> (istream &is, Mesh &mesh)
 	mesh.Clear();
 
 	if (!is.getline (cbuf, 256)) return is;
-	if (strcmp (cbuf, "MSHX1")) return is;
+	if (strcmp (cbuf, "MSHX1") && strcmp (cbuf, "MSHX1\r")) return is; // not upstream: CRLF files keep the '\r' on Linux
 
 	for (;;) {
 		if (!is.getline (cbuf, 256)) return is;

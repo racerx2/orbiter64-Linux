@@ -2,7 +2,8 @@
 // Licensed under the MIT License
 
 #include "MfdInterpreter.h"
-#include <process.h>
+#include <cstring>
+#include <chrono> // process.h: threads are std::thread (MfdInterpreter.h)
 
 // ==============================================================
 // MFD interpreter class implementation
@@ -130,8 +131,15 @@ InterpreterList::Environment::~Environment()
 {
 	if (interp) {
 		if (hThread) {
-			TerminateThread (hThread, 0);
-			CloseHandle (hThread);
+			// TerminateThread: a std::thread can't be killed, so the thread is asked to end
+			interp->Terminate();
+			interp->EndExec();
+			if (thExit.wait_for (std::chrono::milliseconds(1000)) != std::future_status::ready) {
+				oapiWriteLog ((char*)"LuaMFD: timeout while waiting for interpreter thread"); // not upstream
+				hThread->detach(); // the stuck thread keeps its interpreter
+				interp = NULL;
+			} else hThread->join();
+			delete hThread;
 		}
 		delete interp;
 	}
@@ -139,16 +147,17 @@ InterpreterList::Environment::~Environment()
 
 MFDInterpreter *InterpreterList::Environment::CreateInterpreter (OBJHANDLE hV)
 {
-	unsigned int id;
 	interp = new MFDInterpreter ();
 	interp->Initialise();
 	interp->SetSelf (hV);
-	hThread = (HANDLE)_beginthreadex (NULL, 4096, &InterpreterThreadProc, this, 0, &id);
+	std::packaged_task<unsigned int(void*)> task (&InterpreterThreadProc); // _beginthreadex; stack size left to the system
+	thExit = task.get_future();
+	hThread = new std::thread (std::move (task), this);
 	return interp;
 }
 
 // Interpreter thread function
-unsigned int WINAPI InterpreterList::Environment::InterpreterThreadProc (LPVOID context)
+unsigned int InterpreterList::Environment::InterpreterThreadProc (void *context)
 {
 	InterpreterList::Environment *env = (InterpreterList::Environment*)context;
 	MFDInterpreter *interp = (MFDInterpreter*)env->interp;
@@ -163,7 +172,7 @@ unsigned int WINAPI InterpreterList::Environment::InterpreterThreadProc (LPVOID 
 		interp->EndExec();  // return control
 	}
 	interp->EndExec();  // release mutex (is this necessary?)
-	_endthreadex(0);
+	// _endthreadex left out: returning ends the std::thread
 	return 0;
 }
 

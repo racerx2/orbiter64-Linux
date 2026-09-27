@@ -27,9 +27,9 @@ add_library(ShuttleA SHARED
 	ShuttleALua.cpp
 	sliderpair.cpp
 	switches.cpp
-	ShuttleA.rc
 	${VESSEL_COMMON_DIR}/Instrument.cpp
 )
+orbiter_rc_resources(ShuttleA ShuttleA.rc)
 
 set_target_properties(ShuttleA
 	PROPERTIES
@@ -99,7 +99,7 @@ add_subdirectory(ShuttleA_PL)
 
 # Installation
 install(TARGETS ShuttleA
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

@@ -3,8 +3,8 @@
 
 add_library(ScriptMFD SHARED
 	ScriptMFD.cpp
-	ScriptMFD.rc
 )
+orbiter_rc_resources(ScriptMFD ScriptMFD.rc)
 
 target_include_directories(ScriptMFD
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -32,6 +32,6 @@ set_target_properties(ScriptMFD
 
 # Installation
 install(TARGETS ScriptMFD
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )

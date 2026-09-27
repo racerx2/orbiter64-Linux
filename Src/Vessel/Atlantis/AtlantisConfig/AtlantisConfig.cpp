@@ -1,25 +1,51 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "AC_resource.h"
 #include <stdio.h>
-#include <io.h>
+#include <unistd.h>
+#include <QAbstractButton>
+#include <QDialog>
 
 class VesselConfig;
 class AtlantisConfig;
 
-static const char *tex_hires_enabled = "Textures2\\Atlantis";
-static const char *tex_hires_disabled = "Textures2\\~Atlantis";
+static const char *tex_hires_enabled = "Textures2/Atlantis";
+static const char *tex_hires_disabled = "Textures2/~Atlantis";
 
-static const char *vcmsh_fname = "Meshes\\Atlantis\\AtlantisVC.msh";
-static const char *msh_hires_bkup = "Meshes\\Atlantis\\~AtlantisVC_hi.msh";
-static const char *msh_lores_bkup = "Meshes\\Atlantis\\~AtlantisVC_lo.msh";
+static const char *vcmsh_fname = "Meshes/Atlantis/AtlantisVC.msh";
+static const char *msh_hires_bkup = "Meshes/Atlantis/~AtlantisVC_hi.msh";
+static const char *msh_lores_bkup = "Meshes/Atlantis/~AtlantisVC_lo.msh";
+
+// not upstream: io.h _access and rename on Orbiter data paths (resolved case-insensitively)
+static int access_path (const char *path, int mode)
+{
+	return access (oapiResolvePath (path).c_str(), mode);
+}
+
+static int rename_path (const char *from, const char *to)
+{
+	return rename (oapiResolvePath (from).c_str(), oapiResolvePath (to).c_str());
+}
+
+// not upstream: BM_SETCHECK / BM_GETCHECK on a dialog control
+static void SetCheck (QWidget *hDlg, int id, bool check)
+{
+	if (QAbstractButton *b = DlgItem<QAbstractButton> (hDlg, id)) b->setChecked (check);
+}
+
+static bool IsChecked (QWidget *hDlg, int id)
+{
+	QAbstractButton *b = DlgItem<QAbstractButton> (hDlg, id);
+	return (b && b->isChecked());
+}
 
 struct {
-	HINSTANCE hInst;
+	void *hInst;
 	AtlantisConfig *item;
 } gParams;
 
@@ -28,14 +54,14 @@ public:
 	AtlantisConfig(): LaunchpadItem() {}
 	char *Name() { return (char*)"Atlantis Configuration"; }
 	char *Description();
-	bool clbkOpen (HWND hLaunchpad);
+	bool clbkOpen (QWidget *hLaunchpad);
 	bool TexHiresEnabled() const;
 	void TexEnableHires (bool enable);
 	bool MshHiresEnabled() const;
 	bool MshEnableHires (bool enable);
-	void InitDialog (HWND hWnd);
-	void Apply (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void InitDialog (QWidget *hWnd);
+	void Apply (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 char *AtlantisConfig::Description()
@@ -43,7 +69,7 @@ char *AtlantisConfig::Description()
 	return (char*)"Global configuration for the default Space Shuttle Atlantis.";
 }
 
-bool AtlantisConfig::clbkOpen (HWND hLaunchpad)
+bool AtlantisConfig::clbkOpen (QWidget *hLaunchpad)
 {
 	// respond to user double-clicking the item in the list
 	return OpenDialog (gParams.hInst, hLaunchpad, IDD_ACONFIG, DlgProc);
@@ -52,7 +78,7 @@ bool AtlantisConfig::clbkOpen (HWND hLaunchpad)
 bool AtlantisConfig::TexHiresEnabled () const
 {
 	// check if the Atlantis highres texture directory is present
-	return (_access (tex_hires_enabled, 0) != -1);
+	return (access_path (tex_hires_enabled, 0) != -1);
 }
 
 void AtlantisConfig::TexEnableHires (bool enable)
@@ -60,18 +86,18 @@ void AtlantisConfig::TexEnableHires (bool enable)
 	if (TexHiresEnabled() == enable) return; // nothing to do
 
 	if (enable) {
-		rename (tex_hires_disabled, tex_hires_enabled);
+		rename_path (tex_hires_disabled, tex_hires_enabled);
 	} else {
 		// to disable the highres textures, we simply rename the directory
 		// so that orbiter's texture manager can't find it
-		rename (tex_hires_enabled, tex_hires_disabled);
+		rename_path (tex_hires_enabled, tex_hires_disabled);
 	}
 }
 
 bool AtlantisConfig::MshHiresEnabled () const
 {
 	// check if backup of low-res mesh is present
-	return (_access (msh_lores_bkup, 0) != -1);
+	return (access_path (msh_lores_bkup, 0) != -1);
 }
 
 bool AtlantisConfig::MshEnableHires (bool enable)
@@ -79,63 +105,60 @@ bool AtlantisConfig::MshEnableHires (bool enable)
 	if (MshHiresEnabled() == enable) return false; // nothing to do
 
 	if (enable) {
-		if (_access (msh_hires_bkup, 0) == -1) return false; // high-res backup not found
-		if (_access (vcmsh_fname, 0) != -1 && _access (msh_lores_bkup, 0) == -1)
-			rename (vcmsh_fname, msh_lores_bkup); // back up low-res mesh
-		rename (msh_hires_bkup, vcmsh_fname); // activate high-res mesh
+		if (access_path (msh_hires_bkup, 0) == -1) return false; // high-res backup not found
+		if (access_path (vcmsh_fname, 0) != -1 && access_path (msh_lores_bkup, 0) == -1)
+			rename_path (vcmsh_fname, msh_lores_bkup); // back up low-res mesh
+		rename_path (msh_hires_bkup, vcmsh_fname); // activate high-res mesh
 	} else {
-		if (_access (msh_lores_bkup, 0) == -1) return false; // low-res backup not found
-		if (_access(vcmsh_fname, 0) != -1 && _access (msh_hires_bkup, 0) == -1)
-			rename (vcmsh_fname, msh_hires_bkup); // back up high-res mesh
-		rename (msh_lores_bkup, vcmsh_fname); // activate low-res mesh
+		if (access_path (msh_lores_bkup, 0) == -1) return false; // low-res backup not found
+		if (access_path (vcmsh_fname, 0) != -1 && access_path (msh_hires_bkup, 0) == -1)
+			rename_path (vcmsh_fname, msh_hires_bkup); // back up high-res mesh
+		rename_path (msh_lores_bkup, vcmsh_fname); // activate low-res mesh
 	}
 	return true;
 }
 
-void AtlantisConfig::InitDialog (HWND hWnd)
+void AtlantisConfig::InitDialog (QWidget *hWnd)
 {
 	bool texhires = TexHiresEnabled();
 	bool mshhires = MshHiresEnabled();
-	SendDlgItemMessage (hWnd, IDC_RADIO1, BM_SETCHECK, texhires?BST_CHECKED:BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_RADIO2, BM_SETCHECK, texhires?BST_UNCHECKED:BST_CHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_RADIO3, BM_SETCHECK, mshhires?BST_CHECKED:BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_RADIO4, BM_SETCHECK, mshhires?BST_UNCHECKED:BST_CHECKED, 0);
+	SetCheck (hWnd, IDC_RADIO1, texhires);
+	SetCheck (hWnd, IDC_RADIO2, !texhires);
+	SetCheck (hWnd, IDC_RADIO3, mshhires);
+	SetCheck (hWnd, IDC_RADIO4, !mshhires);
 }
 
-void AtlantisConfig::Apply (HWND hWnd)
+void AtlantisConfig::Apply (QWidget *hWnd)
 {
-	bool texhires = (SendDlgItemMessage (hWnd, IDC_RADIO1, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool texhires = IsChecked (hWnd, IDC_RADIO1);
 	TexEnableHires (texhires);
-	bool mshhires = (SendDlgItemMessage (hWnd, IDC_RADIO3, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool mshhires = IsChecked (hWnd, IDC_RADIO3);
 	MshEnableHires (mshhires);
 }
 
-INT_PTR CALLBACK AtlantisConfig::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void AtlantisConfig::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((AtlantisConfig*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((AtlantisConfig*)context)->InitDialog (hWnd);
+	// WM_COMMAND (the item passed as DWLP_USER is the context)
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDOK:
-			((AtlantisConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
-			EndDialog (hWnd, 0);
-			return 0;
+			((AtlantisConfig*)context)->Apply (hWnd);
+			qobject_cast<QDialog*> (hWnd)->done (0);
+			return;
 		case IDCANCEL:
-			EndDialog (hWnd, 0);
-			return 0;
+			qobject_cast<QDialog*> (hWnd)->done (0);
+			return;
 		}
-		break;
-	}
-	return 0;
+	});
 }
 
 // ==============================================================
 // The DLL entry point
 // ==============================================================
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	gParams.hInst = hDLL;
 	gParams.item = new AtlantisConfig;
@@ -150,7 +173,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // The DLL exit point
 // ==============================================================
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the launchpad items
 	oapiUnregisterLaunchpadItem (gParams.item);

@@ -24,6 +24,8 @@
 #define __LUAINLINE_H
 
 #include "Interpreter.h"
+#include <thread>
+#include <future>
 
 // ==============================================================
 // class InterpreterList: interface
@@ -35,14 +37,15 @@ public:
 		~Environment();
 		Interpreter *CreateInterpreter ();
 		Interpreter *interp;  // interpreter instance
-		HANDLE hThread;       // interpreter thread
+		std::thread *hThread; // interpreter thread
+		std::future<unsigned int> thExit; // not upstream: thread end, for the timed wait on the thread
 		bool termInterp;      // interpreter kill flag
 		bool singleCmd;       // terminate after single command
 		char *cmd;            // interpreter command
-		static unsigned int WINAPI InterpreterThreadProc (LPVOID context);
+		static unsigned int InterpreterThreadProc (void *context);
 	};
 
-	InterpreterList (HINSTANCE hDLL);
+	InterpreterList (void *hDLL);
 	~InterpreterList ();
 
 	void clbkSimulationEnd () override;

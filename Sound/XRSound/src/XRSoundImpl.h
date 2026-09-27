@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <windows.h>
+// windows.h left out: the XRSound.dll handle is a dlopen handle (void *)
 
 #include "XRSound.h"   
 #include "XRSoundEngine.h" 
@@ -67,6 +67,6 @@ public:
     // -------------------------------------------------------------------------------
 
 private:
-    HMODULE m_hDLL;
+    void *m_hDLL;
     XRSoundEngine *m_pEngine;   // created by XRSound.dll; this is a BORROWED reference; do not free it from this side!
 };

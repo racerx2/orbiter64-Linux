@@ -27,6 +27,6 @@ add_dependencies(ScriptVessel
 
 # Installation
 install(TARGETS ScriptVessel
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )

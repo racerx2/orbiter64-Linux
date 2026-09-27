@@ -64,7 +64,7 @@ void AAPSubsystem::clbkSaveState (FILEHANDLE scn)
 
 bool AAPSubsystem::clbkParseScenarioLine (const char *line)
 {
-	if (!_strnicmp (line, "AAP", 3)) {
+	if (!strncasecmp (line, "AAP", 3)) {
 		aap->SetState (line);
 		return true;
 	} else
@@ -89,7 +89,7 @@ AAP::AAP (AAPSubsystem *_subsys)
 	oapiExecScriptCmd (hAAP, "run('dg/aap')"); // load the autopilot code
 
 	char setVesselCmd[256];
-	sprintf_s(setVesselCmd,256,"setvessel(vessel.get_interface('%s'))",vessel->GetName());
+	snprintf(setVesselCmd,256,"setvessel(vessel.get_interface('%s'))",vessel->GetName());
 	oapiAsyncScriptCmd (hAAP, setVesselCmd); // set autopilot vessel
 
 	active_block = -1;

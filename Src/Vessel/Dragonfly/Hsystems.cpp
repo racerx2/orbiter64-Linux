@@ -1,8 +1,8 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#include "hsystems.h"
-#include "orbitersdk.h"
+#include "Hsystems.h"
+#include "Orbitersdk.h"
 #include <stdio.h>
 
 const float CONST_R=8.31904f/1000.0f;

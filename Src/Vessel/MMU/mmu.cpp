@@ -5,7 +5,7 @@
 // ORBITER vessel module: NASA Manned Manuveuring Unit (MMU)
 // ==============================================================
 
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
 const double slThrust = 367455;
 const double vacThrust = 414340;

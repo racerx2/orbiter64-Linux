@@ -9,7 +9,7 @@
 // Vertical speed tape instrument for the ShuttleA
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "InstrVs.h"
 #include "ShuttleA.h"
 

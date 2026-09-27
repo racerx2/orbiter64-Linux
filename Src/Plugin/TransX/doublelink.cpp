@@ -18,9 +18,10 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include <cstddef> // NULL (windows.h brought it in)
 #include "doublelink.h"
 
 

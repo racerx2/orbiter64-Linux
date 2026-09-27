@@ -255,8 +255,8 @@ void NoseconeCtrl::clbkPostCreation ()
 
 bool NoseconeCtrl::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "NOSECONE")) {
-		if (!_stricmp (event, "CLOSE")) CloseNcone();
+	if (!strcasecmp (event_type, "NOSECONE")) {
+		if (!strcasecmp (event, "CLOSE")) CloseNcone();
 		else                            OpenNcone();
 		return true;
 	}
@@ -601,8 +601,8 @@ bool EscapeLadderCtrl::clbkParseScenarioLine (const char *line)
 
 bool EscapeLadderCtrl::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-	if (!_stricmp (event_type, "LADDER")) {
-		if (!_stricmp (event, "CLOSE")) RetractLadder();
+	if (!strcasecmp (event_type, "LADDER")) {
+		if (!strcasecmp (event, "CLOSE")) RetractLadder();
 		else                            ExtendLadder();
 		return true;
 	}

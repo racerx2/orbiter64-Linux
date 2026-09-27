@@ -8,12 +8,13 @@
 // Reference implementation of Shuttle-A Payload vessel class module
 // ==============================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
 #include "ShuttleA_pl.h"
 #include <math.h>
 #include <stdio.h>
+#include <strings.h>
 
 
 //Payload parachute airfoil definitions
@@ -136,9 +137,9 @@ void ShuttleA_PL::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "PARACHUTE", 9)) {
+		if (!strncasecmp (line, "PARACHUTE", 9)) {
 			sscanf (line+9, "%d", &Parachute_mode);
-		} else if (!_strnicmp (line, "TIMER", 5)) {
+		} else if (!strncasecmp (line, "TIMER", 5)) {
 			sscanf (line+5, "%lf", &timer);
 		
 		} else {
@@ -218,9 +219,9 @@ void ShuttleA_PL::clbkSetClassCaps (FILEHANDLE cfg)
 
 	EnableTransponder (true);
 
-	mesh_main = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_pl");
-	mesh_drogue = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_chpr");
-	mesh_parachute = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_chmain");
+	mesh_main = oapiLoadMeshGlobal ("ShuttleA/ShuttleA_pl");
+	mesh_drogue = oapiLoadMeshGlobal ("ShuttleA/ShuttleA_chpr");
+	mesh_parachute = oapiLoadMeshGlobal ("ShuttleA/ShuttleA_chmain");
 
 	
 
@@ -290,7 +291,7 @@ void ShuttleA_PL::clbkPostStep(double simt,double simdt,double mjd)
 // --------------------------------------------------------------
 // Module initialisation
 // --------------------------------------------------------------
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
    
 }
@@ -298,7 +299,7 @@ DLLCLBK void InitModule (HINSTANCE hModule)
 // --------------------------------------------------------------
 // Module cleanup
 // --------------------------------------------------------------
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 
 	 int d=0;

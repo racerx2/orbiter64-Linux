@@ -9,7 +9,7 @@
 // Panel element: Pair of indicator needles
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "needlepair.h"
 #include "paneltext.h"
 

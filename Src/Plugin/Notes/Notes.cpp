@@ -14,7 +14,7 @@
 
 #define ORBITER_MODULE
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "imgui.h"
 #include "imgui_extras.h"
 #include <vector>
@@ -151,13 +151,13 @@ public:
 		char *line;
 		double scale = 2.0;
 		while (oapiReadScenario_nextline(scn, line)) {
-			if (!strnicmp (line, "NAME = ", 7)) {
+			if (!strncasecmp (line, "NAME = ", 7)) {
 				name = line + 7;
-			} else if (!strnicmp (line, "SCALE = ", 8)) {
+			} else if (!strncasecmp (line, "SCALE = ", 8)) {
 				scale = atof(line + 8);
-			} else if (!stricmp (line, "END_NOTE")) {
+			} else if (!strcasecmp (line, "END_NOTE")) {
 				break;
-			} else if (!strnicmp (line, "DATA ", 5)) {
+			} else if (!strncasecmp (line, "DATA ", 5)) {
 				char *hexstream = line + 5;
 				char *next;
 				do {
@@ -187,7 +187,7 @@ static int g_dwMenuCmd;
 // Local prototypes
 // ==============================================================
 
-void OpenDlgClbk (void *context);
+static void OpenDlgClbk (void *context); // static: g++ rejects a static definition after an extern declaration
 
 // ==============================================================
 // API interface
@@ -197,7 +197,7 @@ void OpenDlgClbk (void *context);
 // This function is called when Orbiter starts or when the module
 // is activated.
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	// To allow the user to open our new dialog box, we create
 	// an entry in the "Custom Functions" list which is accessed
@@ -213,7 +213,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // This function is called when Orbiter shuts down or when the
 // module is deactivated
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the custom function in Orbiter
 	oapiUnregisterCustomCmd (g_dwCmd);
@@ -243,7 +243,7 @@ DLLCLBK void opcLoadState (FILEHANDLE scn)
 {
 	char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!stricmp (line, "BEGIN_NOTE")) {
+		if (!strcasecmp (line, "BEGIN_NOTE")) {
 			oapiOpenDialog(ImGuiNote::Load(scn));
 		}
 	}

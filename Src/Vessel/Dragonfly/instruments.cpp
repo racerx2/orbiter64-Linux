@@ -2,14 +2,17 @@
 // Licensed under the MIT License
 
 #include "instruments.h"
-#include < GL\gl.h >                                
-#include < GL\glu.h >
+#include <QOffscreenSurface> // before GL/gl.h: qopengl.h includes it with its own settings
+#include <QOpenGLContext>
+#include <QOpenGLFramebufferObject>
+#include <GL/gl.h>                                
+#include <GL/glu.h>
 #include "vectors.h"        
 #include "panel.cpp"
 #include "math.h"
 #include "resource.h"
-#include "orbitersdk.h"
-#include "dragonfly.h"
+#include "Orbitersdk.h"
+#include "Dragonfly.h"
 
 using std::min;
 
@@ -172,6 +175,7 @@ SFSwitch::SFSwitch(int x, int y, int i_pos,int i_num_pos,int i_safed,Panel *i_pa
  hTEMPDC=oapiGetDC(temps);
 type=36;//SFSwitch
 };
+// BitBlt (SRCCOPY) below: drawImage with CompositionMode_Source copies the pixels as they are
 void SFSwitch::RegisterMe(int index)
 {oapiRegisterPanelArea(index,_R(ScrX,ScrY-4,ScrX+50,ScrY+44),PANEL_REDRAW_MOUSE,PANEL_MOUSE_DOWN,PANEL_MAP_CURRENT);
  idx=index;
@@ -179,50 +183,50 @@ void SFSwitch::RegisterMe(int index)
 void SFSwitch::PaintMe()
 { int lng=24/sqrt(3.0);
 
-HDC hDC=oapiGetDC(parent->surf);
-SelectObject(hDC,hBRUSH_Background);SelectObject(hDC,hPEN_NULL);
-Rectangle(hDC,0,0,51,50);
-SelectObject(hDC,hPEN_Black);
-Rectangle(hDC,5-5,4,5,4+40);Rectangle(hDC,5+40,4,5+45,4+40);
-SelectObject(hDC,hBRUSH_LBkg);
-Rectangle(hDC,5,4,5+40,4+40);
-MoveTo(hDC,5+20-lng/2,4+8);LineTo(hDC,5+20+lng/2,4+8);
-LineTo(hDC,5+20+lng,4+20);LineTo(hDC,5+20+lng/2,4+32);
-LineTo(hDC,5+20-lng/2,4+32);LineTo(hDC,5+20-lng,4+20);
-LineTo(hDC,5+20-lng/2,4+8);
-Ellipse(hDC,5+10,4+10,5+31,4+31);
-SelectObject(hDC,hBRUSH_FYellow);
-Ellipse(hDC,5+12,4+12,5+29,4+29);
-SelectObject(hDC,hPEN_NULL);
-SelectObject(hDC,hBRUSH_LBkg);
-Rectangle(hDC,5+20-4*pos,4+20,5+20+4*pos,4+20-7*pos);
-Ellipse(hDC,5+17,4+17,5+24,4+24);
-SelectObject(hDC,hPEN_Black);
-MoveTo(hDC,5+20-4*pos,4+20);LineTo(hDC,5+20-4*pos,4+20-7*pos);
-MoveTo(hDC,5+20+4*pos,4+20);LineTo(hDC,5+20+4*pos,4+20-7*pos);
-Arc(hDC,5+20-4,4+20-4,5+25,4+25,5+20-4*pos,4+20,5+20+4*pos,4+20);
+QPainter *hDC=oapiGetDC(parent->surf);
+hDC->setBrush(*hBRUSH_Background);hDC->setPen(*hPEN_NULL);
+hDC->drawRect(0,0,50,49); // Rectangle/Ellipse: right and bottom edges are exclusive
+hDC->setPen(*hPEN_Black);
+hDC->drawRect(5-5,4,4,39);hDC->drawRect(5+40,4,4,39);
+hDC->setBrush(*hBRUSH_LBkg);
+hDC->drawRect(5,4,39,39);
+MoveTo(hDC,5+20-lng/2,4+8);DrawLineTo(hDC,5+20+lng/2,4+8);
+DrawLineTo(hDC,5+20+lng,4+20);DrawLineTo(hDC,5+20+lng/2,4+32);
+DrawLineTo(hDC,5+20-lng/2,4+32);DrawLineTo(hDC,5+20-lng,4+20);
+DrawLineTo(hDC,5+20-lng/2,4+8);
+hDC->drawEllipse(5+10,4+10,20,20);
+hDC->setBrush(*hBRUSH_FYellow);
+hDC->drawEllipse(5+12,4+12,16,16);
+hDC->setPen(*hPEN_NULL);
+hDC->setBrush(*hBRUSH_LBkg);
+hDC->drawRect(5+20-4*pos,4+20,8*pos-1,-7*pos-1);
+hDC->drawEllipse(5+17,4+17,6,6);
+hDC->setPen(*hPEN_Black);
+MoveTo(hDC,5+20-4*pos,4+20);DrawLineTo(hDC,5+20-4*pos,4+20-7*pos);
+MoveTo(hDC,5+20+4*pos,4+20);DrawLineTo(hDC,5+20+4*pos,4+20-7*pos);
+hDC->drawArc(5+20-4,4+20-4,8,8,(pos<0?0:180)*16,(pos?180:360)*16); // Arc counterclockwise from (25-4*pos,24) to (25+4*pos,24); equal points: full circle
 
-Rectangle(hDC,5+12,4+15-7*pos,5+29,4+25-7*pos-(3-num_pos)*2);
-if (num_pos==3) Rectangle(hDC,5+12,4+18-9*pos,5+29,4+23-9*pos);
+hDC->drawRect(5+12,4+15-7*pos,16,9-(3-num_pos)*2);
+if (num_pos==3) hDC->drawRect(5+12,4+18-9*pos,16,4);
 
 
-BitBlt(hTEMPDC,0,0,51,50,hDC,0,0,SRCCOPY);
-SelectObject(hDC,hBRUSH_Red);
+hTEMPDC->setCompositionMode(QPainter::CompositionMode_Source); hTEMPDC->drawImage(0,0,*static_cast<QImage*>(hDC->device()),0,0,51,50); hTEMPDC->setCompositionMode(QPainter::CompositionMode_SourceOver);
+hDC->setBrush(*hBRUSH_Red);
 if (safed)
 {
-Rectangle(hDC,05,0,45,59);
+hDC->drawRect(05,0,39,58);
 
-BitBlt(hDC,10,15,30,15,hTEMPDC,10,15,SRCCOPY);
-BitBlt(hDC,10,40,30,10,hTEMPDC,10,40,SRCCOPY);
-MoveTo(hDC,10,15);LineTo(hDC,40,15);
-LineTo(hDC,40,30);LineTo(hDC,10,30);LineTo(hDC,10,15);
-MoveTo(hDC,10,48);LineTo(hDC,10,40);
-LineTo(hDC,40,40);LineTo(hDC,40,48);
+hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(10,15,*static_cast<QImage*>(hTEMPDC->device()),10,15,30,15); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver);
+hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(10,40,*static_cast<QImage*>(hTEMPDC->device()),10,40,30,10); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver);
+MoveTo(hDC,10,15);DrawLineTo(hDC,40,15);
+DrawLineTo(hDC,40,30);DrawLineTo(hDC,10,30);DrawLineTo(hDC,10,15);
+MoveTo(hDC,10,48);DrawLineTo(hDC,10,40);
+DrawLineTo(hDC,40,40);DrawLineTo(hDC,40,48);
 }   
 else
-{  Rectangle(hDC,5,0,45,25);
-   BitBlt(hDC,10,15,30,15,hTEMPDC,10,15,SRCCOPY);
-   BitBlt(hDC,10,0,30,4,hTEMPDC,10,0,SRCCOPY);
+{  hDC->drawRect(5,0,39,24);
+   hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(10,15,*static_cast<QImage*>(hTEMPDC->device()),10,15,30,15); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver);
+   hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(10,0,*static_cast<QImage*>(hTEMPDC->device()),10,0,30,4); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver);
 
 }                                             
 
@@ -266,12 +270,12 @@ else {
 type=37;//Egauge
  };
 
-void screwdraw(HDC h,int x, int y)
+void screwdraw(QPainter *h,int x, int y)
 {int di=5*sqrt(2.0)/2;
- SelectObject(h,hPEN_White);
- SelectObject(h,hBRUSH_Background);
- Ellipse(h,x-5,y-5,x+5,y+5);
- MoveTo(h,x-di,y-di);LineTo(h,x+di,y+di);
+ h->setPen(*hPEN_White);
+ h->setBrush(*hBRUSH_Background);
+ h->drawEllipse(x-5,y-5,9,9);
+ MoveTo(h,x-di,y-di);DrawLineTo(h,x+di,y+di);
  }
 
 void EGauge::RegisterMe(int index)
@@ -287,33 +291,34 @@ void EGauge::RegisterMe(int index)
   POINT TR[3];
  oapiBlt(parent->surf,hEgaugeSRF,0,0,0,0,100,100); //copy the backgorund
 
-HDC hDC=oapiGetDC(parent->surf);
-SelectObject(hDC,hBRUSH_Gray);
-SelectObject(hDC,hPEN_LGray);			// some of the circles
+QPainter *hDC=oapiGetDC(parent->surf);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setBrush(*hBRUSH_Gray);
+hDC->setPen(*hPEN_LGray);			// some of the circles
 for (i=0;i<16;i++) {
 MoveTo(hDC,50+cos(ang)*20,50-sin(ang)*20);// now put the small scales
-LineTo(hDC,50+cos(ang)*24,50-sin(ang)*24);
+DrawLineTo(hDC,50+cos(ang)*24,50-sin(ang)*24);
 ang+=Pi/12;
 };ang=-Pi/4+Pi/8;
 for (i=0;i<6;i++) {
 MoveTo(hDC,50+cos(ang)*20,50-sin(ang)*20); //now the big scales
-LineTo(hDC,50+cos(ang)*28,50-sin(ang)*28);
-gcvt((int)(i*(MaxV-MinV)/5+MinV) ,6,intst); //convert number to char
-SelectObject(hDC,hFNT_Panel);
-SetTextAlign(hDC,TA_CENTER);SetBkMode(hDC,TRANSPARENT); 
-SetTextColor(hDC,RGB(140,49,49));
-TextOut(hDC,50+cos(ang)*35,45-sin(ang)*35,intst,sizeof(char)*strlen(intst)); // and scale numbers
+DrawLineTo(hDC,50+cos(ang)*28,50-sin(ang)*28);
+gcvt((int)(i*(MaxV-MinV)/5+MinV) ,6,intst); //convert number to char (glibc: no trailing "." after whole numbers, unlike MSVC)
+hDC->setFont(*hFNT_Panel);
+talign=Qt::AlignHCenter;hDC->setBackgroundMode(Qt::TransparentMode); 
+textcol=QColor(140,49,49);
+DrawTextOut(hDC,50+cos(ang)*35,45-sin(ang)*35,intst,sizeof(char)*strlen(intst),textcol,talign); // and scale numbers
 ang+=Pi/4;
 };
-SelectObject(hDC,hPEN_NULL);
-Ellipse(hDC,30,30,70,70);
-SelectObject(hDC,hBRUSH_Black);
-Ellipse(hDC,40,40,59,59);	// the rest of the circles
+hDC->setPen(*hPEN_NULL);
+hDC->drawEllipse(30,30,39,39); // Ellipse: right and bottom edges are exclusive
+hDC->setBrush(*hBRUSH_Black);
+hDC->drawEllipse(40,40,18,18);	// the rest of the circles
 TR[0].x=50;TR[0].y=45;		// a black triangle on the bottom
 TR[1].x=20;TR[1].y=75;
 TR[2].x=80;TR[2].y=75;
-Polygon(hDC,TR,3);
-TextOut(hDC,50,70,unit,sizeof(char)*strlen(unit));
+{ QPoint p[3]; for (int k=0;k<3;k++) p[k]=QPoint(TR[k].x,TR[k].y); hDC->drawPolygon(p,3); } // Polygon
+DrawTextOut(hDC,50,70,unit,sizeof(char)*strlen(unit),textcol,talign);
 oapiReleaseDC(parent->surf,hDC);
 oapiBlt(temps,parent->surf,0,0,30,30,40,40); //save this onto a back-surf
 
@@ -323,7 +328,7 @@ oapiBlt(temps,parent->surf,0,0,30,30,40,40); //save this onto a back-surf
 void EGauge::RefreshMe()
 {
  oapiBlt(parent->surf,temps,30,30,0,0,40,40);//clean the surface 
-HDC hDC=oapiGetDC(parent->surf);				// then get a DC to draw new pointer
+QPainter *hDC=oapiGetDC(parent->surf);				// then get a DC to draw new pointer
 float ang;
 float Pi=3.1415;
 //check for need to redraw ?
@@ -342,10 +347,10 @@ for (int i=0;i<3;i++) // rotate the pointer by 'ang'
    S[i].x=50 + TR[i].x*cos(ang)-TR[i].y*sin(ang);
    S[i].y=50 + TR[i].x*sin(ang)+TR[i].y*cos(ang);
 }
-SelectObject(hDC,hBRUSH_Black);
-SelectObject(hDC,hPEN_NULL);
+hDC->setBrush(*hBRUSH_Black);
+hDC->setPen(*hPEN_NULL);
 
-Polygon(hDC,S,3);// then the pointer
+{ QPoint p[3]; for (int k=0;k<3;k++) p[k]=QPoint(S[k].x,S[k].y); hDC->drawPolygon(p,3); }// then the pointer
 oapiReleaseDC(parent->surf,hDC);
  };
 //----------------------------------- HGAUGE ------------------------------------------
@@ -367,22 +372,23 @@ void HGauge::PaintMe()
 
  oapiBlt(parent->surf,hHgaugeSRF,0,0,0,0,85,190); //copy the backgorund
 
- HDC hDC=oapiGetDC(parent->surf);
+ QPainter *hDC=oapiGetDC(parent->surf);
+ QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
    //Put the texts where they're supposed to be*/
- SelectObject(hDC,hFNT_Panel);
- SetTextAlign(hDC,TA_CENTER);  SetBkMode(hDC,TRANSPARENT); 
- SetTextColor(hDC,RGB(140,49,49));
- TextOut(hDC,(int)85/2,15,unit,sizeof(char)*strlen(unit)); // the unit of msrm.
+ hDC->setFont(*hFNT_Panel);
+ talign=Qt::AlignHCenter;  hDC->setBackgroundMode(Qt::TransparentMode); 
+ textcol=QColor(140,49,49);
+ DrawTextOut(hDC,(int)85/2,15,unit,sizeof(char)*strlen(unit),textcol,talign); // the unit of msrm.
  int k,j,i=0;//SetBkMode(hDC,OPAQUE);SetBkColor(hDC,RGB(0,0,0));
  do  {
       gcvt((int)(i*(MaxV-MinV)/NrFig+MinV) ,6,intst); //convert number to char
       k=(int)(190-(40+(190-85)*i/NrFig));;          // calculate the y coord.
-      SelectObject(hDC,hPEN_Gray);
+      hDC->setPen(*hPEN_Gray);
       if (i<NrFig) for(j=1;j<NrLin+1;j++) { // then the scale (three lines between the numbers)
 			MoveTo(hDC,23,k-(int)(190-85)*j/(NrFig*NrLin));
-			LineTo(hDC,85-23,k-(int)(190-85)*j/(NrFig*NrLin));
+			DrawLineTo(hDC,85-23,k-(int)(190-85)*j/(NrFig*NrLin));
 			};
-      TextOut(hDC,(int)85/2,k-5,intst,sizeof(char)*strlen(intst));// write the numbers
+      DrawTextOut(hDC,(int)85/2,k-5,intst,sizeof(char)*strlen(intst),textcol,talign);// write the numbers
       i++; 
       } while (i<NrFig+1);
  
@@ -394,15 +400,15 @@ void HGauge::PaintMe()
 
  //draw the arrows
  hDC=oapiGetDC(temps);
- SelectObject(hDC,hBRUSH_White);
- Rectangle(hDC,19,0,31,21);
+ hDC->setBrush(*hBRUSH_White);
+ hDC->drawRect(19,0,11,20); // Rectangle: right and bottom edges are exclusive
  POINT arrow1[3],arrow2[3];
  arrow1[0].x=21;arrow1[0].y=1; arrow2[0].x=28;arrow2[0].y=11;
  arrow1[1].x=21;arrow1[1].y=9;arrow2[1].x=28;arrow2[1].y=19;
  arrow1[2].x=29;arrow1[2].y=5;arrow2[2].x=20;arrow2[2].y=15;
- SelectObject(hDC,hBRUSH_Black);SelectObject(hDC,hPEN_NULL);
- Polygon(hDC,arrow1,3);
- Polygon(hDC,arrow2,3);
+ hDC->setBrush(*hBRUSH_Black);hDC->setPen(*hPEN_NULL);
+ { QPoint p[3]; for (int m=0;m<3;m++) p[m]=QPoint(arrow1[m].x,arrow1[m].y); hDC->drawPolygon(p,3); } // Polygon
+ { QPoint p[3]; for (int m=0;m<3;m++) p[m]=QPoint(arrow2[m].x,arrow2[m].y); hDC->drawPolygon(p,3); }
  oapiReleaseDC(temps,hDC);
 
 
@@ -450,18 +456,19 @@ void Rotary::PaintMe()
 //  POINT E1,E2;
   float ang;
 float Pi=3.1415;
-HDC hDC=oapiGetDC(parent->surf);
-SelectObject(hDC,hPEN_NULL);
-SelectObject(hDC,hBRUSH_Background);
-Rectangle(hDC,0,0,0+162,0+142); 
-SelectObject(hDC,hFNT_Panel);
-SetTextAlign(hDC,TA_CENTER);
-SetTextColor(hDC,RGB(255,100,100));	// text color for powered/ unpowered
-SetBkMode(hDC,TRANSPARENT); 
-TextOut(hDC,85,10,screentext,sizeof(char)*strlen(screentext));	// name of rotary
+QPainter *hDC=oapiGetDC(parent->surf);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setPen(*hPEN_NULL);
+hDC->setBrush(*hBRUSH_Background);
+hDC->drawRect(0,0,0+162-1,0+142-1); // Rectangle: right and bottom edges are exclusive
+hDC->setFont(*hFNT_Panel);
+talign=Qt::AlignHCenter;
+textcol=QColor(255,100,100);	// text color for powered/ unpowered
+hDC->setBackgroundMode(Qt::TransparentMode); 
+DrawTextOut(hDC,85,10,screentext,sizeof(char)*strlen(screentext),textcol,talign);	// name of rotary
 ang = (int)poznr/2; ang =Pi/2-ang*Pi/6;				// calculate the starting angle depending on poznr
 for (int i=0; i<poznr;i++)					// now put all texts arround the circle
-{ TextOut(hDC,85-cos(ang)*70,90-sin(ang)*70,names[i],sizeof(char)*strlen(names[i]));
+{ DrawTextOut(hDC,85-cos(ang)*70,90-sin(ang)*70,names[i],sizeof(char)*strlen(names[i]),textcol,talign);
   ang+=Pi/6;
 }
 
@@ -527,12 +534,12 @@ void DigClock::RegisterMe(int index)
 
 void DigClock::PaintMe()
 {
-HDC hDC=oapiGetDC(local_srf);
-SelectObject(hDC,hPEN_White);
-MoveTo(hDC,0,43);LineTo(hDC,len*22+1,43);
-LineTo(hDC,len*22+1,0);
-SelectObject(hDC,hPEN_Gray);
-LineTo(hDC,0,0);LineTo(hDC,0,43);
+QPainter *hDC=oapiGetDC(local_srf);
+hDC->setPen(*hPEN_White);
+MoveTo(hDC,0,43);DrawLineTo(hDC,len*22+1,43);
+DrawLineTo(hDC,len*22+1,0);
+hDC->setPen(*hPEN_Gray);
+DrawLineTo(hDC,0,0);DrawLineTo(hDC,0,43);
 
 oapiReleaseDC(local_srf,hDC);
 
@@ -583,16 +590,17 @@ CW::CW(int x,int y,const char *i_text,Panel *i_parent):instrument(x,y,i_parent)
  strcpy(text,i_text);alarm=1;
  temps=oapiCreateSurface(100,31);
 //
-HDC hDC2=oapiGetDC(temps);
-HDC hDC=oapiGetDC(hCwSRF);
-BitBlt(hDC2,0,0,100,31,hDC,0,0,SRCCOPY);
+QPainter *hDC2=oapiGetDC(temps);
+QPainter *hDC=oapiGetDC(hCwSRF);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC2->setCompositionMode(QPainter::CompositionMode_Source); hDC2->drawImage(0,0,*static_cast<QImage*>(hDC->device()),0,0,100,31); hDC2->setCompositionMode(QPainter::CompositionMode_SourceOver); // BitBlt (SRCCOPY)
    //Put the texts where they're supposed to be*/
- SelectObject(hDC2,hFNT_Panel);
- SetTextAlign(hDC2,TA_CENTER);  SetBkMode(hDC2,TRANSPARENT); 
- SetTextColor(hDC2,RGB(255,100,100));
- TextOut(hDC2,25,10,text,sizeof(char)*strlen(text)); 
- SetTextColor(hDC2,RGB(149,48,48));
- TextOut(hDC2,75,10,text,sizeof(char)*strlen(text)); 
+ hDC2->setFont(*hFNT_Panel);
+ talign=Qt::AlignHCenter;  hDC2->setBackgroundMode(Qt::TransparentMode); 
+ textcol=QColor(255,100,100);
+ DrawTextOut(hDC2,25,10,text,sizeof(char)*strlen(text),textcol,talign); 
+ textcol=QColor(149,48,48);
+ DrawTextOut(hDC2,75,10,text,sizeof(char)*strlen(text),textcol,talign); 
  oapiReleaseDC(hCwSRF,hDC);
 oapiReleaseDC(temps,hDC2);
 
@@ -639,19 +647,20 @@ oapiRegisterMFD(type,mfdspecs);
 void inst_MFD::PaintMe()
 {
 //oapiBlt(parent->surf,hMFDSRF,0,0,0,0,310,296); 
-HDC hDC=oapiGetDC(parent->surf);
-HDC hDC2=oapiGetDC(hMFDSRF);
-BitBlt(hDC,0,0,350,296,hDC2,0,0,SRCCOPY);
-SelectObject(hDC, hFNT_Panel);
-SetTextColor (hDC, RGB(20, 20, 20));
-SetTextAlign (hDC, TA_CENTER);
-SetBkMode (hDC, TRANSPARENT);
+QPainter *hDC=oapiGetDC(parent->surf);
+QPainter *hDC2=oapiGetDC(hMFDSRF);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(0,0,*static_cast<QImage*>(hDC2->device()),0,0,350,296); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver); // BitBlt (SRCCOPY)
+hDC->setFont(*hFNT_Panel);
+textcol=QColor(20, 20, 20);
+talign=Qt::AlignHCenter;
+hDC->setBackgroundMode (Qt::TransparentMode);
 
 const char *label;
 	for (int bt = 0; bt < 12; bt++) {
 		if (label = oapiMFDButtonLabel (type, bt))
-			{if (bt<6) TextOut (hDC, 31, 58+34*bt, label, strlen(label));
-			else TextOut (hDC, 322, 58+34*(bt-6), label, strlen(label));}
+			{if (bt<6) DrawTextOut (hDC, 31, 58+34*bt, label, strlen(label), textcol, talign);
+			else DrawTextOut (hDC, 322, 58+34*(bt-6), label, strlen(label), textcol, talign);}
 		else break;
 	}
 oapiReleaseDC(parent->surf,hDC);
@@ -743,48 +752,49 @@ void Docker::PaintMe()
 oapiBlt(parent->surf,hDockBSRF,0,0,0,0,202,179);
 cgofs=((Dragonfly*)(parent->v))->cgofs;
 SURFHANDLE temps=oapiCreateSurface(202,179);
-HDC hDC=oapiGetDC(temps);
-SelectObject(hDC, hBRUSH_TotalBlack);
-Rectangle(hDC,0,0,202,179);
-SetTextColor(hDC,RGB(0,255,0));
-SetTextAlign(hDC,TA_CENTER);
-SelectObject(hDC,hFNT_Panel);
-SetBkMode(hDC,TRANSPARENT); 
+QPainter *hDC=oapiGetDC(temps);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setBrush(*hBRUSH_TotalBlack);
+hDC->drawRect(0,0,201,178); // Rectangle: right and bottom edges are exclusive
+textcol=QColor(0,255,0);
+talign=Qt::AlignHCenter;
+hDC->setFont(*hFNT_Panel);
+hDC->setBackgroundMode(Qt::TransparentMode); 
 char text[30];
 sprintf(text, "%0.1f m", cgofs);
-TextOut (hDC, 140, 95, text, strlen (text));
+DrawTextOut (hDC, 140, 95, text, strlen (text), textcol, talign);
 int loc = 102+min ((int)(cgofs*3.784), 74);
-SelectObject (hDC, hPEN_BYellow);
-MoveToEx (hDC, loc, 93, NULL); LineTo (hDC, loc-3, 86); LineTo (hDC, loc+3, 86); LineTo (hDC, loc, 93);
+hDC->setPen (*hPEN_BYellow);
+MoveTo (hDC, loc, 93); DrawLineTo (hDC, loc-3, 86); DrawLineTo (hDC, loc+3, 86); DrawLineTo (hDC, loc, 93);
 
 VESSEL *vessel;
 int docked_port=0;
 if (sensormode) 
 	{vessel=oapiGetVesselInterface(vs->vs);
 	  strcpy(text,vessel->GetName());
-	 TextOut(hDC,130,137,text,strlen(text));
+	 DrawTextOut(hDC,130,137,text,strlen(text),textcol,talign);
 	 sprintf(text,"PORT %i",vs->port);
-	 TextOut(hDC,130,147,text,strlen(text));
+	 DrawTextOut(hDC,130,147,text,strlen(text),textcol,talign);
 	 if (vessel->GetDockStatus(vessel->GetDockHandle(vs->port)))
 		{docked_port=1;
 		strcpy(text,"ENG");
-		SetTextColor (hDC, 0);
-		SetBkColor (hDC, RGB(255,255,0));
-		SetBkMode (hDC, OPAQUE);
-        TextOut(hDC,160,147,text,strlen(text));
+		textcol=QColor(0,0,0);
+		hDC->setBackground (QColor(255,255,0));
+		hDC->setBackgroundMode (Qt::OpaqueMode);
+        DrawTextOut(hDC,160,147,text,strlen(text),textcol,talign);
 		}
 	}
 else {strcpy(text,"LOCAL");
-      TextOut(hDC,130,137,text,strlen(text));
+      DrawTextOut(hDC,130,137,text,strlen(text),textcol,talign);
 	 sprintf(text,"PORT %i",portnr);
-	 TextOut(hDC,130,147,text,strlen(text));
+	 DrawTextOut(hDC,130,147,text,strlen(text),textcol,talign);
 	 if (parent->v->GetDockStatus(parent->v->GetDockHandle(portnr)))
 		{docked_port=1;
 		strcpy(text,"ENG");
-		SetTextColor (hDC, 0);
-		SetBkColor (hDC, RGB(255,255,0));
-		SetBkMode (hDC, OPAQUE);
-        TextOut(hDC,160,147,text,strlen(text));
+		textcol=QColor(0,0,0);
+		hDC->setBackground (QColor(255,255,0));
+		hDC->setBackgroundMode (Qt::OpaqueMode);
+        DrawTextOut(hDC,160,147,text,strlen(text),textcol,talign);
 		}
 	 }
 
@@ -943,19 +953,20 @@ if (frswitch)
 	oapiBlt(parent->surf,hDockSW2SRF,18,39,(frswitch+1)*27,0,27,16);
 if (*(((Dragonfly*)parent->v)->DC_power)>0)  {
 SURFHANDLE temps=oapiCreateSurface(101,26);
-HDC hDC=oapiGetDC(temps);
-SelectObject(hDC, hBRUSH_TotalBlack);
-Rectangle(hDC,0,0,100,25);
+QPainter *hDC=oapiGetDC(temps);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setBrush(*hBRUSH_TotalBlack);
+hDC->drawRect(0,0,99,24); // Rectangle: right and bottom edges are exclusive
 
-SetTextColor(hDC,RGB(0,255,0));
-SetTextAlign(hDC,TA_CENTER);
-SelectObject(hDC,hFNT_Panel);
-SetBkMode(hDC,TRANSPARENT); 
+textcol=QColor(0,255,0);
+talign=Qt::AlignHCenter;
+hDC->setFont(*hFNT_Panel);
+hDC->setBackgroundMode(Qt::TransparentMode); 
 char text[30];
 sprintf(text, "NAV1: %5.2f MHz", 108.0+(0.05*frq1));
-TextOut (hDC, 10, 2, text, strlen (text));
+DrawTextOut (hDC, 10, 2, text, strlen (text), textcol, talign);
 sprintf(text, "NAV2: %5.2f MHz", 108.0+(0.05*frq2));
-TextOut (hDC, 10, 13, text, strlen (text));
+DrawTextOut (hDC, 10, 13, text, strlen (text), textcol, talign);
 oapiReleaseDC(temps,hDC);
 oapiBlt(parent->surf,temps,80,20,0,0,80,25);
 oapiDestroySurface(temps);
@@ -998,6 +1009,7 @@ ADI::ADI(int x,int y, Panel *i_parent):instrument(x,y,i_parent)
 {
 type= 44; //ADI ball
 init=0;
+hDC2=NULL;hRC=NULL;hBMP=NULL; // not upstream: ~ADI deletes them, also when InitGL never ran
 radius=10;
 int i;
 float trad;
@@ -1042,58 +1054,18 @@ for (i=0;i<16;i++)
 void ADI::InitGL()
 {
 
-GLuint      PixelFormat;  
-BITMAPINFOHEADER BIH;
-int iSize=sizeof(BITMAPINFOHEADER);
-BIH.biSize=iSize;
-BIH.biWidth=160;				//size of the sphere is 160x160
-BIH.biHeight=160;
-BIH.biPlanes=1;
-BIH.biBitCount=16;//default is 16.
-BIH.biCompression=BI_RGB;
-BIH.biSizeImage=0;
-void* m_pBits;
-hDC2=CreateCompatibleDC(NULL);//we make a new DC and DIbitmap for OpenGL to draw onto
-static  PIXELFORMATDESCRIPTOR pfd2;
-DescribePixelFormat(hDC2,1,sizeof(PIXELFORMATDESCRIPTOR),&pfd2);//just get a random pixel format.. 
-BIH.biBitCount=pfd2.cColorBits;//to get the current bit depth.. !?
-hBMP=CreateDIBSection(hDC2,(BITMAPINFO*)&BIH,DIB_RGB_COLORS,&m_pBits,NULL,0);
-hBMP_old=(HBITMAP)SelectObject(hDC2,hBMP);
-
-static  PIXELFORMATDESCRIPTOR pfd={                             // pfd Tells Windows How We Want Things To Be
-															   
-        sizeof(PIXELFORMATDESCRIPTOR),                              // Size Of This Pixel Format Descriptor
-        1,                                                          // Version Number
-		PFD_DRAW_TO_BITMAP |                                        // Format Must Support Bitmap Rendering
-        PFD_SUPPORT_OPENGL |									
-		PFD_SUPPORT_GDI,											// Format Must Support OpenGL,                                           
-		0,//        PFD_TYPE_RGBA,                                              // Request An RGBA Format
-        16,															// Select Our Color Depth
-        0, 0, 0, 0, 0, 0,                                           // Color Bits Ignored
-        0,//1,                                                          // No Alpha Buffer
-        0,                                                          // Shift Bit Ignored
-        0,                                                          // No Accumulation Buffer
-        0, 0, 0, 0,                                                 // Accumulation Bits Ignored
-        0,//16,                                                         // 16Bit Z-Buffer (Depth Buffer)  
-        0,                                                          // No Stencil Buffer
-        0,                                                          // No Auxiliary Buffer
-        0,//PFD_MAIN_PLANE,                                             // Main Drawing Layer
-        0,                                                          // Reserved
-        0, 0, 0                                                     // Layer Masks Ignored
-    };
-pfd.cColorBits=pfd2.cColorBits;//same color depth needed.
-DWORD code;
-code=GetLastError();
-
-PixelFormat=ChoosePixelFormat(hDC2,&pfd);// now pretend we want a new format
+// DIB section, pixel format descriptor and SetPixelFormat left out: Qt picks the format, the FBO below is the bitmap OpenGL draws into
+hDC2=new QOffscreenSurface;//we make a new DC and DIbitmap for OpenGL to draw onto
+hDC2->create();
+hRC=new QOpenGLContext; // wglCreateContext: Qt's default format is a compatibility context, which the fixed-function calls need
 int ret;
-ret=SetPixelFormat(hDC2,PixelFormat,&pfd);
-code=GetLastError();
-hRC=wglCreateContext(hDC2);
-ret=wglMakeCurrent(hDC2,hRC);					//all standard OpenGL init so far
+ret=hRC->create() && hRC->makeCurrent(hDC2);					//all standard OpenGL init so far
+if (!ret) { oapiWriteLog((char*)"Dragonfly: ADI ball: no OpenGL context"); init=-1; return; } // not upstream: no context, no ball
+hBMP=new QOpenGLFramebufferObject(160,160,QOpenGLFramebufferObject::Depth); //size of the sphere is 160x160; depth buffer as the generic GDI formats have
+hBMP->bind();
 
 //We load the texture
-int texture_index=LoadOGLBitmap("Textures\\adi.dds");
+int texture_index=LoadOGLBitmap(oapiResolvePath("Textures/adi.dds").c_str());
 if (texture_index>0) glEnable(GL_TEXTURE_2D);
 
 
@@ -1143,12 +1115,13 @@ init=1;		//that's it. If we made it so far, we can use OpenGL
 
 ADI::~ADI()
 {
-wglMakeCurrent(NULL,NULL);	//standard OpenGL release
-wglDeleteContext(hRC);
+if (hRC) hRC->makeCurrent(hDC2); // not upstream: the FBO (DeleteObject (hBMP) below) is freed first, in its context
+delete hBMP;
+if (hRC) hRC->doneCurrent();	//standard OpenGL release
+delete hRC; // wglDeleteContext
 hRC=NULL;
-SelectObject(hDC2,hBMP_old);//remember to delete DC and bitmap memory we created
-DeleteObject(hBMP);
-DeleteDC(hDC2);
+// SelectObject (hDC2, hBMP_old) left out: nothing is selected into a Qt surface //remember to delete DC and bitmap memory we created
+delete hDC2; // DeleteDC
 
 };
 void ADI::RegisterMe(int index)
@@ -1292,6 +1265,7 @@ void ADI::MoveBall()
 void ADI::PaintMe()
 {
 	if (!init) InitGL();
+	if (init>0) { hRC->makeCurrent(hDC2); hBMP->bind(); } // not upstream: each ADI draws with its own context (WGL kept the last one created current)
 /*	float temp;
 	float sign;
 	float Pi=acos(-1);
@@ -1335,9 +1309,9 @@ void ADI::PaintMe()
 	glFlush();
 	glFinish();
 
-HDC hDC=oapiGetDC(parent->surf);
+QPainter *hDC=oapiGetDC(parent->surf);
 
-BitBlt(hDC,5,5,130,130,hDC2,15,15,SRCCOPY);//then we bitblt onto the panel. wish there
+if (hBMP) hDC->drawImage(5,5,hBMP->toImage().convertToFormat(QImage::Format_RGB32),15,15,130,130);//then we bitblt onto the panel. wish there
 oapiReleaseDC(parent->surf,hDC);		// was a faster way ...
 
 oapiBlt(parent->surf,hADIBorder,0,0,0,0,140,140,0x0);
@@ -1368,21 +1342,22 @@ void Radar::RegisterMe(int index)
 };
 void Radar::PaintMe()
 {
-HDC hDC=oapiGetDC(parent->surf);
-HDC hDC2=oapiGetDC(hRadSrfSRF);
-BitBlt(hDC,0,0,350,296,hDC2,0,0,SRCCOPY);
+QPainter *hDC=oapiGetDC(parent->surf);
+QPainter *hDC2=oapiGetDC(hRadSrfSRF);
+QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+hDC->setCompositionMode(QPainter::CompositionMode_Source); hDC->drawImage(0,0,*static_cast<QImage*>(hDC2->device()),0,0,350,296); hDC->setCompositionMode(QPainter::CompositionMode_SourceOver); // BitBlt (SRCCOPY)
 
 char label[5];
-SelectObject(hDC, hFNT_Panel);
-SetBkMode(hDC,TRANSPARENT); 
-SetTextColor(hDC,RGB(0,0,0));
-SetTextAlign(hDC,TA_CENTER);
+hDC->setFont(*hFNT_Panel);
+hDC->setBackgroundMode(Qt::TransparentMode); 
+textcol=QColor(0,0,0);
+talign=Qt::AlignHCenter;
 
-strcpy(label,"R+");TextOut(hDC,31,58,label,strlen(label));
-strcpy(label,"R-");TextOut(hDC,31,92,label,strlen(label));
-strcpy(label,"VS");TextOut(hDC,31,129,label,strlen(label));
-strcpy(label,"AT1");TextOut(hDC,322,58,label,strlen(label));
-strcpy(label,"AT2");TextOut(hDC,322,92,label,strlen(label));
+strcpy(label,"R+");DrawTextOut(hDC,31,58,label,strlen(label),textcol,talign);
+strcpy(label,"R-");DrawTextOut(hDC,31,92,label,strlen(label),textcol,talign);
+strcpy(label,"VS");DrawTextOut(hDC,31,129,label,strlen(label),textcol,talign);
+strcpy(label,"AT1");DrawTextOut(hDC,322,58,label,strlen(label),textcol,talign);
+strcpy(label,"AT2");DrawTextOut(hDC,322,92,label,strlen(label),textcol,talign);
 
 oapiReleaseDC(parent->surf,hDC);
 oapiReleaseDC(hRadSrfSRF,hDC2);
@@ -1394,7 +1369,7 @@ void Radar::RefreshMe()
 {
 if (*(((Dragonfly*)parent->v)->DC_power)>0) 
 {powered=1;
-	HDC hDC;
+	QPainter *hDC;
 	int num_ob=oapiGetVesselCount();
 	OBJHANDLE object_us=parent->v->GetHandle();
 	OBJHANDLE object;
@@ -1403,23 +1378,24 @@ if (*(((Dragonfly*)parent->v)->DC_power)>0)
 	VECTOR3 pos;
 	if (new_range){new_range=0;
 		hDC=oapiGetDC(parent->surf);
+		QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
 		char label[10];
 		sprintf(label,"R:%im",range);
-		SelectObject(hDC,hBRUSH_TotalBlack);
-		Rectangle(hDC,220,20,270,31);
-		SelectObject(hDC, hFNT_Panel);
-		SetBkMode(hDC,TRANSPARENT); 
-		SetTextColor(hDC,RGB(0,255,0));
-		SetTextAlign(hDC,TA_CENTER);
-		TextOut(hDC,255,20,label,strlen(label));
+		hDC->setBrush(*hBRUSH_TotalBlack);
+		hDC->drawRect(220,20,49,10); // Rectangle: right and bottom edges are exclusive
+		hDC->setFont(*hFNT_Panel);
+		hDC->setBackgroundMode(Qt::TransparentMode); 
+		textcol=QColor(0,255,0);
+		talign=Qt::AlignHCenter;
+		DrawTextOut(hDC,255,20,label,strlen(label),textcol,talign);
 		oapiReleaseDC(parent->surf,hDC);
 	};	//draw a new range 
 	if (((Dragonfly*)parent->v)->UY_pos!=last_antena_yaw) {
 		hDC=oapiGetDC(radar_background);
-		SelectObject(hDC,hBRUSH_TotalBlack);
-		SelectObject(hDC,hPEN_NULL);
+		hDC->setBrush(*hBRUSH_TotalBlack);
+		hDC->setPen(*hPEN_NULL);
 
-		Rectangle(hDC,0,0,101,101);
+		hDC->drawRect(0,0,100,100); // Rectangle: right and bottom edges are exclusive
 		last_antena_yaw=((Dragonfly*)parent->v)->UY_pos;
 		float yaw=150.0 - ((Dragonfly*)parent->v)->UY_pos*300+15.0;
 		yaw=yaw/180.0*acos(-1.0);
@@ -1430,8 +1406,9 @@ if (*(((Dragonfly*)parent->v)->DC_power)>0)
 		float py2=cos(yaw1)*45;
 		float  px2=sin(yaw1)*45;
 
-		SelectObject(hDC,hBRUSH_FYellow);
-		Pie(hDC,0,0,100,100,50+px1,50-py1,50+px2,50-py2);
+		hDC->setBrush(*hBRUSH_FYellow);
+		{ double a1=atan2(py1,px1), da=atan2(py2,px2)-a1; if (da<=0) da+=2*acos(-1.0); // Pie: counterclockwise from the radial through the start point to the one through the end point
+		  hDC->drawPie(0,0,99,99,(int)(a1/acos(-1.0)*180.0*16),(int)(da/acos(-1.0)*180.0*16)); }
 		oapiReleaseDC(radar_background,hDC);
 		oapiBlt(radar_background,hRadBkSRF,0,0,0,0,100,100,0x0);
 	};//new yawed background
@@ -1518,16 +1495,17 @@ if ((old_fuel>0)||(parent->v->GetPropellantFlowrate (((Dragonfly*)(parent->v))->
 	fuel = fuel / 4e3; //percentage of qty left;
 //	sprintf(oapiDebugString(),"%f %f",fuel,old_fuel);
 
-	HDC hDC=oapiGetDC(parent->surf);
-	SelectObject(hDC, hFNT_Panel);
-	SetBkMode(hDC,TRANSPARENT); 
-	SetTextColor(hDC,RGB(0,255,0));
-	SetTextAlign(hDC,TA_CENTER);
-	SelectObject(hDC,hPEN_NULL);
-	SelectObject(hDC,hBRUSH_Red);
+	QPainter *hDC=oapiGetDC(parent->surf);
+	QColor textcol; int talign=0; // SetTextColor/SetTextAlign state of the DC
+	hDC->setFont(*hFNT_Panel);
+	hDC->setBackgroundMode(Qt::TransparentMode); 
+	textcol=QColor(0,255,0);
+	talign=Qt::AlignHCenter;
+	hDC->setPen(*hPEN_NULL);
+	hDC->setBrush(*hBRUSH_Red);
 
-	Rectangle(hDC,22,35,44,45);
-	Rectangle(hDC,22,56,44,66);
+	hDC->drawRect(22,35,21,9); // Rectangle: right and bottom edges are exclusive
+	hDC->drawRect(22,56,21,9);
 
 
 	char cbuf[10];
@@ -1535,14 +1513,14 @@ if ((old_fuel>0)||(parent->v->GetPropellantFlowrate (((Dragonfly*)(parent->v))->
 
 	i = (int)(143.0*fuel);
 
-	Rectangle (hDC, 23, 84, 39, 228-i);
-	SelectObject(hDC,hBRUSH_Green);
-	Rectangle (hDC, 23, 228-i, 39, 228);
-	SelectObject(hDC,hBRUSH_Green);
+	hDC->drawRect (23, 84, 15, 228-i-84-1);
+	hDC->setBrush(*hBRUSH_Green);
+	hDC->drawRect (23, 228-i, 15, i-1);
+	hDC->setBrush(*hBRUSH_Green);
     sprintf (cbuf, "%3.1f", 100.0*fuel);
-	TextOut (hDC, 32, 35, cbuf, strlen(cbuf));
+	DrawTextOut (hDC, 32, 35, cbuf, strlen(cbuf), textcol, talign);
 	sprintf (cbuf, "%3.2f",old_fuel=parent->v->GetPropellantFlowrate (((Dragonfly*)(parent->v))->ph_main));
-	TextOut (hDC, 32, 56, cbuf, strlen(cbuf));
+	DrawTextOut (hDC, 32, 56, cbuf, strlen(cbuf), textcol, talign);
 	oapiReleaseDC(parent->surf,hDC);
 	}
 }

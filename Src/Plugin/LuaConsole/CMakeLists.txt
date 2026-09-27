@@ -32,10 +32,12 @@ set_target_properties(LuaConsole
 
 # Installation
 install(TARGETS LuaConsole
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
 install(FILES LuaConsole.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+# not upstream: also in the build tree, so Orbiter run from there finds it
+file(COPY LuaConsole.png DESTINATION ${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar)

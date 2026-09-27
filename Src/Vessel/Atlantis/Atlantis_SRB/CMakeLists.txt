@@ -75,7 +75,7 @@ set_target_properties(${VESSEL_NAME}_Prerequisites
 
 # Installation
 install(TARGETS ${VESSEL_NAME}
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

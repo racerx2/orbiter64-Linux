@@ -9,7 +9,7 @@
 // User interface RCS switch
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "rcsswitch.h"
 
 // ==============================================================

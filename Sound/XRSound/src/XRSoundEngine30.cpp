@@ -18,11 +18,12 @@ bool XRSoundEngine::SetPan(const int soundID, const float pan)
     WavContext *pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound *pISound = pContext->pISound;
+        AudioVoice *pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
         {
             // irrKlang has pan direction inverted with Orbiter's X coordinate system, so flip it
-            pISound->setPan(-pan);
+            // our engine pans -1 left .. 1 right like this API, so there is nothing to flip
+            pISound->SetPan(pan);
             retVal = true;
         }
     }
@@ -38,11 +39,12 @@ float XRSoundEngine::GetPan(const int soundID)
     WavContext *pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound *pISound = pContext->pISound;
+        AudioVoice *pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
         {
             // irrKlang has pan direction inverted with Orbiter's X coordinate system, so flip it
-            retVal = -(pISound->getPan());
+            // our engine pans -1 left .. 1 right like this API, so there is nothing to flip
+            retVal = pISound->GetPan();
         }
     }
     return retVal;
@@ -57,9 +59,9 @@ bool XRSoundEngine::SetPlaybackSpeed(const int soundID, const float speed)
     WavContext* pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound *pISound = pContext->pISound;
+        AudioVoice *pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
-            retVal = pISound->setPlaybackSpeed(speed);
+            retVal = pISound->SetPlaybackSpeed(speed);
     }
     return retVal;
 }
@@ -73,9 +75,9 @@ float XRSoundEngine::GetPlaybackSpeed(const int soundID)
     WavContext *pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound* pISound = pContext->pISound;
+        AudioVoice* pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
-            retVal = pISound->getPlaybackSpeed();
+            retVal = pISound->GetPlaybackSpeed();
     }
     return retVal;
 }
@@ -90,9 +92,9 @@ bool XRSoundEngine::SetPlayPosition(const int soundID, const unsigned int positi
     WavContext* pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound *pISound = pContext->pISound;
+        AudioVoice *pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
-            retVal = pISound->setPlayPosition(positionMillis);
+            retVal = pISound->SetPlayPosition(positionMillis);
     }
     return retVal;
 }
@@ -106,11 +108,11 @@ int XRSoundEngine::GetPlayPosition(const int soundID)
     WavContext *pContext = FindWavContext(soundID);
     if (pContext)
     {
-        ISound* pISound = pContext->pISound;
+        AudioVoice* pISound = pContext->pISound;
         if (pISound)   // was sound ever started via PlayWav?
         {
             // 2 millions seconds is 555 hours, so casting to a signed integer is (quite) sufficent here
-            retVal = static_cast<int>(pISound->getPlayPosition());
+            retVal = static_cast<int>(pISound->GetPlayPosition());
         }
     }
     return retVal;

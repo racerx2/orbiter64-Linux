@@ -30,10 +30,12 @@ set_target_properties(ExtMFD
 
 # Installation
 install(TARGETS ExtMFD
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
 install(FILES ExtMFD.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+# not upstream: also in the build tree, so Orbiter run from there finds it
+file(COPY ExtMFD.png DESTINATION ${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar)

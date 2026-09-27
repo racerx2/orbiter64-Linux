@@ -12,7 +12,7 @@
 #ifndef __SHUTTLEA_H
 #define __SHUTTLEA_H
 
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
 // ==========================================================
 // Some vessel class caps
@@ -249,7 +249,7 @@ private:
 };
 
 typedef struct {
-	HINSTANCE hDLL;
+	void *hDLL;
 	oapi::Font* pFont[1];
 	oapi::Pen* pPen[3];
 	oapi::Brush* pBrush[2];

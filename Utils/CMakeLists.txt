@@ -3,13 +3,15 @@
 
 include(ExternalProject)
 
-add_subdirectory(Date)
+# not ported yet (Phase 8): Date, Pltex, Shipedit, texpack, plsplit
+#add_subdirectory(Date)
 add_subdirectory(meshc)
-add_subdirectory(Pltex)
-add_subdirectory(Shipedit)
-add_subdirectory(texpack)
+#add_subdirectory(Pltex)
+#add_subdirectory(Shipedit)
+#add_subdirectory(texpack)
 #add_subdirectory(tileedit/qt)
 
+if(FALSE) # not ported yet (Phase 8): plsplit, tileedit
 # We do this as an external project to invoke x64 toolchain
 ExternalProject_Add(plsplit
 	PREFIX ${CMAKE_CURRENT_BINARY_DIR}/plsplit
@@ -48,4 +50,5 @@ if (EXISTS ${CMAKE_CURRENT_BINARY_DIR}/tileedit/qt/src/tmp)
 		${CMAKE_CURRENT_BINARY_DIR}/tileedit/qt/src/tmp/
 		DESTINATION ${ORBITER_INSTALL_UTILS_DIR}
 	)
+endif()
 endif()

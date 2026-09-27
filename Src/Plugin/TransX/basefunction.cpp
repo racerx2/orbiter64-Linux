@@ -18,10 +18,11 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
+#include <cstring> // str* functions (windows.h brought in string.h)
 
-#include "orbitersdk.h"
-#include "orbiterapi.h"
+#include "Orbitersdk.h"
+#include "OrbiterAPI.h"
 #include "basefunction.h"
 #include "transxstate.h"
 #include "TransXFunction.h"

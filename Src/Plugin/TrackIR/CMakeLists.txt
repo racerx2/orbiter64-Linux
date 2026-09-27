@@ -3,10 +3,10 @@
 
 add_library(TrackIR SHARED
 	TrackIR.cpp
-	TrackIR.rc
 	TrackIRconfig.cpp
 	NPClientWraps.cpp
 )
+orbiter_rc_resources(TrackIR TrackIR.rc)
 
 target_include_directories(TrackIR
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -31,6 +31,6 @@ set_target_properties(TrackIR
 
 # Installation
 install(TARGETS TrackIR
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )

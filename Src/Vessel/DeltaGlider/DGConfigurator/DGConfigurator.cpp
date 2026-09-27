@@ -1,21 +1,24 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "DGC_resource.h"
 #include <stdio.h>
-#include <io.h>
+#include <unistd.h>
+#include <QAbstractButton>
+#include <QDialog>
 
 class VesselConfig;
 class DGConfig;
 
-static const char *hires_enabled = "Textures2\\DG";
-static const char *hires_disabled = "Textures2\\~DG";
+static const char *hires_enabled = "Textures2/DG";
+static const char *hires_disabled = "Textures2/~DG";
 
 struct {
-	HINSTANCE hInst;
+	void *hInst;
 	DGConfig *item;
 } gParams;
 
@@ -24,12 +27,12 @@ public:
 	DGConfig(): LaunchpadItem() {}
 	char *Name() { return (char*)"DG Configuration"; }
 	char *Description();
-	bool clbkOpen (HWND hLaunchpad);
+	bool clbkOpen (QWidget *hLaunchpad);
 	bool HiresEnabled() const;
 	void EnableHires (bool enable);
-	void InitDialog (HWND hWnd);
-	void Apply (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	void InitDialog (QWidget *hWnd);
+	void Apply (QWidget *hWnd);
+	static void DlgProc (QWidget *hWnd, void *context);
 };
 
 char *DGConfig::Description()
@@ -37,7 +40,7 @@ char *DGConfig::Description()
 	return (char*)"Global configuration for the default Delta-glider.";
 }
 
-bool DGConfig::clbkOpen (HWND hLaunchpad)
+bool DGConfig::clbkOpen (QWidget *hLaunchpad)
 {
 	// respond to user double-clicking the item in the list
 	return OpenDialog (gParams.hInst, hLaunchpad, IDD_DGCONFIG, DlgProc);
@@ -46,7 +49,7 @@ bool DGConfig::clbkOpen (HWND hLaunchpad)
 bool DGConfig::HiresEnabled () const
 {
 	// check if the DG highres texture directory is present
-	return (_access (hires_enabled, 0) != -1);
+	return (access (oapiResolvePath (hires_enabled).c_str(), F_OK) != -1);
 }
 
 void DGConfig::EnableHires (bool enable)
@@ -54,53 +57,50 @@ void DGConfig::EnableHires (bool enable)
 	if (HiresEnabled() == enable) return; // nothing to do
 
 	if (enable) {
-		rename (hires_disabled, hires_enabled);
+		rename (oapiResolvePath (hires_disabled).c_str(), oapiResolvePath (hires_enabled).c_str());
 	} else {
 		// to disable the highres textures, we simply rename the directory
 		// so that orbiter's texture manager can't find it
-		rename (hires_enabled, hires_disabled);
+		rename (oapiResolvePath (hires_enabled).c_str(), oapiResolvePath (hires_disabled).c_str());
 	}
 }
 
-void DGConfig::InitDialog (HWND hWnd)
+void DGConfig::InitDialog (QWidget *hWnd)
 {
 	bool hires = HiresEnabled();
-	SendDlgItemMessage (hWnd, IDC_RADIO1, BM_SETCHECK, hires?BST_CHECKED:BST_UNCHECKED, 0);
-	SendDlgItemMessage (hWnd, IDC_RADIO2, BM_SETCHECK, hires?BST_UNCHECKED:BST_CHECKED, 0);
+	DlgItem<QAbstractButton> (hWnd, IDC_RADIO1)->setChecked (hires);
+	DlgItem<QAbstractButton> (hWnd, IDC_RADIO2)->setChecked (!hires);
 }
 
-void DGConfig::Apply (HWND hWnd)
+void DGConfig::Apply (QWidget *hWnd)
 {
-	bool enable = (SendDlgItemMessage (hWnd, IDC_RADIO1, BM_GETCHECK, 0, 0) == BST_CHECKED);
+	bool enable = DlgItem<QAbstractButton> (hWnd, IDC_RADIO1)->isChecked();
 	EnableHires (enable);
 }
 
-INT_PTR CALLBACK DGConfig::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void DGConfig::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		((DGConfig*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG
+	((DGConfig*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDOK:
-			((DGConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
-			EndDialog (hWnd, 0);
-			return 0;
+			((DGConfig*)context)->Apply (hWnd); // DWLP_USER: the item is the dialog context
+			qobject_cast<QDialog*> (hWnd)->done (0);
+			return;
 		case IDCANCEL:
-			EndDialog (hWnd, 0);
-			return 0;
+			qobject_cast<QDialog*> (hWnd)->done (0);
+			return;
 		}
-		break;
-	}
-	return 0;
+	});
 }
 
 // ==============================================================
 // The DLL entry point
 // ==============================================================
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	gParams.hInst = hDLL;
 	gParams.item = new DGConfig;
@@ -115,7 +115,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // The DLL exit point
 // ==============================================================
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the launchpad items
 	oapiUnregisterLaunchpadItem (gParams.item);

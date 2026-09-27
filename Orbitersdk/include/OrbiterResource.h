@@ -123,6 +123,13 @@ enum RESNOTIFY {
 typedef std::function<void (int id, int code, QWidget *hCtrl)> RESCOMMAND;
 OAPIFUNC void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler);
 
+// up-down (spin) controls: UDN_DELTAPOS of all up-down controls of a dialog (id, position before the change, requested change),
+// UDM_SETRANGE and UDM_SETPOS
+typedef std::function<void (int id, int iPos, int iDelta)> RESDELTAPOS;
+OAPIFUNC void oapiConnectDlgDeltaPos (QWidget *hDlg, RESDELTAPOS handler);
+OAPIFUNC void oapiSetUpDownRange (QWidget *hCtrl, int lower, int upper);
+OAPIFUNC void oapiSetUpDownPos (QWidget *hCtrl, int pos);
+
 // SetWindowText / GetWindowText counterparts for dialogs and their controls (labels, edit boxes, buttons, group boxes,
 // editable combo boxes, window titles). Text is UTF-8; text that is not valid UTF-8 is taken as Latin-1.
 // "\r\n" line ends become "\n". The getter returns the number of bytes copied (buf is zero-terminated).

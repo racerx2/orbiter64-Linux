@@ -2,7 +2,7 @@
 # Licensed under the MIT License
 
 # Core library to go to the Orbiter main directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
 set(BUILD_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/out)
 
 add_library(LuaInterpreter SHARED
@@ -31,8 +31,9 @@ add_dependencies(LuaInterpreter
 	Orbitersdk
 )
 
-if(ORBITER_BUILD_D3D9CLIENT)
-  add_dependencies(LuaInterpreter	D3D9Client D3D9Client_Interface)
+if(ORBITER_BUILD_VULKANCLIENT)
+  # D3D9Client_Interface (InterfaceBuilder: gcCoreAPI.h) left out until OVP/VulkanClient has it again
+  add_dependencies(LuaInterpreter	D3D9Client)
 endif()
 
 if(ORBITER_BUILD_XRSOUND)
@@ -52,7 +53,7 @@ add_custom_command(TARGET LuaInterpreter
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/include
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib/Lua
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/Interpreter.h ${ORBITER_BINARY_SDK_DIR}/include/
-	COMMAND ${CMAKE_COMMAND} -E copy ${LUAINTERPRETER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/Lua/
+	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_LINKER_FILE:LuaInterpreter> ${ORBITER_BINARY_SDK_DIR}/lib/Lua/
 )
 
 if(ORBITER_MAKE_DOC)
@@ -94,7 +95,7 @@ endif()
 
 # Installation
 install(TARGETS LuaInterpreter
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}
 )
 install(FILES $<TARGET_LINKER_FILE:LuaInterpreter>

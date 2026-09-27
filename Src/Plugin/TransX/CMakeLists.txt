@@ -19,8 +19,8 @@ add_library(TransX SHARED
     TransXFunction.cpp
     transxstate.cpp
     viewstate.cpp
-    TransX.rc
 )
+orbiter_rc_resources(TransX TransX.rc)
 
 target_include_directories(TransX
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -51,7 +51,7 @@ add_custom_command(
 
 # Installation
 install(TARGETS TransX
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 install(DIRECTORY ${ORBITER_BINARY_DOC_DIR}/TransX

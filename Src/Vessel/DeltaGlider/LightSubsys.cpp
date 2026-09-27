@@ -118,7 +118,7 @@ void InstrumentLight::clbkSaveState (FILEHANDLE scn)
 
 bool InstrumentLight::clbkParseScenarioLine (const char *line)
 {
-	if (!strnicmp (line, "INSTRLIGHT", 10)) {
+	if (!strncasecmp (line, "INSTRLIGHT", 10)) {
 		int lon;
 		sscanf (line+10, "%d%d%lf", &lon, &light_col, &brightness);
 		light_on = (lon != 0);
@@ -272,7 +272,7 @@ void CockpitLight::clbkSaveState (FILEHANDLE scn)
 
 bool CockpitLight::clbkParseScenarioLine (const char *line)
 {
-	if (!strnicmp (line, "FLOODLIGHT", 10)) {
+	if (!strncasecmp (line, "FLOODLIGHT", 10)) {
 		sscanf (line+10, "%d%lf", &light_mode, &brightness);
 		light_mode = max (0, min (2, light_mode));
 		brightness = max (0.0, min (1.0, brightness));
@@ -402,7 +402,7 @@ void LandDockLight::clbkSaveState (FILEHANDLE scn)
 
 bool LandDockLight::clbkParseScenarioLine (const char *line)
 {
-	if (!strnicmp (line, "LANDDOCKLIGHT", 13)) {
+	if (!strncasecmp (line, "LANDDOCKLIGHT", 13)) {
 		sscanf (line+13, "%d", &light_mode);
 		light_mode = max (0, min (2, light_mode));
 		return true;
@@ -527,7 +527,7 @@ void StrobeLight::clbkSaveState (FILEHANDLE scn)
 
 bool StrobeLight::clbkParseScenarioLine (const char *line)
 {
-	if (!strnicmp (line, "STROBELIGHT", 11)) {
+	if (!strncasecmp (line, "STROBELIGHT", 11)) {
 		int mode;
 		sscanf (line+11, "%d", &mode);
 		light_on = (mode != 0);
@@ -653,7 +653,7 @@ void NavLight::clbkSaveState (FILEHANDLE scn)
 
 bool NavLight::clbkParseScenarioLine (const char *line)
 {
-	if (!strnicmp (line, "NAVLIGHT", 8)) {
+	if (!strncasecmp (line, "NAVLIGHT", 8)) {
 		int mode;
 		sscanf (line+8, "%d", &mode);
 		light_on = (mode != 0);

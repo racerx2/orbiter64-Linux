@@ -4,7 +4,10 @@
 #include <iostream>
 #include <fstream>
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
 #include <time.h>
+#include <unistd.h>
 #include "Mesh.h"
 
 using namespace std;
@@ -100,9 +103,9 @@ static void outC(const Param& param, const Mesh& mesh)
 	int grp = 0;
 	bool havelabel = false;
 	while (ifs.getline(cbuf, 256)) {
-		if (!_strnicmp(cbuf, "GEOM", 4))
+		if (!strncasecmp(cbuf, "GEOM", 4))
 			grp++;
-		else if (!_strnicmp(cbuf, "LABEL", 5)) {
+		else if (!strncasecmp(cbuf, "LABEL", 5)) {
 			if (!havelabel) {
 				ofs << "\n// Named mesh groups:\n";
 				havelabel = true;
@@ -144,9 +147,9 @@ static void outLua(const Param& param, const Mesh& mesh)
 	int grp = 0;
 	bool havelabel = false;
 	while (ifs.getline(cbuf, 256)) {
-		if (!_strnicmp(cbuf, "GEOM", 4))
+		if (!strncasecmp(cbuf, "GEOM", 4))
 			grp++;
-		else if (!_strnicmp(cbuf, "LABEL", 5)) {
+		else if (!strncasecmp(cbuf, "LABEL", 5)) {
 			if (!havelabel) {
 				ofs << "\n-- Named mesh groups:\n";
 				havelabel = true;
@@ -193,7 +196,7 @@ int main (int argc, char *argv[])
 	if (!strcmp(param.outname, "-")) strcpy(param.outname, "meshres.h");
 
 	char pwd[1024];
-	_fullpath(pwd, ".\\", 1024);
+	if (!getcwd(pwd, 1024)) pwd[0] = '\0'; // _fullpath(".\\") counterpart
 	cout << "Current directory is " << pwd << endl;
 
 	cout << "Reading mesh from " << param.meshname << endl;

@@ -2,7 +2,7 @@
 # Licensed under the MIT License
 
 # Core library to go to the Orbiter main directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
 
 add_library(LuaInline SHARED
 	LuaInline.cpp
@@ -33,6 +33,6 @@ set_target_properties(LuaInline
 
 # Installation
 install(TARGETS LuaInline
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}
 )

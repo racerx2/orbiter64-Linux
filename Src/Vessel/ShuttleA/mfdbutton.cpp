@@ -9,8 +9,9 @@
 // User interface for MFD buttons
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "mfdbutton.h"
+#include <string.h>
 
 // MFD button font geometry
 

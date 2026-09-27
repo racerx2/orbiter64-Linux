@@ -1,11 +1,17 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
 
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "resource.h"
+#include <QComboBox>
+#include <QDialog>
+#include <cstring>
+#include <strings.h>
+#include <dlfcn.h>
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -17,7 +23,7 @@ const fs::path CelbodyDir = fs::path("Modules") / "Celbody";
 const char *ModuleItem = "MODULE_ATM";
 
 struct {
-	HINSTANCE hInst;
+	void *hInst;
 	AtmConfig *item;
 } gParams;
 
@@ -29,17 +35,17 @@ public:
 	char *Description();
 	void Read (const char *celbody);
 	void Write(const char *celbody);
-	bool clbkOpen (HWND hLaunchpad);
-	void InitDialog (HWND hWnd);
-	void UpdateData (HWND hWnd);
-	void Apply (HWND hWnd);
-	void OpenHelp (HWND hWnd);
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	bool clbkOpen (QWidget *hLaunchpad);
+	void InitDialog (QWidget *hWnd);
+	void UpdateData (QWidget *hWnd);
+	void Apply (QWidget *hWnd);
+	void OpenHelp (QWidget *hWnd);
+	static void DlgProc (QWidget*, void*);
 
 protected:
 	// scan the 'Modules\Celbody' folder for directories, and
 	// 'atmosphere' directories in these.
-	void ScanCelbodies (HWND hWnd);
+	void ScanCelbodies (QWidget *hWnd);
 
 	// scan the 'Modules\Celbody\<Name>\Atmosphere' folder for
 	// atmosphere plugin modules
@@ -48,11 +54,11 @@ protected:
 	void ClearModules ();
 
 	// Populate celbody list and atmosphere model list
-	void ListCelbodies (HWND hWnd);
-	void ListModules (HWND hWnd);
+	void ListCelbodies (QWidget *hWnd);
+	void ListModules (QWidget *hWnd);
 
-	void CelbodyChanged (HWND hWnd);
-	void ModelChanged (HWND hWnd);
+	void CelbodyChanged (QWidget *hWnd);
+	void ModelChanged (QWidget *hWnd);
 
 	char celbody[256];
 
@@ -94,13 +100,13 @@ char *AtmConfig::Description()
 void AtmConfig::Read (const char *celbody)
 {
 	char cfgname[256];
-	strcpy (cfgname, celbody); strcat (cfgname, "\\Atmosphere.cfg");
+	strcpy (cfgname, celbody); strcat (cfgname, "/Atmosphere.cfg");
 	FILEHANDLE hFile = oapiOpenFile (cfgname, FILE_IN, CONFIG);
 	if (hFile) {
 		char name[256];
 		oapiReadItem_string (hFile, (char*)ModuleItem, name);
 		for (module_curr = module_first; module_curr; module_curr = module_curr->next)
-			if (!_stricmp (module_curr->module_name, name)) break;
+			if (!strcasecmp (module_curr->module_name, name)) break;
 		oapiCloseFile (hFile, FILE_IN);
 	}
 }
@@ -108,7 +114,7 @@ void AtmConfig::Read (const char *celbody)
 void AtmConfig::Write (const char *celbody)
 {
 	char cfgname[256];
-	strcpy (cfgname, celbody); strcat (cfgname, "\\Atmosphere.cfg");
+	strcpy (cfgname, celbody); strcat (cfgname, "/Atmosphere.cfg");
 	FILEHANDLE hFile = oapiOpenFile (cfgname, FILE_OUT, CONFIG);
 	if (hFile) {
 		if (module_curr && module_curr->module_name[0])
@@ -119,31 +125,31 @@ void AtmConfig::Write (const char *celbody)
 	}
 }
 
-bool AtmConfig::clbkOpen (HWND hLaunchpad)
+bool AtmConfig::clbkOpen (QWidget *hLaunchpad)
 {
 	// respond to user double-clicking the item in the list
 	return OpenDialog (gParams.hInst, hLaunchpad, IDD_CONFIG, DlgProc);
 }
 
-void AtmConfig::InitDialog (HWND hWnd)
+void AtmConfig::InitDialog (QWidget *hWnd)
 {
 	ListCelbodies (hWnd);
 }
 
-void AtmConfig::ListCelbodies (HWND hWnd)
+void AtmConfig::ListCelbodies (QWidget *hWnd)
 {
 	ScanCelbodies (hWnd);
-	if (!SendDlgItemMessage (hWnd, IDC_COMBO2, CB_GETCOUNT, 0, 0)) return;
-	int idx = SendDlgItemMessage (hWnd, IDC_COMBO2, CB_FINDSTRINGEXACT, -1, (LPARAM)"Earth");
-	if (idx == CB_ERR) idx = 0;
-	SendDlgItemMessage (hWnd, IDC_COMBO2, CB_SETCURSEL, idx, 0);
+	if (!DlgItem<QComboBox> (hWnd, IDC_COMBO2)->count()) return;
+	int idx = DlgItem<QComboBox> (hWnd, IDC_COMBO2)->findText ("Earth", Qt::MatchFixedString); // CB_FINDSTRINGEXACT ignores case
+	if (idx < 0) idx = 0;
+	DlgItem<QComboBox> (hWnd, IDC_COMBO2)->setCurrentIndex (idx);
 	CelbodyChanged (hWnd);
 }
 
-void AtmConfig::ListModules (HWND hWnd)
+void AtmConfig::ListModules (QWidget *hWnd)
 {
-	SendDlgItemMessage (hWnd, IDC_COMBO1, CB_RESETCONTENT, 0, 0);
-	SendDlgItemMessage (hWnd, IDC_COMBO1, CB_ADDSTRING, 0, (LPARAM)"[None]");
+	DlgItem<QComboBox> (hWnd, IDC_COMBO1)->clear();
+	oapiComboAddString (DlgItem<QComboBox> (hWnd, IDC_COMBO1), "[None]");
 
 	if (!celbody[0]) return; // nothing to do
 
@@ -152,7 +158,7 @@ void AtmConfig::ListModules (HWND hWnd)
 
 	MODULESPEC *ms = module_first;
 	while (ms) {
-		SendDlgItemMessage (hWnd, IDC_COMBO1, CB_ADDSTRING, 0, (LPARAM)ms->model_name);
+		oapiComboAddString (DlgItem<QComboBox> (hWnd, IDC_COMBO1), ms->model_name);
 		ms = ms->next;
 	}
 	int idx = 0;
@@ -161,13 +167,13 @@ void AtmConfig::ListModules (HWND hWnd)
 		for (idx = 0; ms && ms != module_curr; ms = ms->next, idx++);
 		idx++;
 	}
-	SendDlgItemMessage (hWnd, IDC_COMBO1, CB_SETCURSEL, idx, 0);
+	DlgItem<QComboBox> (hWnd, IDC_COMBO1)->setCurrentIndex (idx);
 	ModelChanged (hWnd);
 }
 
-void AtmConfig::UpdateData (HWND hWnd)
+void AtmConfig::UpdateData (QWidget *hWnd)
 {
-	int i, model = (int)SendDlgItemMessage (hWnd, IDC_COMBO1, CB_GETCURSEL, 0, 0);
+	int i, model = DlgItem<QComboBox> (hWnd, IDC_COMBO1)->currentIndex();
 	if (!model) {
 		module_curr = 0;
 	} else {
@@ -175,33 +181,33 @@ void AtmConfig::UpdateData (HWND hWnd)
 	}
 }
 
-void AtmConfig::CelbodyChanged (HWND hWnd)
+void AtmConfig::CelbodyChanged (QWidget *hWnd)
 {
-	int idx = SendDlgItemMessage (hWnd, IDC_COMBO2, CB_GETCURSEL, 0, 0);
-	SendDlgItemMessage (hWnd, IDC_COMBO2, CB_GETLBTEXT, idx, (LPARAM)celbody);
+	int idx = DlgItem<QComboBox> (hWnd, IDC_COMBO2)->currentIndex();
+	snprintf (celbody, 256, "%s", DlgItem<QComboBox> (hWnd, IDC_COMBO2)->itemText (idx).toUtf8().constData());
 	ListModules (hWnd);
 }
 
-void AtmConfig::ModelChanged (HWND hWnd)
+void AtmConfig::ModelChanged (QWidget *hWnd)
 {
-	int i, model = (int)SendDlgItemMessage (hWnd, IDC_COMBO1, CB_GETCURSEL, 0, 0);
+	int i, model = DlgItem<QComboBox> (hWnd, IDC_COMBO1)->currentIndex();
 	if (!model) {
-		SetWindowText (GetDlgItem (hWnd, IDC_EDIT1), "Atmosphere effects disabled.");
+		oapiSetDlgItemText (hWnd, IDC_EDIT1, "Atmosphere effects disabled.");
 	} else {
 		MODULESPEC *ms = module_first;
 		for (i = 1; i < model && ms; i++)
 			ms = ms->next;
-		if (ms) SetWindowText (GetDlgItem (hWnd, IDC_EDIT1), ms->model_desc);
+		if (ms) oapiSetDlgItemText (hWnd, IDC_EDIT1, ms->model_desc);
 	}
 }
 
-void AtmConfig::Apply (HWND hWnd)
+void AtmConfig::Apply (QWidget *hWnd)
 {
 	UpdateData (hWnd);
 	Write (celbody);
 }
 
-void AtmConfig::OpenHelp (HWND hWnd)
+void AtmConfig::OpenHelp (QWidget *hWnd)
 {
 	HELPCONTEXT hc = {
 		(char*)"html/Orbiter.chm",
@@ -211,9 +217,9 @@ void AtmConfig::OpenHelp (HWND hWnd)
 	oapiOpenLaunchpadHelp (&hc);
 }
 
-void AtmConfig::ScanCelbodies (HWND hWnd)
+void AtmConfig::ScanCelbodies (QWidget *hWnd)
 {
-	SendDlgItemMessage (hWnd, IDC_COMBO2, CB_RESETCONTENT, 0, 0);
+	DlgItem<QComboBox> (hWnd, IDC_COMBO2)->clear();
 
 	for (auto& dir : fs::directory_iterator(CelbodyDir)) {
 		auto path = dir.path();
@@ -221,7 +227,7 @@ void AtmConfig::ScanCelbodies (HWND hWnd)
 			std::error_code ec;
 			auto atmdir = fs::directory_entry(path / "Atmosphere", ec);
 			if(!ec && atmdir.is_directory()) {
-				SendDlgItemMessage(hWnd, IDC_COMBO2, CB_ADDSTRING, 0, (LPARAM)path.filename().string().c_str());
+				oapiComboAddString(DlgItem<QComboBox>(hWnd, IDC_COMBO2), path.filename().string().c_str());
 			}
 		}
 	}
@@ -235,7 +241,7 @@ void AtmConfig::ScanModules (const char *celbody)
 	MODULESPEC* module_last = 0;
 	for (auto& entry : fs::directory_iterator(path)) {
 		auto module = entry.path();
-		if (module.extension().string() == ".dll") {
+		if (module.extension().string() == ".so") {
 			const auto name = module.stem().string();
 
 			MODULESPEC* ms = new MODULESPEC;
@@ -248,56 +254,52 @@ void AtmConfig::ScanModules (const char *celbody)
 			ms->next = 0;
 
 			// get info from the module
-			HINSTANCE hModule = LoadLibrary(module.string().c_str());
+			void *hModule = dlopen(module.string().c_str(), RTLD_NOW);
 			if (hModule) {
-				char* (*name_func)() = (char* (*)())GetProcAddress(hModule, "ModelName");
+				char* (*name_func)() = (char* (*)())dlsym(hModule, "ModelName");
 				if (name_func) strncpy(ms->model_name, name_func(), 255);
-				char* (*desc_func)() = (char* (*)())GetProcAddress(hModule, "ModelDesc");
+				char* (*desc_func)() = (char* (*)())dlsym(hModule, "ModelDesc");
 				if (desc_func) strncpy(ms->model_desc, desc_func(), 511);
-				FreeLibrary(hModule);
+				dlclose(hModule);
 			}
 		}
 	}
 }
 
-INT_PTR CALLBACK AtmConfig::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void AtmConfig::DlgProc (QWidget *hWnd, void *context)
 {
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		SetWindowLongPtr (hWnd, DWLP_USER, (LONG_PTR)lParam); // store class instance for later reference
-		((AtmConfig*)lParam)->InitDialog (hWnd);
-		break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_INITDIALOG: the class instance is the context, kept by the handler below (DWLP_USER)
+		((AtmConfig*)context)->InitDialog (hWnd);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, context](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDOK:
-			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->Apply (hWnd);
+			((AtmConfig*)context)->Apply (hWnd);
 			//EndDialog (hWnd, 0);
-			return 0;
+			return;
 		case IDCANCEL:
-			EndDialog (hWnd, 0);
-			return 0;
+			qobject_cast<QDialog*> (hWnd)->done (0);
+			return;
 		case IDC_BUTTON1:
-			((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->OpenHelp (hWnd);
-			return 0;
+			((AtmConfig*)context)->OpenHelp (hWnd);
+			return;
 		case IDC_COMBO1:
-			if (HIWORD (wParam) == CBN_SELCHANGE)
-				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->ModelChanged (hWnd);
-			return 0;
+			if (code == RESN_SELCHANGE)
+				((AtmConfig*)context)->ModelChanged (hWnd);
+			return;
 		case IDC_COMBO2:
-			if (HIWORD (wParam) == CBN_SELCHANGE)
-				((AtmConfig*)GetWindowLongPtr (hWnd, DWLP_USER))->CelbodyChanged (hWnd);
-			return 0;
+			if (code == RESN_SELCHANGE)
+				((AtmConfig*)context)->CelbodyChanged (hWnd);
+			return;
 		}
-		break;
-	}
-	return 0;
+	});
 }
 
 // ==============================================================
 // The DLL entry point
 // ==============================================================
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	gParams.hInst = hDLL;
 	gParams.item = new AtmConfig;
@@ -312,7 +314,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // The DLL exit point
 // ==============================================================
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the launchpad items
 	oapiUnregisterLaunchpadItem (gParams.item);

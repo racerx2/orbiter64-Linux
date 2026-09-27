@@ -21,7 +21,7 @@
 
 #pragma once
 
-#include <OrbiterSDK.h>
+#include <Orbitersdk.h>
 
 
 class OrbitElements{

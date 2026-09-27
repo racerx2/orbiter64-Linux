@@ -18,13 +18,14 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include <cstring> // str* functions (windows.h brought in string.h)
 #include <cstdio>
 #include <cmath>
 #include <string>
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
 #include "mfd.h"
 #include "graph.h"

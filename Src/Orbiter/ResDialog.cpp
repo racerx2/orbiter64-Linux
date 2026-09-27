@@ -205,6 +205,26 @@ void oapiConnectDlgCommands (QWidget *hDlg, RESCOMMAND handler)
 	}
 }
 
+void oapiConnectDlgDeltaPos (QWidget *hDlg, RESDELTAPOS handler)
+{
+	for (QObject *o : hDlg->children()) {
+		ResUpDown *ud = qobject_cast<ResUpDown*> (o);
+		if (!ud || !ud->property ("resId").isValid()) continue;
+		int id = ud->property ("resId").toInt();
+		QObject::connect (ud, &ResUpDown::deltaPos, hDlg, [handler, id, ud](int d) { handler (id, ud->Pos(), d); });
+	}
+}
+
+void oapiSetUpDownRange (QWidget *hCtrl, int lower, int upper)
+{
+	if (ResUpDown *ud = qobject_cast<ResUpDown*> (hCtrl)) ud->SetRange (lower, upper);
+}
+
+void oapiSetUpDownPos (QWidget *hCtrl, int pos)
+{
+	if (ResUpDown *ud = qobject_cast<ResUpDown*> (hCtrl)) ud->SetPos (pos);
+}
+
 // UTF-8, or Latin-1 if the bytes are not valid UTF-8 (Windows-era files)
 static QString DlgString (const char *text)
 {

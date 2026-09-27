@@ -11,6 +11,7 @@
 #include "ConfigFileParserMacros.h"
 #include <algorithm>
 #include <filesystem>
+#include <cstdint>
 
 // Constructor
 XRSoundConfigFileParser::XRSoundConfigFileParser(const char *pConfigFile) :
@@ -52,7 +53,7 @@ bool XRSoundConfigFileParser::ParseModuleSoundConfig(const char *pUniqueModuleNa
 // Return: true on success, false if at least one warning or error exists in the .cfg file(s).
 bool XRSoundConfigFileParser::ParseVesselSoundConfig(VESSEL *pVessel)
 {
-    _ASSERTE(pVessel);
+    assert(pVessel);
 
     bool bOverrideFileExists = false;
     const char *pVesselClassName = pVessel->GetClassName();
@@ -71,7 +72,7 @@ bool XRSoundConfigFileParser::ParseVesselSoundConfig(VESSEL *pVessel)
         '_'
     );
 	m_csOverrideFilename = std::string("XRSound/XRSound-") + csSanitizedClassName + ".cfg";
-	bOverrideFileExists = std::filesystem::exists(m_csOverrideFilename);
+	bOverrideFileExists = std::filesystem::exists(oapiResolvePath(m_csOverrideFilename.c_str()));   // any letter case, as on Windows
 
     if (bOverrideFileExists)
 		m_csConfigFilenames = std::string(GetDefaultFilename()) + " + " + GetOverrideFilename();
@@ -109,14 +110,14 @@ if (PNAME_MATCHES(TO_STR(propName)))                \
 bool XRSoundConfigFileParser::ParseLine(const char *pSection, const char *pPropertyName, const char *pValue, const bool bParsingOverrideFile)
 {
     // sanity checks; our base class should already validate that each of these values are not nullptr or empty.
-    _ASSERTE(pSection);
-    _ASSERTE(*pSection);
+    assert(pSection);
+    assert(*pSection);
 
-    _ASSERTE(pPropertyName);
-    _ASSERTE(*pPropertyName);
+    assert(pPropertyName);
+    assert(*pPropertyName);
 
-    _ASSERTE(pValue);
-    _ASSERTE(*pValue);
+    assert(pValue);
+    assert(*pValue);
 
     // TODO: if and when vessel-class-specific configuration overrides are implemented, look into caching the default 
     // config file's XRSoundConfigFileParser object (and copying its state via a copy constructor?)
@@ -182,12 +183,12 @@ bool XRSoundConfigFileParser::ParseLine(const char *pSection, const char *pPrope
         }
         else if (PNAME_MATCHES("MusicOrder"))
         {
-            if (_stricmp(pValue, "random") == 0)
+            if (strcasecmp(pValue, "random") == 0)
             {
                 MusicOrder = SeqRandom::Random;
                 return true;
             }
-            else if (_stricmp(pValue, "sequential") == 0)
+            else if (strcasecmp(pValue, "sequential") == 0)
             {
                 MusicOrder = SeqRandom::Sequential;
                 return true;
@@ -216,17 +217,17 @@ bool XRSoundConfigFileParser::ParseLine(const char *pSection, const char *pPrope
         else if (PNAME_MATCHES("MusicPlayInternal") || PNAME_MATCHES("MusicPlayExternal"))
         {
             MusicPlay &playVar = ((PNAME_MATCHES("MusicPlayInternal") ? MusicPlayInternal : MusicPlayExternal));
-            if (_stricmp(pValue, "off") == 0)
+            if (strcasecmp(pValue, "off") == 0)
             {
                 playVar = MusicPlay::Off;
                 return true;
             }
-            else if (_stricmp(pValue, "space") == 0)
+            else if (strcasecmp(pValue, "space") == 0)
             {
                 playVar = MusicPlay::Space;
                 return true;
             }
-            else if (_stricmp(pValue, "on") == 0)
+            else if (strcasecmp(pValue, "on") == 0)
             {
                 playVar = MusicPlay::On;
                 return true;
@@ -444,7 +445,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
 {
     bool processed = false;     // set to 'true' by macros if parameter processed; the macros expect this variable to exist
 
-    _ASSERTE(animationID >= 0);
+    assert(animationID >= 0);
     if (animationID < 0)
         return false;
 
@@ -463,30 +464,30 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         pAnimationSounds = GetAnimationSounds(animationID); // will always succeed now.  
         bSuccess = true;
     }
-    _ASSERTE(pAnimationSounds);
+    assert(pAnimationSounds);
 
     // parse non-wav file path paraemters
-    if (_stricmp(pName, "OpenCloseSoundID") == 0)
+    if (strcasecmp(pName, "OpenCloseSoundID") == 0)
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
-        VALIDATE_INT(&soundID, 0, MAXINT32, -1);
+        VALIDATE_INT(&soundID, 0, INT32_MAX, -1);
         if (soundID >= -0)
             pAnimationSounds->SetOpenCloseSoundID(soundID);
     }
-    else if (_stricmp(pName, "MovingSoundID") == 0)
+    else if (strcasecmp(pName, "MovingSoundID") == 0)
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
-        VALIDATE_INT(&soundID, 0, MAXINT32, -1);
+        VALIDATE_INT(&soundID, 0, INT32_MAX, -1);
         if (soundID >= -0)
             pAnimationSounds->SetMovingSoundID(soundID);
     }
-    else if (_stricmp(pName, "PlaybackType") == 0)
+    else if (strcasecmp(pName, "PlaybackType") == 0)
     {
         // this sets the playbacktype for each default sound in this animation
         XRSound::PlaybackType type;
-#define PARSE_PLAYBACK_TYPE(pbt) else if (_stricmp(pValue, TO_STR(pbt)) == 0) type = XRSound::PlaybackType::pbt;
+#define PARSE_PLAYBACK_TYPE(pbt) else if (strcasecmp(pValue, TO_STR(pbt)) == 0) type = XRSound::PlaybackType::pbt;
 
         if (false);   // deliberate empty statement here so the macro works
         PARSE_PLAYBACK_TYPE(InternalOnly)
@@ -506,7 +507,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         // playback type is valid!
         pAnimationSounds->SetPlaybackType(type);
     }
-    else if (_stricmp(pName, "IsLandingGear") == 0)
+    else if (strcasecmp(pName, "IsLandingGear") == 0)
     { 
         bool bIsLandingGear = false;
         SSCANF_BOOL("%c", &bIsLandingGear);
@@ -524,7 +525,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         // if we reach here, parse it as an animation state + wav path
         AnimationState::StateType state;
 
-#define PARSE_STATE_TYPE(type) else if (_stricmp(pName, TO_STR(type)) == 0) state = AnimationState::StateType::type;
+#define PARSE_STATE_TYPE(type) else if (strcasecmp(pName, TO_STR(type)) == 0) state = AnimationState::StateType::type;
 
         // Note: if a sound goes idle, then by definition it is silent, so you cannot specify a custom sound for the Idle state.
         if (false);   // deliberate empty statement here so the macro works
@@ -555,7 +556,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
 
         // add or replace the wav file for this animation type (Opening, Closing, etc.).
         bSuccess = pAnimationSounds->SetWavForAnimationState(state, pValue);
-        _ASSERTE(bSuccess);     // if false, it means that state == Unknown, which you cannot assign a custom sound to (and we should have previously validated that)
+        assert(bSuccess);     // if false, it means that state == Unknown, which you cannot assign a custom sound to (and we should have previously validated that)
     }
 
     return bSuccess;
@@ -603,7 +604,7 @@ bool AnimationSounds::SetWavForAnimationState(AnimationState::StateType state, c
     if (state == AnimationState::StateType::Unknown)
     {
         // can't set a sound for "Unknown" state
-        _ASSERTE(false);
+        assert(false);
         return false;
     }
 

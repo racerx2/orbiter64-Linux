@@ -26,7 +26,7 @@ target_include_directories(${VESSEL_NAME}
 target_link_libraries(${VESSEL_NAME}
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
-	$<TARGET_LINKER_FILE:Atlantis_SRB>
+	Atlantis_SRB # not upstream: by target name, CMake turns a path to a prefix-less .so into -l<name>
 )
 
 add_custom_command(
@@ -56,7 +56,7 @@ add_dependencies(${VESSEL_NAME}
 )
 
 install(TARGETS ${VESSEL_NAME}
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

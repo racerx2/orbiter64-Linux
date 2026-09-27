@@ -7,6 +7,8 @@
 
 #include "XRSoundDLL.h"
 #include "DefaultSoundGroupPreSteps.h"
+#include <climits>
+#include <cstdint>
 
 // -----------------------------------------------------------------------------------
 // This abstract subclass handles playing back a default sound from a group of sounds
@@ -41,7 +43,7 @@ bool DefaultSoundGroupPreStep::SetFolder(const char *pFolderSubpath)
 {
     // Note: we never reset m_bWavPresent = false here: if this call fails, the *previous* folder remains set
 
-    _ASSERTE(pFolderSubpath);
+    assert(pFolderSubpath);
     if (!*pFolderSubpath)
         return false;       // empty
 
@@ -79,7 +81,7 @@ bool DefaultSoundGroupPreStep::SetFolder(const char *pFolderSubpath)
 // Returns a random sound file path, different from the previous call's value
 std::string DefaultSoundGroupPreStep::GetRandomSoundFile()
 {
-    _ASSERTE(m_pSoundFilesList);
+    assert(m_pSoundFilesList);
     std::string file = m_pSoundFilesList->GetRandomFile();
     if (file.empty())
     {
@@ -93,7 +95,7 @@ std::string DefaultSoundGroupPreStep::GetRandomSoundFile()
 // Returns the next sound file in the list
 std::string DefaultSoundGroupPreStep::GetNextSoundFile()
 {
-    _ASSERTE(m_pSoundFilesList);
+    assert(m_pSoundFilesList);
     std::string file = m_pSoundFilesList->GetFile(m_currentSoundFileIndex);
     m_currentSoundFileIndex++;
     if (m_currentSoundFileIndex >= m_pSoundFilesList->GetScannedFileCount())
@@ -112,9 +114,9 @@ std::string DefaultSoundGroupPreStep::GetNextSoundFile()
 //   pBasename: e.g., "1000" to locate "1000.flac", "1000.mp3" etc.  May not be nullptr or empty.
 bool DefaultSoundGroupPreStep::LoadAndPlayWavWithBasename(const char *pBasename, const bool bLoop, const float volume)
 {
-    _ASSERTE(pBasename);
-    _ASSERTE(*pBasename);
-    _ASSERTE(m_pSoundFilesList);
+    assert(pBasename);
+    assert(*pBasename);
+    assert(m_pSoundFilesList);
 
     if (!pBasename || !*pBasename || !m_pSoundFilesList)
         return false;
@@ -130,9 +132,9 @@ bool DefaultSoundGroupPreStep::LoadAndPlayWavWithBasename(const char *pBasename,
 // Locate the first file in our file list with the specified basename.
 bool DefaultSoundGroupPreStep::LoadWavWithBasename(const char *pBasename)
 {
-    _ASSERTE(pBasename);
-    _ASSERTE(*pBasename);
-    _ASSERTE(m_pSoundFilesList);
+    assert(pBasename);
+    assert(*pBasename);
+    assert(m_pSoundFilesList);
 
     if (!pBasename || !*pBasename || !m_pSoundFilesList)
         return false;
@@ -173,8 +175,8 @@ void RandomDefaultSoundGroupPreStep::ResetTimer()
     const double range = maxDelay - minDelay;
     const double delay = ((oapiRand() * range)) + minDelay;
 
-    _ASSERTE(delay >= minDelay);
-    _ASSERTE(delay <= maxDelay);
+    assert(delay >= minDelay);
+    assert(delay <= maxDelay);
     m_nextPlayTime = XRSoundDLL::GetSystemUptime() + delay;  // this is *realtime*, not simt (we don't time ACC to affect this).
 }
 
@@ -189,7 +191,7 @@ void RandomDefaultSoundGroupPreStep::clbkPreStep(const double simt, const double
     if (m_systemUptime >= m_nextPlayTime)
     {
         ResetTimer();
-        //_ASSERTE(m_systemUptime > simt); // simulator time can be bigger than system time using a very fast time acceleration
+        //assert(m_systemUptime > simt); // simulator time can be bigger than system time using a very fast time acceleration
 
         if (ShouldPlayNow(simt, simdt, mjd))
             PlayRandom();
@@ -265,7 +267,7 @@ RandomDefaultSoundGroupPreStep::MinMaxDelay ATCDefaultSoundGroupPreStep::GetMinM
     
     // see if the user disabled these sounds by setting min or max to zero
     if ((min <= 0) || (max <= 0))
-        return RandomDefaultSoundGroupPreStep::MinMaxDelay(MAXINT, MAXINT);  // sounds will never play
+        return RandomDefaultSoundGroupPreStep::MinMaxDelay(INT_MAX, INT_MAX);  // sounds will never play
 
     const VESSEL *pVessel = GetVessel();
     if (pVessel)  // sanity check in case Orbiter deleted it out from under us as the other checks missed it
@@ -454,8 +456,8 @@ void DockingCalloutsDefaultSoundGroupPreStep::clbkPreStep(const double simt, con
 
     if ((distance >= 0) && (m_previousFrameDistance >= 0))  // no callouts if not in range OR if we just entered range but haven't updated previous distance yet.
     {
-        _ASSERTE(m_intervalStartTime >= 0);
-        _ASSERTE(m_intervalStartDistance >= 0);
+        assert(m_intervalStartTime >= 0);
+        assert(m_intervalStartDistance >= 0);
 
         // Note: in order to support UCD (Universal Cargo Deck), only play callouts for the other vessel's docking port if the ship has closed at least 0.1 meter over the last second (0.1 m/s)
         // Vessel distance "jitters" even when a vessel is attached to UCD which is attached in the XR payload bay.
@@ -534,7 +536,7 @@ void MachCalloutsDefaultSoundGroupPreStep::clbkPreStep(const double simt, const 
 
     if (!groundContact && (mach <= 0))  // prevent resets when on ground
     {
-        m_previousMach = MAXLONG;   // out of the atmosphere
+        m_previousMach = INT32_MAX;   // out of the atmosphere
         return;     // nothing more to do
     }
 

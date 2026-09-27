@@ -3,8 +3,8 @@
 
 add_library(Meshdebug SHARED
 	Meshdebug.cpp
-	Meshdebug.rc
 )
+orbiter_rc_resources(Meshdebug Meshdebug.rc)
 
 target_include_directories(Meshdebug
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
@@ -28,6 +28,6 @@ set_target_properties(Meshdebug
 
 # Installation
 install(TARGETS Meshdebug
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )

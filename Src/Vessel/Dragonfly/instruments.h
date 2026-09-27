@@ -5,10 +5,13 @@
 #define __INSTRUMENTS_H_
 
 #include <stdlib.h>
-#include <windows.h>
+// windows.h left out: POINT comes with the SDK (OrbiterPlatform.h), the GDI handles are Qt types
 #include "vectors.h"
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 
+class QOffscreenSurface;
+class QOpenGLContext;
+class QOpenGLFramebufferObject;
 
 class Panel;
 
@@ -73,7 +76,7 @@ class SFSwitch:public Switch
 	void LBD(int x, int y);
 private:
 	SURFHANDLE temps;
-	HDC hTEMPDC;			//SFSwitch needs a back-surface
+	QPainter *hTEMPDC;			//SFSwitch needs a back-surface
 	int safed;				//is the switch safed or not?
 };
 
@@ -283,10 +286,10 @@ class ADI:public instrument
    vector3 target;
    float over_rate;
    //some stuff for OpenGL
-   HDC		   hDC2;
-   HGLRC       hRC;
-   HBITMAP	   hBMP;
-   HBITMAP hBMP_old;
+   QOffscreenSurface *hDC2;       // CreateCompatibleDC counterpart: the surface the context is made current on
+   QOpenGLContext    *hRC;        // wglCreateContext counterpart
+   QOpenGLFramebufferObject *hBMP; // CreateDIBSection counterpart: the 160x160 image OpenGL draws into
+   // hBMP_old left out: no bitmap is selected into a Qt surface
    ADI(int x,int y,Panel *i_parent);
    virtual ~ADI();
    void InitGL();

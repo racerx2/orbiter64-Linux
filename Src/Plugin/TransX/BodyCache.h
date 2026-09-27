@@ -26,7 +26,7 @@
 #ifndef BODYCACHE_H
 #define BODYCACHE_H
 
-#include <OrbiterSdk.h>
+#include <Orbitersdk.h>
 
 struct GBODY;
 class BodyCache

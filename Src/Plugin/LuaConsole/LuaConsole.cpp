@@ -10,7 +10,8 @@
 #include "imgui_extras.h"
 #include "IconsFontAwesome6.h"
 #include <sstream>
-#include <process.h>
+#include <cstring>
+#include <chrono> // process.h: threads are std::thread (LuaConsole.h)
 
 using std::min;
 using std::max;
@@ -201,7 +202,7 @@ ConsoleConfig *g_Config = NULL;
 // ==============================================================
 // class LuaConsole
 
-LuaConsole::LuaConsole (HINSTANCE hDLL): Module (hDLL)
+LuaConsole::LuaConsole (void *hDLL): Module (hDLL)
 {
 	hThread = NULL;
 	interp = NULL;
@@ -249,11 +250,12 @@ void LuaConsole::clbkSimulationEnd ()
 			termInterp = true;
 			interp->Terminate();
 			interp->EndExec(); // give the thread opportunity to close
-			if (WaitForSingleObject (hThread, 1000) != 0) {
+			if (thExit.wait_for (std::chrono::milliseconds(1000)) != std::future_status::ready) {
 				oapiWriteLog ((char*)"LuaConsole: timeout while waiting for interpreter thread");
-				TerminateThread (hThread, 0);
-			}
-			CloseHandle (hThread);
+				hThread->detach(); // TerminateThread left out: a std::thread can't be killed; it keeps its interpreter
+				interp = NULL;
+			} else hThread->join();
+			delete hThread;
 			hThread = NULL;
 		}
 		delete interp;
@@ -277,7 +279,7 @@ void LuaConsole::clbkPreStep (double simt, double simdt, double mjd)
 
 // ==============================================================
 
-HWND LuaConsole::Open ()
+QWidget *LuaConsole::Open ()
 {
 	oapiOpenDialog(hDlg);
 
@@ -320,14 +322,14 @@ void LuaConsole::Clear()
 // ==============================================================
 // DLL entry and exit points
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	// Create the console instance
 	g_Module = new LuaConsole (hDLL);
 	oapiRegisterModule (g_Module);
 }
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	delete g_Config;
 }
@@ -336,15 +338,16 @@ DLLCLBK void ExitModule (HINSTANCE hDLL)
 
 Interpreter *LuaConsole::CreateInterpreter ()
 {
-	unsigned int id;
 	termInterp = false;
 	interp = new ConsoleInterpreter (this);
 	interp->Initialise();
-	hThread = (HANDLE)_beginthreadex (NULL, 4096, &InterpreterThreadProc, this, 0, &id);
+	std::packaged_task<unsigned int(void*)> task (&InterpreterThreadProc); // _beginthreadex; stack size left to the system
+	thExit = task.get_future();
+	hThread = new std::thread (std::move (task), this);
 	return interp;
 }
 // Interpreter thread function
-unsigned int WINAPI LuaConsole::InterpreterThreadProc (LPVOID context)
+unsigned int LuaConsole::InterpreterThreadProc (void *context)
 {
 	int res;
 	LuaConsole *console = (LuaConsole*)context;
@@ -360,6 +363,6 @@ unsigned int WINAPI LuaConsole::InterpreterThreadProc (LPVOID context)
 		interp->EndExec();        // return control
 	}
 	interp->EndExec();  // release mutex (is this necessary?)
-	_endthreadex(0);
+	// _endthreadex left out: returning ends the std::thread
 	return 0;
 }

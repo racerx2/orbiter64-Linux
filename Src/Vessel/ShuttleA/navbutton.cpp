@@ -9,7 +9,7 @@
 // User interface for navigation buttons
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #include "navbutton.h"
 #include "ShuttleA.h"
 

@@ -28,6 +28,8 @@
 #include "LightSubsys.h"
 #include "FailureSubsys.h"
 #include "DlgCtrl.h"
+#include "OrbiterResource.h"
+#include <QAbstractButton>
 #include "resource.h"
 #include "meshres.h"
 #include "meshres_vc.h"
@@ -36,7 +38,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
-#include "OrbiterSDK.h"
+#include "Orbitersdk.h"
 #include <imgui.h>
 
 using std::min;
@@ -425,7 +427,7 @@ void DeltaGlider::ApplySkin ()
 
 	time_t lt; time(&lt); struct tm *st = localtime(&lt);
 	if (vcmesh && st->tm_mon==3 && st->tm_mday==1) {
-		SURFHANDLE t = oapiLoadTexture ("generic\\noisep.dds");
+		SURFHANDLE t = oapiLoadTexture ("generic/noisep.dds");
 		if (t) oapiSetTexture (vcmesh, 17, t);
 	}
 }
@@ -1216,12 +1218,12 @@ void DeltaGlider::clbkSetClassCaps (FILEHANDLE cfg)
 	}
 	if (ssys_scram) beacon[4].pos = &beaconpos_scram;
 
-	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal (ScramVersion() ? "DG\\deltaglider" : "DG\\deltaglider_ns")), MESHVIS_EXTERNAL);
+	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal (ScramVersion() ? "DG/deltaglider" : "DG/deltaglider_ns")), MESHVIS_EXTERNAL);
 	//SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("DG\\deltaglider_vc")), MESHVIS_VC);
-	panelmesh0 = oapiLoadMeshGlobal ("DG\\dg_2dpanel0");
-	panelmesh1 = oapiLoadMeshGlobal ("DG\\dg_2dpanel1");
+	panelmesh0 = oapiLoadMeshGlobal ("DG/dg_2dpanel0");
+	panelmesh1 = oapiLoadMeshGlobal ("DG/dg_2dpanel1");
 
-	vcmesh_tpl = oapiLoadMeshGlobal ("DG\\deltaglider_vc");
+	vcmesh_tpl = oapiLoadMeshGlobal ("DG/deltaglider_vc");
 	SetMeshVisibilityMode (AddMesh (vcmesh_tpl), MESHVIS_VC);
 
 	// **************** vessel-specific insignia ****************
@@ -1239,19 +1241,19 @@ void DeltaGlider::clbkLoadStateEx (FILEHANDLE scn, void *vs)
     char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "TANKCONFIG", 10)) {
+		if (!strncasecmp (line, "TANKCONFIG", 10)) {
 			if (ssys_scram) sscanf (line+10, "%d", &tankconfig);
-		} else if (!_strnicmp (line, "PSNGR", 5)) {
+		} else if (!strncasecmp (line, "PSNGR", 5)) {
 			DWORD i, res, pi[4];
 			res = sscanf (line+5, "%d%d%d%d", pi+0, pi+1, pi+2, pi+3);
 			for (i = 0; i < res; i++)
 				if (pi[i]-1 < 4) psngr[pi[i]-1] = true;
-		} else if (!_strnicmp (line, "SKIN", 4)) {
+		} else if (!strncasecmp (line, "SKIN", 4)) {
 			sscanf (line+4, "%s", skinpath);
 			char fname[256];
-			strcpy (fname, "DG\\Skins\\");
+			strcpy (fname, "DG/Skins/");
 			strcat (fname, skinpath);
-			int n = strlen(fname); fname[n++] = '\\';
+			int n = strlen(fname); fname[n++] = '/';
 			strcpy (fname+n, "dgmk4_1.dds");  skin[0] = oapiLoadTexture (fname);
 			strcpy (fname+n, ssys_scram ? "dgmk4_2.dds" : "dgmk4_2_ns.dds");  skin[1] = oapiLoadTexture (fname);
 			strcpy (fname+n, "idpanel1.dds"); skin[2] = oapiLoadTexture (fname);
@@ -1260,7 +1262,7 @@ void DeltaGlider::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 				oapiReleaseTexture (skin[2]);
 				skin[2] = NULL;
 			}
-		} else if (!_strnicmp (line, "PANELCOL", 8)) {
+		} else if (!strncasecmp (line, "PANELCOL", 8)) {
 			sscanf (line+8, "%d", &panelcol);
         } else {
 			// offer the line to all subsystems
@@ -1723,21 +1725,21 @@ int DeltaGlider::clbkGeneric (int msgid, int prm, void *context)
 // --------------------------------------------------------------
 // Module initialisation
 // --------------------------------------------------------------
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	g_Param.hDLL = hModule;
 	oapiRegisterCustomControls (hModule);
 
 	// allocate SketchPad resources
-	g_Param.pen[0] = oapiCreatePen (PS_SOLID, 1, RGB(224,224,224));
-	g_Param.pen[1] = oapiCreatePen (PS_SOLID, 3, RGB(164,164,164));
-	g_Param.surf = oapiLoadTexture ("DG\\blitsrc1.dds", true);
+	g_Param.pen[0] = oapiCreatePen (1, 1, RGB(224,224,224)); // PS_SOLID is windows.h 0, which oapiCreatePen takes as invisible; 1 = solid
+	g_Param.pen[1] = oapiCreatePen (1, 3, RGB(164,164,164));
+	g_Param.surf = oapiLoadTexture ("DG/blitsrc1.dds", true);
 }
 
 // --------------------------------------------------------------
 // Module cleanup
 // --------------------------------------------------------------
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 	oapiUnregisterCustomControls (hModule);
 
@@ -1773,196 +1775,197 @@ DLLCLBK void ovcExit (VESSEL *vessel)
 // Scenario editor interface
 // ==============================================================
 
-DeltaGlider *GetDG (HWND hDlg)
+DeltaGlider *GetDG (QWidget *hDlg)
 {
 	// retrieve DG interface from scenario editor
 	OBJHANDLE hVessel;
-	SendMessage (hDlg, WM_SCNEDITOR, SE_GETVESSEL, (LPARAM)&hVessel);
+	ScnEditorMsg (hDlg, SE_GETVESSEL, (LPARAM)&hVessel);
 	return (DeltaGlider*)oapiGetVesselInterface (hVessel);
 }
 
-void UpdateDamage (HWND hTab, DeltaGlider *dg)
+void UpdateDamage (QWidget *hTab, DeltaGlider *dg)
 {
 	int i;
 	char cbuf[256];
 
 	i = (int)(dg->lwingstatus*100.0+0.5);
 	snprintf (cbuf, sizeof(cbuf) - 1, "%d %%", i);
-	SetWindowText (GetDlgItem (hTab, IDC_LEFTWING_STATUS), cbuf);
-	oapiSetGaugePos (GetDlgItem (hTab, IDC_LEFTWING_SLIDER), i);
+	oapiSetDlgItemText (hTab, IDC_LEFTWING_STATUS, cbuf);
+	oapiSetGaugePos (oapiResDlgItem (hTab, IDC_LEFTWING_SLIDER), i);
 	i = (int)(dg->rwingstatus*100.0+0.5);
 	snprintf (cbuf, sizeof(cbuf) - 1, "%d %%", i);
-	SetWindowText (GetDlgItem (hTab, IDC_RIGHTWING_STATUS), cbuf);
-	oapiSetGaugePos (GetDlgItem (hTab, IDC_RIGHTWING_SLIDER), i);
+	oapiSetDlgItemText (hTab, IDC_RIGHTWING_STATUS, cbuf);
+	oapiSetGaugePos (oapiResDlgItem (hTab, IDC_RIGHTWING_SLIDER), i);
 }
 
 // --------------------------------------------------------------
 // Message procedure for editor page 1 (animation settings)
 // --------------------------------------------------------------
-INT_PTR CALLBACK EdPg1Proc (HWND hTab, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void EdPg1Proc (QWidget *hTab, void *context)
 {
-	switch (uMsg) {
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDHELP:
 			g_hc.topic = (char*)"/SE_Anim.htm";
 			oapiOpenHelp (&g_hc);
-			return TRUE;
+			return;
 		case IDC_GEAR_UP:
 			GetDG(hTab)->SubsysGear()->RaiseGear();
-			return TRUE;
+			return;
 		case IDC_GEAR_DOWN:
 			GetDG(hTab)->SubsysGear()->LowerGear();
-			return TRUE;
+			return;
 		case IDC_RETRO_CLOSE:
 			GetDG(hTab)->SubsysMainRetro()->CloseRetroCover();
-			return TRUE;
+			return;
 		case IDC_RETRO_OPEN:
 			GetDG(hTab)->SubsysMainRetro()->OpenRetroCover();
-			return TRUE;
+			return;
 		case IDC_OLOCK_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseOuterAirlock();
-			return TRUE;
+			return;
 		case IDC_OLOCK_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenOuterAirlock();
-			return TRUE;
+			return;
 		case IDC_ILOCK_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseInnerAirlock();
-			return TRUE;
+			return;
 		case IDC_ILOCK_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenInnerAirlock();
-			return TRUE;
+			return;
 		case IDC_NCONE_CLOSE:
 			GetDG(hTab)->SubsysDocking()->CloseNcone();
-			return TRUE;
+			return;
 		case IDC_NCONE_OPEN:
 			GetDG(hTab)->SubsysDocking()->OpenNcone();
-			return TRUE;
+			return;
 		case IDC_LADDER_RETRACT:
 			GetDG(hTab)->SubsysDocking()->RetractLadder();
-			return TRUE;
+			return;
 		case IDC_LADDER_EXTEND:
 			GetDG(hTab)->SubsysDocking()->ExtendLadder();
-			return TRUE;
+			return;
 		case IDC_HATCH_CLOSE:
 			GetDG(hTab)->SubsysPressure()->CloseHatch();
-			return TRUE;
+			return;
 		case IDC_HATCH_OPEN:
 			GetDG(hTab)->SubsysPressure()->OpenHatch();
-			return TRUE;
+			return;
 		case IDC_RADIATOR_RETRACT:
 			GetDG(hTab)->SubsysThermal()->CloseRadiator();
-			return TRUE;
+			return;
 		case IDC_RADIATOR_EXTEND:
 			GetDG(hTab)->SubsysThermal()->OpenRadiator();
-			return TRUE;
+			return;
 		}
-		break;
-	}
-	return FALSE;
+	});
 }
 
 // --------------------------------------------------------------
 // Message procedure for editor page 2 (passengers)
 // --------------------------------------------------------------
-INT_PTR CALLBACK EdPg2Proc (HWND hTab, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void EdPg2Proc (QWidget *hTab, void *context)
 {
 	DeltaGlider *dg;
 	int i;
 
-	switch (uMsg) {
-	case WM_INITDIALOG: {
+	// WM_INITDIALOG
+	{
 		char cbuf[256];
-		dg = (DeltaGlider*)oapiGetVesselInterface ((OBJHANDLE)lParam);
+		dg = (DeltaGlider*)oapiGetVesselInterface ((OBJHANDLE)context);
 		for (i = 0; i < 4; i++)
-			SendDlgItemMessage (hTab, IDC_CHECK1+i, BM_SETCHECK, dg->psngr[i] ? BST_CHECKED : BST_UNCHECKED, 0);
+			DlgItem<QAbstractButton> (hTab, IDC_CHECK1+i)->setChecked (dg->psngr[i]);
 		snprintf (cbuf, sizeof(cbuf) - 1, "%0.2f kg", dg->GetMass());
-		SetWindowText (GetDlgItem (hTab, IDC_MASS), cbuf);
-		} break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+		oapiSetDlgItemText (hTab, IDC_MASS, cbuf);
+	}
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		DeltaGlider *dg;
+		int i;
+		switch (id) {
 		case IDC_CHECK1:
 		case IDC_CHECK2:
 		case IDC_CHECK3:
 		case IDC_CHECK4: {
 			char cbuf[256];
-			i = SendDlgItemMessage (hTab, LOWORD(wParam), BM_GETCHECK, 0, 0);
+			i = DlgItem<QAbstractButton> (hTab, id)->isChecked();
 			dg = GetDG(hTab);
-			dg->psngr[LOWORD(wParam)-IDC_CHECK1] = (i ? true:false);
+			dg->psngr[id-IDC_CHECK1] = (i ? true:false);
 			dg->SetPassengerVisuals();
 			dg->SetEmptyMass();
 			snprintf (cbuf, sizeof(cbuf) - 1, "%0.2f kg", dg->GetMass());
-			SetWindowText (GetDlgItem (hTab, IDC_MASS), cbuf);
+			oapiSetDlgItemText (hTab, IDC_MASS, cbuf);
 			} break;
 		}
-		break;
-	}
-	return FALSE;
+	});
 }
 
 // --------------------------------------------------------------
 // Message procedure for editor page 3 (damage)
 // --------------------------------------------------------------
-INT_PTR CALLBACK EdPg3Proc (HWND hTab, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void EdPg3Proc (QWidget *hTab, void *context)
 {
 	DeltaGlider *dg;
 
-	switch (uMsg) {
-	case WM_INITDIALOG: {
-		dg = (DeltaGlider*)oapiGetVesselInterface ((OBJHANDLE)lParam);
+	// WM_INITDIALOG
+	{
+		dg = (DeltaGlider*)oapiGetVesselInterface ((OBJHANDLE)context);
 		GAUGEPARAM gp = { 0, 100, GAUGEPARAM::LEFT, GAUGEPARAM::BLACK };
-		oapiSetGaugeParams (GetDlgItem (hTab, IDC_LEFTWING_SLIDER), &gp);
-		oapiSetGaugeParams (GetDlgItem (hTab, IDC_RIGHTWING_SLIDER), &gp);
+		oapiSetGaugeParams (oapiResDlgItem (hTab, IDC_LEFTWING_SLIDER), &gp);
+		oapiSetGaugeParams (oapiResDlgItem (hTab, IDC_RIGHTWING_SLIDER), &gp);
 		UpdateDamage (hTab, dg);
-		} break;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	}
+	// WM_COMMAND
+	oapiConnectDlgCommands (hTab, [hTab](int id, int code, QWidget *hCtrl) {
+		DeltaGlider *dg;
+		switch (id) {
 		case IDC_REPAIR:
 			dg = GetDG(hTab);
 			dg->RepairDamage ();
 			UpdateDamage (hTab, dg);
-			return TRUE;
+			return;
 		}
-		break;
-	case WM_HSCROLL:
-		dg = GetDG(hTab);
-		int id = GetDlgCtrlID ((HWND)lParam);
-		switch (id) {
-		case IDC_LEFTWING_SLIDER:
-		case IDC_RIGHTWING_SLIDER:
-			switch (LOWORD (wParam)) {
-			case SB_THUMBTRACK:
-			case SB_LINELEFT:
-			case SB_LINERIGHT:
-				if (id == IDC_LEFTWING_SLIDER)
-					dg->lwingstatus = HIWORD(wParam)*0.01;
-				else
-					dg->rwingstatus = HIWORD(wParam)*0.01;
-				dg->ApplyDamage ();
-				UpdateDamage (hTab, dg);
-				return TRUE;
+	});
+	// WM_HSCROLL: GaugeCtrl::scrolled of both sliders
+	for (int id: {IDC_LEFTWING_SLIDER, IDC_RIGHTWING_SLIDER}) {
+		QObject::connect (DlgItem<GaugeCtrl> (hTab, id), &GaugeCtrl::scrolled, hTab, [hTab, id](int request, int pos) {
+			DeltaGlider *dg = GetDG(hTab);
+			switch (id) {
+			case IDC_LEFTWING_SLIDER:
+			case IDC_RIGHTWING_SLIDER:
+				switch (request) {
+				case GAUGE_THUMBTRACK:
+				case GAUGE_LINEDEC:
+				case GAUGE_LINEINC:
+					if (id == IDC_LEFTWING_SLIDER)
+						dg->lwingstatus = pos*0.01;
+					else
+						dg->rwingstatus = pos*0.01;
+					dg->ApplyDamage ();
+					UpdateDamage (hTab, dg);
+					return;
+				}
+				break;
 			}
-			break;
-		}
-		break;
+		});
 	}
-	return FALSE;
 }
 
 // --------------------------------------------------------------
 // Add vessel-specific pages into scenario editor
 // --------------------------------------------------------------
-DLLCLBK void secInit (HWND hEditor, OBJHANDLE hVessel)
+DLLCLBK void secInit (QWidget *hEditor, OBJHANDLE hVessel)
 {
 	DeltaGlider *dg = (DeltaGlider*)oapiGetVesselInterface (hVessel);
 
 	EditorPageSpec eps1 = {"Animations", g_Param.hDLL, IDD_EDITOR_PG1, EdPg1Proc};
-	SendMessage (hEditor, WM_SCNEDITOR, SE_ADDPAGEBUTTON, (LPARAM)&eps1);
+	ScnEditorMsg (hEditor, SE_ADDPAGEBUTTON, (LPARAM)&eps1);
 	EditorPageSpec eps2 = {"Passengers", g_Param.hDLL, IDD_EDITOR_PG2, EdPg2Proc};
-	SendMessage (hEditor, WM_SCNEDITOR, SE_ADDPAGEBUTTON, (LPARAM)&eps2);
+	ScnEditorMsg (hEditor, SE_ADDPAGEBUTTON, (LPARAM)&eps2);
 	if (dg->bDamageEnabled) {
 		EditorPageSpec eps3 = {"Damage", g_Param.hDLL, IDD_EDITOR_PG3, EdPg3Proc};
-		SendMessage (hEditor, WM_SCNEDITOR, SE_ADDPAGEBUTTON, (LPARAM)&eps3);
+		ScnEditorMsg (hEditor, SE_ADDPAGEBUTTON, (LPARAM)&eps3);
 	}
 }
 
@@ -1971,37 +1974,33 @@ DLLCLBK void secInit (HWND hEditor, OBJHANDLE hVessel)
 // ==============================================================
 
 #ifdef UNDEF
-INT_PTR CALLBACK Damage_DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void Damage_DlgProc (QWidget *hWnd, void *context)
 {
-	DeltaGlider *dg = (uMsg == WM_INITDIALOG ? (DeltaGlider*)lParam : (DeltaGlider*)oapiGetDialogContext (hWnd));
+	DeltaGlider *dg = (DeltaGlider*)context;
 	// pointer to vessel instance was passed as dialog context
 
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		return FALSE;
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd, dg](int id, int code, QWidget *hCtrl) {
+		switch (id) {
 		case IDCANCEL:
 			oapiCloseDialog (hWnd);
-			return TRUE;
+			return;
 		case IDC_REPAIR:
 			dg->RepairDamage();
-			return 0;
+			return;
 		}
-		break;
-	}
-	return oapiDefDialogProc (hWnd, uMsg, wParam, lParam);
+	});
 }
 
-void UpdateDamageDialog (DeltaGlider *dg, HWND hWnd)
+void UpdateDamageDialog (DeltaGlider *dg, QWidget *hWnd)
 {
 	if (!hWnd) hWnd = oapiFindDialog (g_Param.hDLL, IDD_DAMAGE);
 	if (!hWnd) return;
 
 	char cbuf[16];
 	snprintf (cbuf, sizeof(cbuf) - 1, "%0.0f %%", dg->lwingstatus*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_LEFTWING_STATUS), cbuf);
+	oapiSetDlgItemText (hWnd, IDC_LEFTWING_STATUS, cbuf);
 	snprintf (cbuf, sizeof(cbuf) - 1, "%0.0f %%", dg->rwingstatus*100.0);
-	SetWindowText (GetDlgItem (hWnd, IDC_RIGHTWING_STATUS), cbuf);
+	oapiSetDlgItemText (hWnd, IDC_RIGHTWING_STATUS, cbuf);
 }
 #endif

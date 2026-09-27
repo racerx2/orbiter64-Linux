@@ -13,6 +13,7 @@
 
 #include "SolarSail.h"
 #include "meshres.h"
+#include <string.h>
 
 // ==============================================================
 // Some vessel parameters
@@ -407,12 +408,12 @@ DWORD SolarSail::sail_ntri = 0;
 // Global initialisation
 // --------------------------------------------------------------
 
-DLLCLBK void InitModule (HINSTANCE hModule)
+DLLCLBK void InitModule (void *hModule)
 {
 	SolarSail::GlobalSetup();
 }
 
-DLLCLBK void ExitModule (HINSTANCE hModule)
+DLLCLBK void ExitModule (void *hModule)
 {
 	for (int i = 0; i < 4; i++) {
 		delete []SolarSail::sail_idx[i];

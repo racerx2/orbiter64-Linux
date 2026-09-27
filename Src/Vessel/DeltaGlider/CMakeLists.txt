@@ -38,8 +38,8 @@ add_library(DeltaGlider SHARED
 	InstrVs.cpp
 	MomentInd.cpp
 	# Resources
-	DeltaGlider.rc
 )
+orbiter_rc_resources(DeltaGlider DeltaGlider.rc)
 
 set_target_properties(DeltaGlider
 	PROPERTIES
@@ -129,7 +129,7 @@ set_target_properties(DeltaGlider_Prerequisites
 
 # Installation
 install(TARGETS DeltaGlider
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

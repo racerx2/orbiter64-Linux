@@ -33,8 +33,8 @@ target_link_libraries(${VESSEL_NAME}
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
 	${ORBITER_DLGCTRL_LIB}
-	UxTheme.lib
-	$<TARGET_LINKER_FILE:Atlantis_Tank>
+	# UxTheme.lib left out: Windows visual styles library
+	Atlantis_Tank # not upstream: by target name, CMake turns a path to a prefix-less .so into -l<name>
 	imgui
 )
 
@@ -94,7 +94,7 @@ set_target_properties(${VESSEL_NAME}_Prerequisites
 
 # Installation
 install(TARGETS ${VESSEL_NAME}
-	RUNTIME
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_MODULE_DIR}
 )
 install(DIRECTORY ${CONFIG_SOURCE_DIR}/

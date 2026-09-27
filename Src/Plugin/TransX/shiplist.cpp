@@ -18,12 +18,13 @@
 ** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ** THE SOFTWARE.*/
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 
-#include <windows.h>
+// windows.h left out: the Win32 types come from OrbiterPlatform.h
+#include <cstring> // str* functions (windows.h brought in string.h)
 #include <cstdio>
 #include <cmath>
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
 #include "parser.h"
 #include "mapfunction.h"
 #include "shiplist.h"
@@ -35,7 +36,7 @@ bool shipptrs::saved=false;
 shipptrs::shipptrs()
 {
 	OBJHANDLE hcraft=oapiGetFocusObject();//Sets up new shipptrs for focus object
-	ZeroMemory(shipname, SHIPNAME_LENGTH);
+	memset(shipname, 0, SHIPNAME_LENGTH);
 	oapiGetObjectName(hcraft,shipname,SHIPNAME_LENGTH - 1); // Why is this -1?
 	subcreate();
 	state=new transxstate(hcraft,this);//A new plan base for this vessel
@@ -43,7 +44,7 @@ shipptrs::shipptrs()
 
 shipptrs::shipptrs(OBJHANDLE hcraft)
 {
-	ZeroMemory(shipname, SHIPNAME_LENGTH);
+	memset(shipname, 0, SHIPNAME_LENGTH);
 	oapiGetObjectName(hcraft,shipname,SHIPNAME_LENGTH - 1);
 	state=new transxstate(hcraft,this);//A new plan base for this vessel
 	subcreate();

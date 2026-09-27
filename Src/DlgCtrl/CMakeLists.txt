@@ -26,7 +26,7 @@ set_target_properties(DlgCtrl
 add_custom_command(TARGET DlgCtrl
 	POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
-	COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_DLGCTRL_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/ 
+	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:DlgCtrl> ${ORBITER_BINARY_SDK_DIR}/lib/ 
 )
 
 # Installation to SDK lib dir for inclusion by addons

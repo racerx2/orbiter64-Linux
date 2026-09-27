@@ -5,7 +5,7 @@
 #ifndef __linux__
 #include <htmlhelp.h>
 #else // __linux__
-#include "HtmlHelp.h"
+#include "ChmHelp.h"
 #endif // __linux__
 #include <stdio.h>
 #ifdef __linux__

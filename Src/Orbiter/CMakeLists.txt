@@ -174,7 +174,7 @@ set(common_src
 	DlgRecorder.cpp
 	DlgTacc.cpp
 	htmlctrl.cpp
-	HtmlHelp.cpp
+	ChmHelp.cpp
 	ResDialog.cpp
 	Select.cpp
 	OptionsPages.cpp

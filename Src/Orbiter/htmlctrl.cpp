@@ -2,7 +2,7 @@
 // Upstream embedded the Internet Explorer OLE browser object; QTextBrowser renders the pages here.
 
 #include "htmlctrl.h"
-#include "HtmlHelp.h"
+#include "ChmHelp.h"
 #include "OrbiterResource.h"
 #include <QFileInfo>
 #include <QTextBrowser>

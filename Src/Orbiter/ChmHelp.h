@@ -1,7 +1,7 @@
 // not upstream: HtmlHelp API and .chm reader; a .chm here is a zip of the project's pages (cmake/hhc.py)
 
-#ifndef __HTMLHELP_H
-#define __HTMLHELP_H
+#ifndef __CHMHELP_H
+#define __CHMHELP_H
 
 #include <QTextBrowser>
 #include <QUrl>
@@ -40,4 +40,4 @@ private:
 	int pctWidth = 0;                                // page width they were fitted to
 };
 
-#endif // !__HTMLHELP_H
+#endif // !__CHMHELP_H

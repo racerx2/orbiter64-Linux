@@ -9,7 +9,7 @@
 #include <htmlhelp.h>
 #include <io.h>
 #else // __linux__
-#include "HtmlHelp.h"
+#include "ChmHelp.h"
 #endif // __linux__
 #include "imgui.h"
 

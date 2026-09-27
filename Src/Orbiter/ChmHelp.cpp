@@ -1,6 +1,6 @@
 // not upstream: help viewer for Orbiter's HTML help projects (stands in for the HtmlHelp API and the .chm reader)
 
-#include "HtmlHelp.h"
+#include "ChmHelp.h"
 #include "OrbiterAPI.h"
 #include <QDesktopServices>
 #include <QFile>

@@ -706,7 +706,8 @@ QWindow *Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 		if(pState->SplashScreen())
 			gclient->clbkSetSplashScreen(pState->SplashScreen(), pState->SplashColor());
 		hRenderWnd = gclient->InitRenderWnd (gclient->clbkCreateRenderWindow());
-		hRenderWnd->setMinimumSize (QSize (100, 100)); // WM_GETMINMAXINFO
+		if (hRenderWnd->minimumSize() != hRenderWnd->maximumSize()) // WM_GETMINMAXINFO: the tracking size, which a fixed-size window doesn't have
+			hRenderWnd->setMinimumSize (QSize (100, 100));
 		GetRenderParameters ();
 	} else {
 		hRenderWnd = NULL;

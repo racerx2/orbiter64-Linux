@@ -23,6 +23,8 @@
 #include <QImageReader>
 #include <QBuffer>
 #include <QPainter>
+#include <QCoreApplication>
+#include <QElapsedTimer>
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -281,8 +283,19 @@ QWindow *GraphicsClient::clbkCreateRenderWindow ()
 		hWnd->showFullScreen (); // the Direct3D client resized a 10x10 dummy popup; Qt shows the window fullscreen directly
 	} else {
 		qreal dpr = (hWnd->screen() ? hWnd->screen()->devicePixelRatio() : 1.0); // winw/winh are device pixels
-		hWnd->resize ((int)(VideoData.winw/dpr), (int)(VideoData.winh/dpr));
+		QSize size ((int)(VideoData.winw/dpr), (int)(VideoData.winh/dpr));
+		hWnd->setFlags (Qt::Window | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint); // WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU
+		hWnd->resize (size);
+		hWnd->setMinimumSize (size); // no WS_THICKFRAME: a fixed size
+		hWnd->setMaximumSize (size);
 		hWnd->show ();
+		// not upstream: CreateWindow returns with the final size; a Wayland compositor decides it in its first configure (KWin fits it to the work area)
+		QElapsedTimer t;
+		t.start ();
+		while (!hWnd->isExposed() && t.elapsed() < 1000)
+			QCoreApplication::processEvents (QEventLoop::ExcludeUserInputEvents, 20);
+		hWnd->setMinimumSize (hWnd->size());
+		hWnd->setMaximumSize (hWnd->size());
 	}
 	return hWnd;
 }

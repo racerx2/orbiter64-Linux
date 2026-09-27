@@ -35,6 +35,7 @@ static DWORD WINAPI InputProc(LPVOID);
 static INT_PTR CALLBACK ServerDlgProc(HWND, UINT, WPARAM, LPARAM);
 #else // __linux__
 static void InputProc(std::atomic<bool>* stop);
+static void ConsoleLine(const char* line);
 static void ServerDlgProc(QWidget* hDlg, void* context);
 #endif // __linux__
 static void ConsoleOut(const char* msg);
@@ -80,7 +81,9 @@ orbiter::ConsoleNG::ConsoleNG(Orbiter* pOrbiter)
         printf("\033]0;%s\007", title); // SetConsoleTitle
         fflush(stdout);
     }
-    // GetConsoleWindow/DeleteMenu(SC_CLOSE) left out: the terminal is not an Orbiter window
+    ConsoleManager::SetConsoleTitle(title);
+    m_hWnd = ConsoleManager::ConsoleWindow(); // NULL on a terminal; Orbiter's console window has no close button
+    ConsoleManager::SetConsoleInput(&ConsoleLine);
     m_thread = std::thread(InputProc, &m_stop);
     s_hStdO = stdout;
 #endif // __linux__
@@ -99,6 +102,7 @@ orbiter::ConsoleNG::~ConsoleNG()
 		CloseHandle(hMutex);
 		hMutex = 0;
 #else // __linux__
+	ConsoleManager::SetConsoleInput(NULL);
 	m_stop = true; // the thread polls stdin and exits within 200 ms
 	if (m_thread.joinable())
 		m_thread.join();
@@ -392,7 +396,7 @@ bool orbiter::ConsoleNG::ParseCmd()
 #else // __linux__
 	else if (!strncasecmp(cmd, "gui", 3)) {
 		if (!DestroyStatDlg()) {
-			m_hStatWnd = oapiCreateResDialog(m_pOrbiter->GetInstance(), IDD_SERVER, NULL);
+			m_hStatWnd = oapiCreateResDialog(m_pOrbiter->GetInstance(), IDD_SERVER, NULL, m_hWnd);
 			if (m_hStatWnd)
 				ServerDlgProc(m_hStatWnd, this);
 		}
@@ -562,6 +566,16 @@ void InputProc(std::atomic<bool>* stop)
 #endif // !__linux__
 }
 
+#ifdef __linux__
+// ReadConsole from Orbiter's console window: one typed line, on the GUI thread
+void ConsoleLine(const char* line)
+{
+	std::lock_guard<std::mutex> lock(hMutex);
+	cConsoleCmd[0] = 'x';
+	snprintf(cConsoleCmd + 1, sizeof(cConsoleCmd) - 1, "%s", line);
+}
+
+#endif // __linux__
 #ifndef __linux__
 INT_PTR CALLBACK ServerDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 #else // __linux__
@@ -636,6 +650,8 @@ void ConsoleOut(const char* msg)
 	SetConsoleTextAttribute(s_hStdO, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
 	WriteConsole(s_hStdO, "\n> ", 3, &count, NULL);
 #else // __linux__
+	if (ConsoleManager::WriteConsole(msg)) // Orbiter's console window
+		return;
 	ConsoleColour(s_hStdO, false);
 	fputc('\r', s_hStdO); // cursor to column 0
 	fputs(msg, s_hStdO);

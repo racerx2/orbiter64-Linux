@@ -30,6 +30,7 @@
 // zmouse.h left out: WM_MOUSEWHEEL is in OrbiterPlatform.h
 #include <QCursor>
 #include <QWindow>
+#include "WlPointer.h"
 #endif // __linux__
 
 using namespace std;
@@ -148,6 +149,7 @@ void Camera::UpdateMouse ()
 	POINT pt;
 	GetCursorPos (&pt);
 #else // __linux__
+	WlPointerDispatch ();
 	QPoint gpt = QCursor::pos (); // GetCursorPos
 	POINT pt = { gpt.x(), gpt.y() };
 #endif // __linux__
@@ -171,8 +173,12 @@ void Camera::UpdateMouse ()
 #ifndef __linux__
 		SetCursorPos (x0-dx, y0-dy);
 #else // __linux__
-		qreal dpr = (hWnd ? hWnd->devicePixelRatio() : 1.0);
-		QCursor::setPos (x0-qRound(dx/dpr), y0-qRound(dy/dpr)); // SetCursorPos; Wayland ignores it
+		if (WlPointerLocked ())
+			WlPointerMotion (dx, dy); // Wayland moves no pointer: it stays locked, the motion comes relative
+		else {
+			qreal dpr = (hWnd ? hWnd->devicePixelRatio() : 1.0);
+			QCursor::setPos (x0-qRound(dx/dpr), y0-qRound(dy/dpr)); // SetCursorPos
+		}
 #endif // __linux__
 		if (!(dx || dy)) return;
 

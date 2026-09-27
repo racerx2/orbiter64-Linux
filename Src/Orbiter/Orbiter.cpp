@@ -74,6 +74,8 @@
 #include <QThread>
 #include <QIcon>
 #include <QImage>
+#include "WlPointer.h"
+#include "SleepWatch.h"
 #endif // __linux__
 #include <filesystem>
 
@@ -291,6 +293,9 @@ int main (int argc, char *argv[])
     
     SetEnvironmentVars();
 	g_pOrbiter = new Orbiter; // application instance
+#ifdef __linux__
+	new SleepWatch (qApp); // WM_POWERBROADCAST
+#endif // __linux__
 
 	// Parse command line
 #ifndef __linux__
@@ -995,6 +1000,9 @@ QWindow *Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	if (gclient) {
 		if(pState->SplashScreen())
 			gclient->clbkSetSplashScreen(pState->SplashScreen(), pState->SplashColor());
+#ifdef __linux__
+		WlPointerAttach ();
+#endif // __linux__
 		hRenderWnd = gclient->InitRenderWnd (gclient->clbkCreateRenderWindow());
 #ifdef __linux__
 		if (hRenderWnd->minimumSize() != hRenderWnd->maximumSize()) // WM_GETMINMAXINFO: the tracking size, which a fixed-size window doesn't have
@@ -1240,6 +1248,9 @@ void Orbiter::CloseSession ()
 			it->pModule->clbkSimulationEnd();
 
 		hRenderWnd = NULL;
+#ifdef __linux__
+		WlPointerDetach ();
+#endif // __linux__
 		pDI->DestroyDevices();
 		pDI->SetRenderWindow(NULL);
 
@@ -1584,6 +1595,7 @@ void Orbiter::InitRotationMode ()
 #else // __linux__
 	// SetCapture + ClipCursor: the grab delivers the button up anywhere; Camera::UpdateMouse warps the cursor back
 	if (hRenderWnd) hRenderWnd->setMouseGrabEnabled (true);
+	WlPointerLock (hRenderWnd); // Wayland: no warp holds the pointer, a pointer lock does
 #endif // __linux__
 }
 
@@ -1594,6 +1606,7 @@ void Orbiter::ExitRotationMode ()
 	ReleaseCapture ();
 #else // __linux__
 	if (hRenderWnd) hRenderWnd->setMouseGrabEnabled (false); // ReleaseCapture, ClipCursor (NULL)
+	WlPointerUnlock ();
 #endif // __linux__
 
 	// Checks if the cursor is already hidden
@@ -3354,7 +3367,7 @@ bool Orbiter::MsgProc (QWindow *hWnd, QEvent *event)
         break;
 #else // __linux__
 	// WM_GETMINMAXINFO: the minimum size is set on the window in CreateRenderWindow
-	// WM_POWERBROADCAST left out: Qt delivers no suspend/resume notice (logind's PrepareForSleep would be the source)
+	// WM_POWERBROADCAST: SleepWatch (logind PrepareForSleep) calls Freeze
 	// WM_COMMAND (SC_MONITORPOWER, IDM_EXIT) and WM_NCHITTEST left out: the render window has no menu or system commands
 #endif // __linux__
 

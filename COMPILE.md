@@ -123,11 +123,13 @@ Ubuntu/Debian package names; other distros have the same libraries under their o
 - Build tools: `cmake` (3.26+), `ninja-build`, `g++` (C++20), `git`, `pkg-config`
 - Graphics: `libvulkan-dev`, `vulkan-validationlayers`, `glslang-tools` (glslangValidator)
 - Windows and dialogs: `qt6-base-dev`
+- Mouse look on Wayland (pointer lock): `libwayland-dev`, `wayland-protocols`
 - Sound: `libpipewire-0.3-dev`
 - Text: `libfreetype-dev`
 
 Lua 5.1, zlib 1.2.11, Dear ImGui, ImPlot and Tracy are fetched by CMake at the same tags
-upstream uses; Catch2 is v3.8.1.
+upstream uses; Catch2 is v3.8.1. XRSound's decoders (stb_vorbis, dr_mp3, dr_flac, libxmp-lite
+for tracker modules) are fetched by CMake too.
 
 If you want to build the Orbiter documentation (`-DORBITER_MAKE_DOC=ON`), you need LaTeX:
 `texlive-latex-extra`, `texlive-fonts-recommended`, `texlive-fonts-extra`, `texlive-science`,

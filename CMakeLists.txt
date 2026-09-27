@@ -158,7 +158,7 @@ set(Qt5_x64_DIR
 )
 else() # Linux port
 # Qt6 replaces the Qt5_x64 lookup and also carries the Launchpad and dialogs
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets DBus)
 endif() # WIN32
 
 if(WIN32) # Windows: upstream

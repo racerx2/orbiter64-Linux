@@ -234,6 +234,8 @@ set(common_src
 	Memstat.cpp
 	Util.cpp
 	PathResolve.cpp
+	SleepWatch.cpp
+	WlPointer.cpp
 	ZTreeMgr.cpp
 # ImGui platform backend
 	imgui_impl_qt.cpp
@@ -278,6 +280,7 @@ set(Orbiter_common_libs
 	Orbitersdk
 	DlgCtrl
 	Qt6::Widgets
+	Qt6::DBus
 	${CMAKE_DL_LIBS}
 )
 endif() # WIN32
@@ -302,6 +305,23 @@ add_executable(Orbiter ${common_src})
 if(NOT WIN32) # Linux port
 # the dialog templates, bitmaps, icons and strings of Orbiter.rc as a C++ resource table
 orbiter_rc_resources(Orbiter Orbiter.rc EXE SYMBOL OrbiterResources)
+
+# WlPointer.cpp: client code of the Wayland pointer-constraints and relative-pointer protocols
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+foreach(proto pointer-constraints relative-pointer)
+	set(xml ${WAYLAND_PROTOCOLS_DIR}/unstable/${proto}/${proto}-unstable-v1.xml)
+	set(base ${CMAKE_CURRENT_BINARY_DIR}/${proto}-unstable-v1)
+	add_custom_command(OUTPUT ${base}-client-protocol.h ${base}-protocol.c
+		COMMAND ${WAYLAND_SCANNER} client-header ${xml} ${base}-client-protocol.h
+		COMMAND ${WAYLAND_SCANNER} private-code ${xml} ${base}-protocol.c
+		DEPENDS ${xml}
+	)
+	target_sources(Orbiter PRIVATE ${base}-client-protocol.h ${base}-protocol.c)
+endforeach()
+target_link_libraries(Orbiter PkgConfig::WAYLAND_CLIENT)
 
 endif() # NOT WIN32
 if(WIN32) # Windows: upstream

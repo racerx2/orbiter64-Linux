@@ -1,4 +1,5 @@
 #include "dlgelevconfig.h"
+#include "fitdialog.h"
 #include "ui_dlgElevConfig.h"
 #include "tileedit.h"
 
@@ -9,6 +10,7 @@ DlgElevConfig::DlgElevConfig(tileedit *parent, ElevDisplayParam &elevDisplayPara
 	, ui(new Ui::DlgElevConfig)
 {
 	ui->setupUi(this);
+	FitDialog(this); // not upstream: group boxes grow to fit this style and font
 	ui->comboColourmap->setCurrentIndex((int)m_tileedit->m_elevDisplayParam.cmName);
 	ui->checkWaterMask->setChecked(m_elevDisplayParam.useWaterMask);
 	ui->spinRangeMin->setValue(m_elevDisplayParam.rangeMin);

@@ -1,4 +1,5 @@
 #include "dlgelevimport.h"
+#include "fitdialog.h"
 #include "ui_dlgElevImport.h"
 #include "tileedit.h"
 #include "tileblock.h"
@@ -12,6 +13,7 @@ DlgElevImport::DlgElevImport(tileedit *parent)
 	, ui(new Ui::DlgElevImport)
 {
 	ui->setupUi(this);
+	FitDialog(this); // not upstream: group boxes grow to fit this style and font
 
 	connect(ui->pushOpenFileDialog, SIGNAL(clicked()), this, SLOT(onOpenFileDialog()));
 	connect(ui->pushOpenMetaFileDialog, SIGNAL(clicked()), this, SLOT(onOpenMetaFileDialog()));

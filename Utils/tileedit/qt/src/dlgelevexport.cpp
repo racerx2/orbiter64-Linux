@@ -1,4 +1,5 @@
 #include "dlgelevexport.h"
+#include "fitdialog.h"
 #include "ui_dlgElevExport.h"
 #include "tileedit.h"
 #include "tileblock.h"
@@ -14,6 +15,7 @@ DlgElevExport::DlgElevExport(tileedit *parent)
 	, ui(new Ui::DlgElevExport)
 {
 	ui->setupUi(this);
+	FitDialog(this); // not upstream: group boxes grow to fit this style and font
 
 	connect(ui->pushOpenFileDialog, SIGNAL(clicked()), this, SLOT(onOpenFileDialog()));
 	connect(ui->radioCurrentTiles, SIGNAL(clicked()), this, SLOT(onSelectCurrentTiles()));
@@ -251,6 +253,7 @@ DlgElevExportColorbar::DlgElevExportColorbar(QWidget *parent)
 {
 	m_paintDataRange = false;
 	m_vmin = m_vmax = m_dmin = m_dmax = 0.0;
+	setMinimumHeight(20); // not upstream: on Windows the bar took the group box's spare height; FitDialog sizes the box to its content
 }
 
 void DlgElevExportColorbar::setColorRange(double vmin, double vmax)

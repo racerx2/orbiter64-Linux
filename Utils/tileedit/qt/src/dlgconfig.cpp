@@ -1,4 +1,5 @@
 #include "dlgconfig.h"
+#include "fitdialog.h"
 #include "ui_dlgConfig.h"
 #include "tileedit.h"
 
@@ -8,6 +9,7 @@ DlgConfig::DlgConfig(tileedit *parent)
 	, ui(new Ui::DlgConfig)
 {
 	ui->setupUi(this);
+	FitDialog(this); // not upstream: group boxes grow to fit this style and font
 
 	DWORD flag = m_tileedit->m_openMode;
 	ui->comboLoadSequence->setCurrentIndex(flag == 1 ? 2 : flag == 2 ? 1 : 0);

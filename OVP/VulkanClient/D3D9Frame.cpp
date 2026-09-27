@@ -515,6 +515,7 @@ int CD3DFramework9::CreateWindowedMode()
 	VkImageUsageFlags u = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	if (!MultiSample) u |= VK_IMAGE_USAGE_SAMPLED_BIT;
 	pRenderTarget = new VkSurf(pDevice, dwRenderWidth, dwRenderHeight, VK_FORMAT_B8G8R8A8_UNORM, u, s);
+	pRenderTarget->tex->SetSwizzle(VkSwizzleMap(SWZ_NOALPHA)); // D3DFMT_X8R8G8B8: same meaning as the surfaces clbkCreateSurfaceEx makes without alpha
 	pDepthStencil = new VkSurf(pDevice, dwRenderWidth, dwRenderHeight, dwZBufferBitDepth == 24 ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, s);
 	if (MultiSample) pResolve = new VkSurf(pDevice, dwRenderWidth, dwRenderHeight, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 	pBackBuffer = (SURFHANDLE) new SurfNative(pRenderTarget, OAPISURFACE_BACKBUFFER | OAPISURFACE_RENDER3D | OAPISURFACE_RENDERTARGET, pDepthStencil);

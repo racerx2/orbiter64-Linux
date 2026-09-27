@@ -169,7 +169,7 @@ OutputVS Sketch3DVS(InputVS v)
 	float fSide = round(v.fnc[SSW] * 2.0 - 1.0);
 	float fPosD = dot(posN, posW);
 
-	posW += latN * (fSide * fPosD * gFov);
+	if (fSide != 0.0) posW += latN * (fSide * fPosD * gFov); // not upstream: D3D9 multiplies NaN by 0 to 0, GLSL keeps the NaN of a zero-length normalize
 	
 	outVS.color.rgba = v.clr.bgra;
 	outVS.posW = vec4(posW, fPosD);
@@ -223,7 +223,7 @@ OutputVS OrthoVS(InputVS v)
 		vec2 prvS = normalize(posH.xy - prvH.xy);
 		vec2 latW = normalize(nxtS + prvS) * (0.45*gWidth.x) * inversesqrt(max(0.1, 0.5f + dot(nxtS, prvS)*0.5f));
 
-		posH += vec4(latW.y, -latW.x, 0, 0) * gTarget * fSide;
+		if (fSide != 0.0) posH += vec4(latW.y, -latW.x, 0, 0) * gTarget * fSide; // not upstream: D3D9 multiplies NaN by 0 to 0, GLSL keeps the NaN of a zero-length normalize
 	}
 
 	// not upstream: pen vertices lie on D3D9's integer pixel centres, Vulkan's are at .5 (the fills dropped their -0.5 instead)

@@ -50,7 +50,7 @@ DLLCLBK void InitModule (void *hDLL)
 	// To allow the user to open our new dialog box, we create
 	// an entry in the "Custom Functions" list which is accessed
 	// in Orbiter via Ctrl-F4.
-	g_dwCmd = oapiRegisterCustomCmd ((char*)"DX9 External MFD",
+	g_dwCmd = oapiRegisterCustomCmd ((char*)"Vulkan External MFD", // not upstream: Vulkan in place of DX9
 		(char*)"Opens a multifunctional display in an external window",
 		OpenDlgClbk, NULL);
 

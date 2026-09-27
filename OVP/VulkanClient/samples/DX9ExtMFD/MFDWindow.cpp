@@ -102,8 +102,8 @@ void MFDWindow::SetVessel (OBJHANDLE hV)
 
 void MFDWindow::SetTitle ()
 {
-	char cbuf[256] = "DX9 MFD [";
-	oapiGetObjectName (hVessel, cbuf+9, 200);
+	char cbuf[256] = "Vulkan MFD ["; // not upstream: Vulkan in place of DX9
+	oapiGetObjectName (hVessel, cbuf+12, 200);
 	strncat (cbuf, "]", 250 - strlen (cbuf) - 1);
 	oapiSetDlgText (hDlg, cbuf);		//<<--- Very odd runtime check failure here why now ???  :jarmonik 5-Aug-2021
 }
@@ -166,6 +166,7 @@ void MFDWindow::Resize()
 	DH = DW = ds;
 
 	PlaceWindow(hDsp, BW + gap * 2, gap, ds, ds);
+	DisplayWindow(hDsp)->resize(ds, ds); // not upstream: SetWindowPos sized the child window at once, the container passes its size on only with a later resize event (the swap chain was 1x1)
 	
 	int x1 = gap;
 	int x2 = r.right-gap-BW;

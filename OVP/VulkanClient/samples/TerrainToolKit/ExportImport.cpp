@@ -169,7 +169,7 @@ void ToolKit::BakeImport()
 	int nTiles = selection.area.size();
 	nTiles += (nTiles / 2 + nTiles / 4 + nTiles / 8);
 	
-	hProgDlg = oapiCreateResDialog(hModule, IDD_PROGRESS, NULL); gDlgProc(hProgDlg, 0); // CreateDialogParamA (owner: the render window, a QWindow)
+	hProgDlg = oapiCreateResDialog(hModule, IDD_PROGRESS, NULL, hAppMainWnd); gDlgProc(hProgDlg, 0); // CreateDialogParamA
 	DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setRange(0, nTiles); // PBM_SETRANGE
 	DlgItem<QProgressBar>(hProgDlg, IDC_PROGBAR)->setValue(0); // PBM_SETPOS
 

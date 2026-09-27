@@ -39,6 +39,7 @@
 #include "VkTexFile.h"
 #include <filesystem>
 #include <QMessageBox>
+#include <QWindow>
 
 using namespace oapi;
 
@@ -531,7 +532,10 @@ vPlanet::vPlanet (OBJHANDLE _hObj, const Scene *scene) :
 		snprintf(msg, sizeof(msg), "[WARNING] Surface textures are missing for %s", GetName());
 		if (vss && (vss->GetGravityRef() == hObj)) {
 			oapiWriteLog(msg);
-			QMessageBox::warning(NULL, "Warning", msg); // owner: the render window is a QWindow
+			QMessageBox box(QMessageBox::Warning, "Warning", msg, QMessageBox::Ok);
+			box.winId();
+			if (box.windowHandle()) box.windowHandle()->setTransientParent(GetClient()->GetWindow()); // owner: the render window, a QWindow
+			box.exec();
 		}
 		else oapiWriteLog(msg);
 	}

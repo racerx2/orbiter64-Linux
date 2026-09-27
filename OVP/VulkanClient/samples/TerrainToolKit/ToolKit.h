@@ -50,7 +50,7 @@ struct selentry {
 
 // not upstream: the OPENFILENAMEA fields used here, for the QFileDialog counterparts of GetOpenFileNameA/GetSaveFileNameA
 struct FileDlgSpec {
-	QWindow *hwndOwner;			// not a widget: the dialogs open without a parent
+	QWindow *hwndOwner;			// not a widget: the dialogs take it as their transient parent
 	char *lpstrFile;			// path (in and out)
 	DWORD nMaxFile;
 	char *lpstrFileTitle;		// file name without its folder (out)

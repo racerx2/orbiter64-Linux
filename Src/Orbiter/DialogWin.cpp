@@ -98,7 +98,7 @@ QWidget *DialogWin::OpenWindow ()
 	if (gc) gc->clbkPreOpenPopup();
 
 	if (!hWnd) { // otherwise window exists already
-		hWnd = oapiCreateResDialog (hInst, resId, NULL);
+		hWnd = oapiCreateResDialog (hInst, resId, NULL, hPrnt);
 		if (!hWnd) {
 			LOGOUT_ERR ("Dialog resource %d not found", resId);
 			dlg_create = 0;
@@ -109,10 +109,6 @@ QWidget *DialogWin::OpenWindow ()
 	hWnd->setProperty ("DialogWin", QVariant::fromValue ((void*)this)); // DWLP_USER
 	if (!events) events = new DialogEvents (hWnd);
 	if (newwin) {
-		if (hPrnt) { // owned by the render window
-			hWnd->winId();
-			if (hWnd->windowHandle()) hWnd->windowHandle()->setTransientParent (hPrnt);
-		}
 		// WM_INITDIALOG
 		if (dlgproc) dlgproc (hWnd, context);
 		else OnInitDialog (hWnd, context);

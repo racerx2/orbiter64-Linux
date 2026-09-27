@@ -116,8 +116,8 @@ OAPIFUNC const RESDATA *oapiFindResData (void *hModule, const char *type, int re
 // returns the number of bytes copied, 0 if there is no such string
 OAPIFUNC int oapiLoadResString (void *hModule, int id, char *buf, int buflen);
 
-// builds the Qt widgets of a dialog template (CreateDialogParam counterpart, without the message procedure)
-OAPIFUNC QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent);
+// builds the Qt widgets of a dialog template (CreateDialogParam counterpart, without the message procedure); owner: hWndParent of a popup
+OAPIFUNC QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent, QWindow *owner = nullptr);
 
 // LoadMenu + SetMenu counterpart (also used for a template's MENU statement): bar on top, window grows; items reach oapiConnectDlgCommands
 OAPIFUNC QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hWnd);

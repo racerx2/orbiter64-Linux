@@ -40,6 +40,7 @@
 #include <QTextEdit>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QWindow>
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -851,7 +852,7 @@ QMenuBar *oapiCreateResMenu (void *hModule, int resId, QWidget *hWnd)
 	return bar;
 }
 
-QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
+QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent, QWindow *owner)
 {
 	using namespace rs;
 	const RESDIALOG *d = oapiFindResDialog (hModule, resId);
@@ -913,8 +914,8 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
 	if (popup) {
 		dlg->resize (size);
 		if (!(d->style & WS_THICKFRAME)) dlg->setFixedSize (size);
-		QWidget *owner = parent ? parent->window() : nullptr;
-		QRect area = owner ? owner->geometry() : (QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->availableGeometry() : QRect (0, 0, 1920, 1080));
+		QWidget *top = parent ? parent->window() : nullptr;
+		QRect area = top ? top->geometry() : (QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->availableGeometry() : QRect (0, 0, 1920, 1080));
 		if (d->style & DS_CENTER) dlg->move (area.center() - QPoint (size.width()/2, size.height()/2));
 		else dlg->move (area.topLeft() + QPoint (px(d->x), py(d->y)));
 	} else {
@@ -923,6 +924,10 @@ QWidget *oapiCreateResDialog (void *hModule, int resId, QWidget *parent)
 	FitLabels (dlg, ctl);
 	if (d->menu >= 0) oapiCreateResMenu (hModule, d->menu, dlg);
 	if (d->style & WS_DISABLED) dlg->setEnabled (false);
+	if (owner && popup) { // hWndParent: the owner is known before WS_VISIBLE shows the window (Wayland takes it only at the first show)
+		dlg->winId();
+		if (dlg->windowHandle()) dlg->windowHandle()->setTransientParent (owner);
+	}
 	if (d->style & WS_VISIBLE) dlg->show();
 	return dlg;
 }

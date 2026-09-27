@@ -37,8 +37,7 @@ set(Sources
 	${SAMPLES_SRC_DIR}/Common/Vessel/Instrument.cpp
 	InstrVs.cpp
 	MomentInd.cpp
-	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.cpp
-	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.cpp
+	# Common/Dialog/Graph.cpp and TabDlg.cpp left out: not installed, the DeltaGlider no longer uses them
 )
 
 set(Headers
@@ -69,12 +68,10 @@ set(Headers
 	${SAMPLES_SRC_DIR}/Common/Vessel/Instrument.h
 	InstrVs.h
 	MomentInd.h
-	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.h
-	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.h
+	# Common/Dialog/Graph.h and TabDlg.h left out: not installed, the DeltaGlider no longer uses them
 	resource.h
 )
 set(Other
-	DeltaGlider.rc
 	${MESH_DIR}/deltaglider.msh
 	${MESH_DIR}/deltaglider_vc.msh
 	${MESH_DIR}/dg_2dpanel0.msh
@@ -92,6 +89,7 @@ add_library(${PRJ} SHARED
     ${APIHeaders}
 	${Other}
 )
+orbiter_rc_resources(${PRJ} DeltaGlider.rc)
 
 
 # Execute Mesh Compiler ------------------------------
@@ -128,8 +126,8 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
 	FOLDER DeltaGlider
 )
 

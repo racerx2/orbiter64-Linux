@@ -15,7 +15,6 @@ set(Headers
 	resource.h
 )
 set(Other
-	MFDTemplate.rc
 )
 	
 source_group(APIHeaders FILES ${APIHeaders})
@@ -29,13 +28,14 @@ add_library(${PRJ} SHARED
     ${APIHeaders}
 	${Other}
 )
+orbiter_rc_resources(${PRJ} MFDTemplate.rc)
 
 target_link_libraries(${PRJ} debug ${DebugLib})
 target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
 	FOLDER Template
 )

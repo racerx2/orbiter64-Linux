@@ -8,19 +8,19 @@
 set(PRJ LuaConsole)
 
 set(Sources
-	ConsoleCfg.cpp
+	# ConsoleCfg.cpp left out: not installed, LuaConsole no longer has it
 	ConsoleInterpreter.cpp
 	LuaConsole.cpp
 )
 
 set(Headers
-	ConsoleCfg.cpp
+	# ConsoleCfg.cpp left out: not installed, LuaConsole no longer has it
 	ConsoleInterpreter.cpp
 	LuaConsole.cpp
-	resource.h
+	# resource.h left out: not installed, LuaConsole no longer has resources
 )
 set(Other
-	LuaConsole.rc
+	# LuaConsole.rc left out: not installed, LuaConsole no longer has resources
 )
 	
 source_group(APIHeaders FILES ${APIHeaders})
@@ -40,7 +40,7 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
 	FOLDER Misc
 )

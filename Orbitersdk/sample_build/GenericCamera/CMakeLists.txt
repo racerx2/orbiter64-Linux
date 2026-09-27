@@ -16,7 +16,6 @@ set(Headers
 	Shell.h
 )
 set(Other
-	GenericCamera.rc
 )
 	
 source_group(APIHeaders FILES ${APIHeaders})
@@ -30,6 +29,7 @@ add_library(${PRJ} SHARED
     ${APIHeaders}
 	${Other}
 )
+orbiter_rc_resources(${PRJ} GenericCamera.rc)
 
 target_link_libraries(${PRJ} debug ${DebugLib})
 target_link_libraries(${PRJ} optimized ${ReleaseLib})
@@ -38,7 +38,7 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PLUGIN_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PLUGIN_DIR}
 	FOLDER MFD
 )

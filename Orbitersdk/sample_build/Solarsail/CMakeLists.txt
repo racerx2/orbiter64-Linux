@@ -13,11 +13,11 @@ set(Sources
 )
 
 set(Headers
-	Solarsail.h
+	SolarSail.h # not upstream: the case of the installed file (Linux names are case sensitive)
 )
 
 set(Other
-	${MESH_DIR}/Solarsail.msh
+	${MESH_DIR}/SolarSail.msh # not upstream: the case of the installed file
 )
 
 
@@ -55,7 +55,7 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
 	FOLDER Vessel
 )

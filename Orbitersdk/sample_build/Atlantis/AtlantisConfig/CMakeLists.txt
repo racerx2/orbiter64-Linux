@@ -15,7 +15,6 @@ set(Headers
 	AC_resource.h
 )
 set(Other
-	AConfigurator.rc
 )
 	
 source_group(APIHeaders FILES ${APIHeaders})
@@ -29,6 +28,7 @@ add_library(${PRJ} SHARED
     ${APIHeaders}
 	${Other}
 )
+orbiter_rc_resources(${PRJ} AConfigurator.rc)
 
 target_link_libraries(${PRJ} debug ${DebugLib})
 target_link_libraries(${PRJ} optimized ${ReleaseLib})
@@ -37,7 +37,7 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib})
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${STARTUP_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${STARTUP_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${STARTUP_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${STARTUP_DIR}
 	FOLDER Atlantis
 )

@@ -13,26 +13,17 @@ set(Sources
 	Atlantis.cpp
 	PlBayOp.cpp
 	../Common.cpp
-	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.cpp
-	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.cpp
+	# Common/Dialog/Graph.cpp and TabDlg.cpp left out: not installed, Atlantis no longer uses them
 )
 
 set(Headers
 	AscentAP.h
 	Atlantis.h
 	PlBayOp.h
-	resource.h
-	${SAMPLES_SRC_DIR}/Common/Dialog/Graph.h
-	${SAMPLES_SRC_DIR}/Common/Dialog/TabDlg.h
+	# resource.h, Common/Dialog/Graph.h and TabDlg.h left out: not installed, Atlantis no longer uses them
 )
 set(Other
-	Atlantis.rc
-	down.ico
-	ico00001.ico
-	ico00002.ico
-	ico00003.ico
-	ico00004.ico
-	icon1.ico
+	# Atlantis.rc and its icons left out: not installed, Atlantis no longer has resources
 	${MESH_DIR}/Atlantis.msh
 	${MESH_DIR}/AtlantisVC.msh
 )
@@ -78,7 +69,7 @@ target_link_libraries(${PRJ} optimized ${ReleaseLib} Atlantis_Tank)
 
 set_target_properties(${PRJ}
 	PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
-	RUNTIME_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_DEBUG ${MODULE_DIR}
+	LIBRARY_OUTPUT_DIRECTORY_RELEASE ${MODULE_DIR}
 	FOLDER Atlantis
 )

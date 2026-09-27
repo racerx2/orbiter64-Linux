@@ -14,6 +14,8 @@ function(orbiter_rc_resources target rcfile)
 	get_filename_component(rcname ${rcfile} NAME_WE)
 	get_filename_component(rcdir ${rcabs} DIRECTORY)
 	set(out ${CMAKE_CURRENT_BINARY_DIR}/${rcname}_rc.cpp)
+	# next to this file, in the source tree and in the SDK sample build alike
+	set(rc2cpp ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/rc2cpp.py)
 	set(args)
 	if(RC_SYMBOL)
 		list(APPEND args --symbol ${RC_SYMBOL})
@@ -23,9 +25,9 @@ function(orbiter_rc_resources target rcfile)
 	endif()
 	add_custom_command(
 		OUTPUT ${out}
-		COMMAND ${Python3_EXECUTABLE} ${ORBITER_SOURCE_ROOT_DIR}/cmake/rc2cpp.py ${rcabs} ${out} ${args}
+		COMMAND ${Python3_EXECUTABLE} ${rc2cpp} ${rcabs} ${out} ${args}
 			--depfile ${out}.d -I ${rcdir} -I ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
-		DEPENDS ${rcabs} ${ORBITER_SOURCE_ROOT_DIR}/cmake/rc2cpp.py
+		DEPENDS ${rcabs} ${rc2cpp}
 		DEPFILE ${out}.d
 		COMMENT "Compiling resources ${rcname}.rc"
 		VERBATIM

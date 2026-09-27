@@ -11,7 +11,7 @@ License (see LICENSE file for details).
 The minimum hardware requirements needed by Orbiter are:
 RAM: 500 MB
 CPU: Dual Core
-GPU: 50 GFlops
+GPU: 50 GFlops, Vulkan 1.4 driver
 Disk: 5 GB of free space
 
 The recommended hardware requirements are:
@@ -22,10 +22,7 @@ Disk: 10 GB of free space (80 GB if you want hi-res textures)
 
 2. Orbiter installation
 -----------------------
-Create a new folder for the Orbiter installation, e.g. C:\Orbiter
-or \%HOMEPATH\%\Orbiter. Note that creating an Orbiter folder in
-Program files or Program files (x86) is not recommended, because
-Windows puts some restrictions on these locations.
+Create a new folder for the Orbiter installation, e.g. ~/Orbiter.
 
 If a previous version of Orbiter is already installed on your
 computer, you should not install the new version into the same
@@ -34,15 +31,16 @@ to keep your old installation until you have made sure that the
 latest version works without problems. Multiple Orbiter
 installations can exist on the same computer.
 
-Unzip the Orbiter ZIP installation package into the new folder,
-using either the default Windows unzip function, or an external
-tool like 7-zip or WinZip. Important: Take care to preserve the
-directory structure of the package (for example, in WinZip this
-requires to activate the "Use Folder Names" option).
+Unpack the Orbiter .tar.gz installation package into the new
+folder, using either your file manager's archive tool or
+tar -xzf OpenOrbiter-<version>-Linux.tar.gz -C ~/Orbiter
+Important: Take care to preserve the directory structure of the
+package. The Orbiter folder is OpenOrbiter-<version>-Linux/Orbiter
+inside it.
 
-After unzipping the package, make sure your Orbiter folder
-contains the executables (orbiter.exe and orbiter_ng.exe) and,
-among other files, the Config, Meshes, Scenarios and Textures
+After unpacking the package, make sure your Orbiter folder
+contains the executable (Orbiter), its launcher (OpenOrbiter)
+and, among other files, the Config, Meshes, Scenarios and Textures
 subfolders.
 
 To uninstall Orbiter, simply remove the Orbiter folders with
@@ -52,13 +50,12 @@ Orbiter from your hard drive.
 
 3. Launching Orbiter
 --------------------
-The Orbiter simulator can be launched either with a built-in
-graphics engine (orbiter.exe, with the red "Delta-glider" icon),
-or with an external graphics interface (orbiter_ng.exe, with
-the blue "Delta-glider" icon). The second option allows to
-connect to external graphics engines with enhanced features and
-performance. This requires downloading and installing 3rd party
-Orbiter graphics engines, or using the included D3D9Client plugin.
+The Orbiter simulator is launched with the OpenOrbiter launcher
+in the Orbiter folder (it starts the Orbiter executable from its
+own folder). Graphics come from the included VulkanClient plugin
+(a Vulkan 1.4 driver is required): select it as graphics engine
+on the Video tab of the Launchpad. Without a graphics engine,
+Orbiter runs in console mode.
 Once running, Orbiter will show you the "Launchpad" dialog, where
 you can select video options and simulation parameters.
 

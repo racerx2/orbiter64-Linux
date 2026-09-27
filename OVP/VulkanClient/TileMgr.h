@@ -251,7 +251,7 @@ public:
 	static bool ShutDown();
 	static void HoldThread(bool bHold);
 
-	static std::mutex hQueueMutex; // Tile loading queue access mutex
+	static std::recursive_mutex hQueueMutex; // Tile loading queue access mutex (recursive, as a Win32 mutex)
 
 private:
 	static std::thread hLoadThread; // LoadTile ThreadProc handle

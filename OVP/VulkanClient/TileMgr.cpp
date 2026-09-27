@@ -969,7 +969,7 @@ TileBuffer::TileBuffer (const oapi::D3D9Client *gclient)
 {
 	// Initialize statics
 	nqueue = queue_in = queue_out = 0;
-	// CreateMutex left out: hQueueMutex is a static std::mutex
+	// CreateMutex left out: hQueueMutex is a static std::recursive_mutex
 	hLoadThread = std::thread (LoadTile_ThreadProc, this); // CreateThread (2048 byte stack size left out)
 }
 
@@ -979,7 +979,7 @@ TileBuffer::~TileBuffer()
 {
 	LogAlw("=============== Deleting %u Tile Buffers =================",nbuf);
 
-	// CloseHandle(hQueueMutex) left out: std::mutex
+	// CloseHandle(hQueueMutex) left out: std::recursive_mutex
 
 	TerminateLoadThread();
 
@@ -1310,7 +1310,7 @@ bool TileBuffer::bHoldThread = false;
 int TileBuffer::nqueue = 0;
 int TileBuffer::queue_in = 0;
 int TileBuffer::queue_out = 0;
-std::mutex TileBuffer::hQueueMutex;
+std::recursive_mutex TileBuffer::hQueueMutex;
 std::thread TileBuffer::hLoadThread;
 std::atomic<bool> TileBuffer::hStopThread(false); // CreateEvent: auto-reset, not signalled
 struct TileBuffer::QUEUEDESC TileBuffer::loadqueue[MAXQUEUE] = {0};

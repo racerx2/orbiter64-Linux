@@ -258,7 +258,7 @@ private:
 	static int nqueue, queue_in, queue_out;
 	std::thread hLoadThread; // Load ThreadProc handle
 	std::atomic<bool> hStopThread; // Thread kill signal (event handle)
-	static std::mutex hLoadMutex;
+	static std::recursive_mutex hLoadMutex; // a Win32 mutex is recursive: Render holds it when PreDelete calls Unqueue
 	static DWORD Load_ThreadProc (void*);
 	int load_frequency;
 };

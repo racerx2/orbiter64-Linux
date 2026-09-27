@@ -831,7 +831,7 @@ VBMESH *Tile::CreateMesh_hemisphere (int grd, float *elev, double globelev)
 int TileLoader::nqueue = 0;
 int TileLoader::queue_in = 0;
 int TileLoader::queue_out = 0;
-std::mutex TileLoader::hLoadMutex;
+std::recursive_mutex TileLoader::hLoadMutex;
 struct TileLoader::QUEUEDESC TileLoader::queue[MAXQUEUE2] = {0};
 
 TileLoader::TileLoader (const oapi::D3D9Client *gclient)
@@ -841,7 +841,7 @@ TileLoader::TileLoader (const oapi::D3D9Client *gclient)
 {
 	// Initialize statics
 	nqueue = queue_in = queue_out = 0;
-	// CreateMutex left out: hLoadMutex is a static std::mutex
+	// CreateMutex left out: hLoadMutex is a static std::recursive_mutex
 	hLoadThread = std::thread (Load_ThreadProc, this); // CreateThread (32768 byte stack size left out)
 }
 
@@ -851,7 +851,7 @@ TileLoader::~TileLoader ()
 {
 	if (hLoadThread.joinable()) LogErr("TileLoader() Not Yet ShutDown()");
 	TerminateLoadThread();
-	// CloseHandle(hLoadMutex) left out: std::mutex
+	// CloseHandle(hLoadMutex) left out: std::recursive_mutex
 }
 
 // -----------------------------------------------------------------------

@@ -14,11 +14,13 @@
 // be used as a starting point for real applications.
 // ==============================================================
 
-#define STRICT 1
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "orbitersdk.h"
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "resource.h"
 #include <stdio.h>
+#include <QDialog>
 
 // ==============================================================
 // Some global parameters
@@ -31,7 +33,7 @@ class MyRootItem;
 class MyItem;
 
 struct {
-	HINSTANCE hInst;
+	void *hInst;
 	MyRootItem *root_item;
 	MyItem *sub_item;
 	double my_param;
@@ -61,9 +63,9 @@ public:
 	MyItem();
 	char *Name() { return "My sub-item"; }
 	char *Description() { return "This item is an example from the Orbiter SDK. It doesn't do anything useful, but provides a source example for developers on how to write Launchpad plugins."; }
-	bool clbkOpen (HWND hLaunchpad);
+	bool clbkOpen (QWidget *hLaunchpad);
 	int clbkWriteConfig ();
-	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+	static void DlgProc (QWidget*, void*);
 };
 
 MyItem::MyItem (): LaunchpadItem ()
@@ -76,10 +78,15 @@ MyItem::MyItem (): LaunchpadItem ()
 	oapiCloseFile (hFile, FILE_IN);
 }
 
-bool MyItem::clbkOpen (HWND hLaunchpad)
+bool MyItem::clbkOpen (QWidget *hLaunchpad)
 {
 	// respond to user double-clicking the item in the list
-	DialogBox (gParams.hInst, MAKEINTRESOURCE (IDD_MYPARAM), hLaunchpad, DlgProc);
+	QDialog *dlg = qobject_cast<QDialog*> (oapiCreateResDialog (gParams.hInst, IDD_MYPARAM, hLaunchpad)); // DialogBox
+	if (dlg) {
+		DlgProc (dlg, NULL);
+		dlg->exec();
+		delete dlg;
+	}
 	return true;
 }
 
@@ -92,38 +99,36 @@ int MyItem::clbkWriteConfig ()
 	return 0;
 }
 
-INT_PTR CALLBACK MyItem::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void MyItem::DlgProc (QWidget *hWnd, void *context)
 {
 	// the dialog message handler
 	char cbuf[32];
 
-	switch (uMsg) {
-	case WM_INITDIALOG: // display the current value
+	// WM_INITDIALOG: display the current value
 		sprintf (cbuf, "%f", gParams.my_param);
-		SetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf);
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+		oapiSetDlgItemText (hWnd, IDC_EDIT1, cbuf);
+	// WM_COMMAND
+	oapiConnectDlgCommands (hWnd, [hWnd](int id, int code, QWidget *hCtrl) {
+		char cbuf[32];
+		switch (id) {
 		case IDOK:    // store the value
-			GetWindowText (GetDlgItem (hWnd, IDC_EDIT1), cbuf, 32);
+			oapiGetDlgItemText (hWnd, IDC_EDIT1, cbuf, 32);
 			if (sscanf (cbuf, "%lf", &gParams.my_param) != 1)
 				gParams.my_param = 0;
-			EndDialog (hWnd, 0);
-			return 0;
+			qobject_cast<QDialog*> (hWnd)->done (0); // EndDialog
+			return;
 		case IDCANCEL:
-			EndDialog (hWnd, 0);
-			return 0;
+			qobject_cast<QDialog*> (hWnd)->done (0); // EndDialog
+			return;
 		}
-		break;
-	}
-	return 0;
+	});
 }
 
 // ==============================================================
 // The DLL entry point
 // ==============================================================
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	gParams.hInst = hDLL;
 	gParams.my_param = 0;
@@ -141,7 +146,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // The DLL exit point
 // ==============================================================
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the launchpad items
 	oapiUnregisterLaunchpadItem (gParams.sub_item);

@@ -12,18 +12,22 @@
 // your own dialog-based addons.
 // ==============================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include "windows.h"
-#include "orbitersdk.h"
+// windows.h left out: the dialog controls are Qt widgets
+#include "Orbitersdk.h"
+#include "OrbiterResource.h"
 #include "resource.h"
 #include <stdio.h>
+#include <strings.h>
+#include <functional>
+#include <QEvent>
 
 // ==============================================================
 // Global variables
 // ==============================================================
 
-HINSTANCE g_hInst;  // module instance handle
+void *g_hInst;      // module instance handle
 DWORD g_dwCmd;      // custom function identifier
 int myprm = 0;
 
@@ -32,7 +36,7 @@ int myprm = 0;
 // ==============================================================
 
 void OpenDlgClbk (void *context);
-INT_PTR CALLBACK MsgProc (HWND, UINT, WPARAM, LPARAM);
+void MsgProc (QWidget*, void*);
 
 // ==============================================================
 // API interface
@@ -42,7 +46,7 @@ INT_PTR CALLBACK MsgProc (HWND, UINT, WPARAM, LPARAM);
 // This function is called when Orbiter starts or when the module
 // is activated.
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	g_hInst = hDLL; // remember the instance handle
 
@@ -58,7 +62,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 // This function is called when Orbiter shuts down or when the
 // module is deactivated
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	// Unregister the custom function in Orbiter
 	oapiUnregisterCustomCmd (g_dwCmd);
@@ -80,7 +84,7 @@ DLLCLBK void opcLoadState (FILEHANDLE scn)
 {
 	char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "Param", 5)) {
+		if (!strncasecmp (line, "Param", 5)) {
 			sscanf (line+5, "%d", &myprm);
 		}
 	}
@@ -91,7 +95,7 @@ DLLCLBK void opcLoadState (FILEHANDLE scn)
 
 void OpenDlgClbk (void *context)
 {
-	HWND hDlg = oapiOpenDialog (g_hInst, IDD_MYDIALOG, MsgProc);
+	QWidget *hDlg = oapiOpenDialog (g_hInst, IDD_MYDIALOG, MsgProc);
 	// Don't use a standard Windows function like CreateWindow to
 	// open the dialog box, because it won't work in fullscreen mode
 }
@@ -99,43 +103,56 @@ void OpenDlgClbk (void *context)
 // ==============================================================
 // Close the dialog
 
-void CloseDlg (HWND hDlg)
+void CloseDlg (QWidget *hDlg)
 {
 	oapiCloseDialog (hDlg);
 }
 
+// not upstream: WM_DESTROY comes while the controls still exist; here that is the dialog's deferred delete
+class DestroyHook: public QObject {
+public:
+	DestroyHook (QWidget *hWnd, std::function<void()> f): QObject (hWnd), onDestroy (f) { hWnd->installEventFilter (this); }
+	bool eventFilter (QObject *o, QEvent *e) override {
+		if (e->type() == QEvent::DeferredDelete) onDestroy();
+		return false;
+	}
+private:
+	std::function<void()> onDestroy;
+};
+
 // ==============================================================
 // Windows message handler for the dialog box
 
-INT_PTR CALLBACK MsgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+void MsgProc (QWidget *hDlg, void *context)
 {
 	char name[256];
 
-	switch (uMsg) {
-	case WM_INITDIALOG:
+	// WM_INITDIALOG
 		sprintf (name, "%d", myprm);
-		SetWindowText (GetDlgItem (hDlg, IDC_REMEMBER), name);
-		return TRUE;
+		oapiSetDlgItemText (hDlg, IDC_REMEMBER, name);
 
-	case WM_DESTROY:
-		GetWindowText (GetDlgItem (hDlg, IDC_REMEMBER), name, 256);
+	// WM_DESTROY
+	new DestroyHook (hDlg, [hDlg]() {
+		char name[256];
+		oapiGetDlgItemText (hDlg, IDC_REMEMBER, name, 256);
 		sscanf (name, "%d", &myprm);
-		return TRUE;
+	});
 
-	case WM_COMMAND:
-		switch (LOWORD (wParam)) {
+	// WM_COMMAND
+	oapiConnectDlgCommands (hDlg, [hDlg](int id, int code, QWidget *hCtrl) {
+		char name[256];
+		switch (id) {
 
 		case IDC_WHOAMI:  // user pressed dialog button
 			// display the focus vessel name
 			oapiGetObjectName (oapiGetFocusObject(), name, 256);
-			SetWindowText (GetDlgItem (hDlg, IDC_IAM), name);
-			return TRUE;
+			oapiSetDlgItemText (hDlg, IDC_IAM, name);
+			return;
 
 		case IDCANCEL: // dialog closed by user
 			CloseDlg (hDlg);
-			return TRUE;
+			return;
 		}
-		break;
-	}
-	return oapiDefDialogProc (hDlg, uMsg, wParam, lParam);
+	});
+	// oapiDefDialogProc left out: oapiOpenDialog wires the default dialog behaviour
 }

@@ -9,12 +9,14 @@
 // Reference implementation of generic user-defined MFD mode
 // ==============================================================
 
-#define STRICT
+// STRICT left out: windows.h handle type-checking switch
 #define ORBITER_MODULE
-#include <windows.h>
+// windows.h left out: OrbiterPlatform.h has the Windows types the SDK uses
 #include <stdio.h>
 #include <math.h>
-#include "orbitersdk.h"
+#include <cstring>
+#include <strings.h>
+#include "Orbitersdk.h"
 #include "AscentMFD.h"
 
 // ==============================================================
@@ -40,7 +42,7 @@ static struct {  // global data storage
 // ==============================================================
 // API interface
 
-DLLCLBK void InitModule (HINSTANCE hDLL)
+DLLCLBK void InitModule (void *hDLL)
 {
 	static char *name = "Ascent profile";
 	MFDMODESPECEX spec;
@@ -60,7 +62,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	g_AscentMFD.mode = oapiRegisterMFDMode (spec);
 }
 
-DLLCLBK void ExitModule (HINSTANCE hDLL)
+DLLCLBK void ExitModule (void *hDLL)
 {
 	oapiUnregisterMFDMode (g_AscentMFD.mode);
 	delete []g_Data.time;
@@ -227,7 +229,7 @@ int AscentMFD::ButtonMenu (const MFDBUTTONMENU **menu) const
 	return 4;
 }
 
-void AscentMFD::Update (HDC hDC)
+void AscentMFD::Update (QPainter *hDC)
 {
 	Title (hDC, "Ascent profile");
 
@@ -327,13 +329,13 @@ void AscentMFD::ReadStatus (FILEHANDLE scn)
 {
     char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-		if (!_strnicmp (line, "PAGE", 4))
+		if (!strncasecmp (line, "PAGE", 4))
 			sscanf (line+4, "%d", &page);
-		else if (!_strnicmp (line, "ALTRANGE", 8))
+		else if (!strncasecmp (line, "ALTRANGE", 8))
 			SetAltRange (line+9);
-		else if (!_strnicmp (line, "VRADRANGE", 9))
+		else if (!strncasecmp (line, "VRADRANGE", 9))
 			SetVradRange (line+10);
-		else if (!_strnicmp (line, "VTANRANGE", 9))
+		else if (!strncasecmp (line, "VTANRANGE", 9))
 			SetVtanRange (line+10);
 	}
 }

@@ -1,8 +1,8 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-# not ported yet: samples, sample_build
-#add_subdirectory(samples)
+add_subdirectory(samples)
+# not ported yet: sample_build
 #add_subdirectory(sample_build)
 
 file(GLOB_RECURSE includes

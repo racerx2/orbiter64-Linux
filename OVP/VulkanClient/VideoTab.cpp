@@ -32,6 +32,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <map>
 #include <QTreeWidget>
 #include <QVulkanInstance>
 #include <algorithm>
@@ -1059,27 +1060,49 @@ void VideoTab::CreditsDlgProc(QWidget *hWnd)
 	});
 }
 
-// not upstream: RTF reader for EM_SETTEXTEX (Qt has none): text, bold, underline, sizes, fields; fonts and colours left out
+// not upstream: RTF reader for EM_SETTEXTEX (Qt has none): text, bold, underline, sizes, fonts, colours, field results
 static void SetRtfText(QTextEdit *te, const char *rtf)
 {
-	struct State { bool b = false, ul = false, skip = false; int fs = 24, uc = 1; };
+	struct Font { QString name; bool fixed = false; };
+	struct State { bool b = false, ul = false, skip = false; int fs = 24, uc = 1, f = 0, cf = 0, dest = 0; }; // dest: 1 font table, 2 colour table
 	std::vector<State> st(1);
+	std::map<int, Font> fonts;
+	std::vector<QColor> colors;
+	int deff = 0, tblFont = 0, red = 0, green = 0, blue = 0;
 	te->clear();
 	QTextCursor cur(te->document());
 	QString run;
 	int pending = 0; // characters \uN replaces
 	auto flush = [&]() {
 		if (run.isEmpty()) return;
+		const State &s = st.back();
 		QTextCharFormat f;
-		f.setFontWeight(st.back().b ? QFont::Bold : QFont::Normal);
-		f.setFontUnderline(st.back().ul);
-		f.setFontPointSize(st.back().fs * 0.5);
+		f.setFontWeight(s.b ? QFont::Bold : QFont::Normal);
+		f.setFontUnderline(s.ul);
+		f.setFontPointSize(s.fs * 0.5);
+		auto fi = fonts.find(s.f);
+		if (fi != fonts.end()) {
+			f.setFontFamilies(QStringList(fi->second.name));
+			f.setFontFixedPitch(fi->second.fixed);
+			f.setFontStyleHint(fi->second.fixed ? QFont::Monospace : QFont::SansSerif); // the fallback when the face isn't installed
+		}
+		if (s.cf > 0 && s.cf < (int)colors.size() && colors[s.cf].isValid()) f.setForeground(colors[s.cf]);
 		cur.insertText(run, f);
 		run.clear();
 	};
 	auto put = [&](QChar ch) {
-		if (st.back().skip) return;
+		State &s = st.back();
+		if (s.skip) return;
 		if (pending > 0) { pending--; return; }
+		if (s.dest == 1) { // font table: "\fN ... name;"
+			if (ch == ';') { fonts[tblFont].name = fonts[tblFont].name.trimmed(); return; }
+			fonts[tblFont].name += ch;
+			return;
+		}
+		if (s.dest == 2) { // colour table: "\redR\greenG\blueB;", an empty first entry is the default colour
+			if (ch == ';') { colors.push_back(colors.empty() && !red && !green && !blue ? QColor() : QColor(red, green, blue)); red = green = blue = 0; }
+			return;
+		}
 		run += ch;
 	};
 	for (const char *p = rtf; *p; ) {
@@ -1111,17 +1134,33 @@ static void SetRtfText(QTextEdit *te, const char *rtf)
 		if (neg) val = -val;
 		if (*p == ' ') p++; // delimiter
 		State &s = st.back();
+		if (s.dest == 1) { // inside the font table
+			if (word == "f" && has) { tblFont = val; fonts[val]; }
+			else if ((word == "fprq" && val == 1) || word == "fmodern") fonts[tblFont].fixed = true;
+			continue;
+		}
+		if (s.dest == 2) { // inside the colour table
+			if (word == "red") red = val;
+			else if (word == "green") green = val;
+			else if (word == "blue") blue = val;
+			continue;
+		}
 		if (word == "par") { flush(); if (!s.skip) cur.insertBlock(); }
 		else if (word == "line") put(QChar::LineSeparator);
 		else if (word == "tab") put(QChar('\t'));
-		else if (word == "plain") { flush(); s.b = s.ul = false; s.fs = 24; }
+		else if (word == "plain") { flush(); s.b = s.ul = false; s.fs = 24; s.f = deff; s.cf = 0; }
 		else if (word == "b") { flush(); s.b = (!has || val != 0); }
 		else if (word == "ul") { flush(); s.ul = (!has || val != 0); }
 		else if (word == "ulnone") { flush(); s.ul = false; }
 		else if (word == "fs") { flush(); if (has) s.fs = val; }
+		else if (word == "f") { flush(); if (has) s.f = val; }
+		else if (word == "cf") { flush(); if (has) s.cf = val; }
+		else if (word == "deff") { if (has) { deff = val; s.f = val; } }
 		else if (word == "uc") { if (has) s.uc = val; }
 		else if (word == "u") { put(QChar(char16_t(val))); pending = s.uc; }
-		else if (word == "fonttbl" || word == "colortbl" || word == "stylesheet" || word == "info" || word == "pict") s.skip = true;
+		else if (word == "fonttbl") s.dest = 1;
+		else if (word == "colortbl") s.dest = 2;
+		else if (word == "stylesheet" || word == "info" || word == "pict") s.skip = true;
 	}
 	flush();
 }

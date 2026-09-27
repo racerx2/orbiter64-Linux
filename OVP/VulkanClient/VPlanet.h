@@ -318,7 +318,7 @@ public:
 	bool			SphericalShadow();
 	void			SetupEclipse();
 	void			InitEclipse(ShaderClass* pShader);
-	VkTex *GetEclipse() { return ptEclipse; }
+	VkTex *GetEclipse() { return ptEclipseOwn ? ptEclipseOwn : ptEclipse; } // this planet's own table (see ptEclipseOwn)
 
 	// v2 Labels interface ----------------------------------------------------
 	void            ActivateLabels(bool activate);
@@ -398,6 +398,7 @@ private:
 	static PlanetShader* pRender[8];
 	static VkDev *pDev;
 	static VkTex *ptEclipse;
+	VkTex *ptEclipseOwn = NULL; // not upstream: D3DLOCK_DISCARD renaming, so each eclipsed planet drawn in a frame keeps its own table
 	static int Qc, Wc, Nc;
 
 	float dist_scale;         // planet rescaling factor

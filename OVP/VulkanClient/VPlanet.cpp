@@ -572,6 +572,7 @@ vPlanet::~vPlanet ()
 	SAFE_DELETE(pLandViewRay);
 	SAFE_DELETE(pLandViewMie);
 	SAFE_DELETE(pAmbientSky);
+	SAFE_DELETE(ptEclipseOwn);
 	SAFE_DELETE(pLandViewAtn);
 }
 
@@ -1325,14 +1326,15 @@ void vPlanet::SetupEclipse()
 
 	if (plnsize > 1.0 && ptEclipse && vE)
 	{
+		if (!ptEclipseOwn) ptEclipseOwn = new VkTex(pDev, 512, 1, 1, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 		float pBits[512]; // D3DLOCKED_RECT: the level is written here, then uploaded
-		if (ptEclipse->img) { // LockRect(D3DLOCK_DISCARD)
+		if (ptEclipseOwn->img) { // LockRect(D3DLOCK_DISCARD): a table of this planet's own
 			for (int i = 0; i < 512; i++) {
 				float x = float(i) * float(plnsize + sunsize) / 512.0f;
 				float v = OcclusionFactor(x, float(sunsize), float(plnsize));
 				pBits[i] = saturate(v);
 			}
-			ptEclipse->Upload(0, 0, pBits, sizeof(pBits)); // UnlockRect; DISCARD renaming left out: the upload runs ahead of the frame, planets eclipsed in one frame share the last table
+			ptEclipseOwn->Upload(0, 0, pBits, sizeof(pBits)); // UnlockRect
 		}
 		else LogErr("Failed to Lock 'hEclipse'");
 
@@ -1363,7 +1365,7 @@ void vPlanet::InitEclipse(ShaderClass* pShr)
 	fc->bEclipse = Eclipse.bEnable;
 	sp->vEclipse = Eclipse.vPos;
 	sp->fEclipse = Eclipse.fScale;
-	pShr->SetTexture("tEclipse", ptEclipse, IPF_CLAMP | IPF_LINEAR, 0);
+	pShr->SetTexture("tEclipse", GetEclipse(), IPF_CLAMP | IPF_LINEAR, 0);
 }
 
 // ==============================================================

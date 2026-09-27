@@ -202,6 +202,8 @@ VkTex::VkTex (VkDev *_dev, UINT _w, UINT _h, UINT _levels, VkFormat _fmt, VkImag
 
 	VkImageCreateInfo ii = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 	ii.flags = cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+	if (dev->sampleLocations && (samples > VK_SAMPLE_COUNT_1_BIT) && (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+		ii.flags |= VK_IMAGE_CREATE_SAMPLE_LOCATIONS_COMPATIBLE_DEPTH_BIT_EXT; // SetMultisampleAA(false) moves the samples
 	ii.imageType = VK_IMAGE_TYPE_2D;
 	ii.format = fmt;
 	ii.extent = { w, h, 1 };
@@ -521,6 +523,9 @@ VkDev::VkDev (QVulkanInstance *inst, VkPhysicalDevice _phys)
 	st.biasConst = st.biasSlope = 0.0f;
 	st.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	st.decl = NULL;
+	st.msaa = true;             // D3DRS_MULTISAMPLEANTIALIAS defaults to TRUE
+	sampleLocations = false;
+	sampleLocationCounts = 0;
 
 	vkGetPhysicalDeviceProperties (phys, &props);
 	vkGetPhysicalDeviceFeatures (phys, &features);
@@ -592,6 +597,26 @@ void VkDev::CreateDevice ()
 	e2.pNext = &e12; e12.pNext = &e13; e13.pNext = &e14; e14.pNext = &eso; eso.pNext = &eds3; eds3.pNext = &evi;
 	features = e2.features;
 
+	// D3DRS_MULTISAMPLEANTIALIAS off: every sample at the pixel centre, which needs VK_EXT_sample_locations with dynamic enable
+	std::vector<const char*> ext (devExt, devExt + sizeof(devExt)/sizeof(devExt[0]));
+	UINT ne = 0;
+	vkEnumerateDeviceExtensionProperties (phys, NULL, &ne, NULL);
+	std::vector<VkExtensionProperties> ep(ne);
+	vkEnumerateDeviceExtensionProperties (phys, NULL, &ne, ep.data());
+	bool hasSL = false;
+	for (auto &e : ep) if (!strcmp (e.extensionName, VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME)) hasSL = true;
+	if (hasSL && fds3.extendedDynamicState3SampleLocationsEnable) {
+		VkPhysicalDeviceSampleLocationsPropertiesEXT slp = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT };
+		VkPhysicalDeviceProperties2 pp = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &slp };
+		vkGetPhysicalDeviceProperties2 (phys, &pp);
+		if (slp.variableSampleLocations && slp.sampleLocationCoordinateRange[0] <= 0.5f && slp.sampleLocationCoordinateRange[1] >= 0.5f) {
+			ext.push_back (VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME);
+			eds3.extendedDynamicState3SampleLocationsEnable = VK_TRUE;
+			sampleLocationCounts = slp.sampleLocationSampleCounts;
+			sampleLocations = true;
+		}
+	}
+
 	float prio = 1.0f;
 	VkDeviceQueueCreateInfo qi = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
 	qi.queueFamilyIndex = queueFamily;
@@ -600,8 +625,8 @@ void VkDev::CreateDevice ()
 	VkDeviceCreateInfo di = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &e2 };
 	di.queueCreateInfoCount = 1;
 	di.pQueueCreateInfos = &qi;
-	di.enabledExtensionCount = sizeof(devExt)/sizeof(devExt[0]);
-	di.ppEnabledExtensionNames = devExt;
+	di.enabledExtensionCount = (UINT)ext.size();
+	di.ppEnabledExtensionNames = ext.data();
 	VkResult r = vkCreateDevice (phys, &di, NULL, &dev);
 	if (r < 0) { LogErr("VkDev: vkCreateDevice failed (%d)", (int)r); dev = VK_NULL_HANDLE; return; }
 	vkGetDeviceQueue (dev, queueFamily, 0, &queue);
@@ -619,6 +644,10 @@ void VkDev::CreateDevice ()
 	VKX(CmdSetColorBlendEquationEXT);
 	VKX(CmdSetColorWriteMaskEXT);
 	VKX(CmdSetDepthClampEnableEXT);
+	if (sampleLocations) {
+		VKX(CmdSetSampleLocationsEnableEXT);
+		VKX(CmdSetSampleLocationsEXT);
+	}
 #undef VKX
 
 	VmaAllocatorCreateInfo ai = {};
@@ -675,6 +704,7 @@ void VkDev::CreateDevice ()
 
 	LogAlw("VkDev: %s, Vulkan %u.%u.%u", props.deviceName, VK_API_VERSION_MAJOR(props.apiVersion),
 		VK_API_VERSION_MINOR(props.apiVersion), VK_API_VERSION_PATCH(props.apiVersion));
+	LogAlw("VkDev: per-draw multisampling off (sample locations): %s", sampleLocations ? "Yes" : "No");
 }
 
 VkDev::~VkDev ()
@@ -926,6 +956,7 @@ void VkDev::BeginRendering ()
 	VkRect2D sc = scissorSet ? scissor : ri.renderArea;
 	vkCmdSetScissorWithCount (cmd, 1, &sc);
 	vkx.CmdSetRasterizationSamplesEXT (cmd, t->tex->samples);
+	ApplySampleLocations ();
 }
 
 void VkDev::EndRendering ()
@@ -1025,6 +1056,7 @@ void VkDev::ReplayState ()
 	VkSampleMask mask = 0xFFFFFFFF;
 	VkSurf *t = rtColor ? rtColor : rtDepth;
 	vkx.CmdSetRasterizationSamplesEXT (cmd, (rendering && t) ? t->tex->samples : VK_SAMPLE_COUNT_1_BIT);
+	ApplySampleLocations ();
 	vkx.CmdSetSampleMaskEXT (cmd, VK_SAMPLE_COUNT_32_BIT, &mask); // one mask word covers up to 32 samples
 	vkx.CmdSetAlphaToCoverageEnableEXT (cmd, VK_FALSE);
 	vkx.CmdSetDepthClampEnableEXT (cmd, VK_FALSE);
@@ -1038,6 +1070,33 @@ void VkDev::ReplayState ()
 	else vkx.CmdSetVertexInputEXT (cmd, 0, NULL, 0, NULL);
 	if (curVS || curFS) BindShaders (curVS, curFS);
 	if (cbActive) cbActive->Invalidate (); // push descriptors don't carry over to a new command buffer
+}
+
+void VkDev::SetMultisampleAA (bool enable)
+{
+	st.msaa = enable;
+	if (recording) ApplySampleLocations ();
+}
+
+// D3DRS_MULTISAMPLEANTIALIAS FALSE: samples rasterized as one at the pixel centre, all written (no effect on single-sampled targets)
+void VkDev::ApplySampleLocations ()
+{
+	if (!sampleLocations) return;
+	VkCommandBuffer cmd = Cmd();
+	VkSurf *t = rtColor ? rtColor : rtDepth;
+	VkSampleCountFlagBits n = (rendering && t) ? t->tex->samples : VK_SAMPLE_COUNT_1_BIT;
+	bool centre = !st.msaa && (n > VK_SAMPLE_COUNT_1_BIT) && (sampleLocationCounts & n);
+	vkx.CmdSetSampleLocationsEnableEXT (cmd, centre);
+	if (centre) {
+		VkSampleLocationEXT loc[16];
+		for (auto &l : loc) l = { 0.5f, 0.5f };
+		VkSampleLocationsInfoEXT si = { VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT };
+		si.sampleLocationsPerPixel = n;
+		si.sampleLocationGridSize = { 1, 1 };
+		si.sampleLocationsCount = (UINT)n;
+		si.pSampleLocations = loc;
+		vkx.CmdSetSampleLocationsEXT (cmd, &si);
+	}
 }
 
 void VkDev::SetDepthTest (bool enable)

@@ -34,6 +34,8 @@ struct VkExtFunctions {
 	PFN_vkCmdSetColorBlendEquationEXT CmdSetColorBlendEquationEXT;
 	PFN_vkCmdSetColorWriteMaskEXT CmdSetColorWriteMaskEXT;
 	PFN_vkCmdSetDepthClampEnableEXT CmdSetDepthClampEnableEXT;
+	PFN_vkCmdSetSampleLocationsEnableEXT CmdSetSampleLocationsEnableEXT; // VK_EXT_sample_locations, when the device has it
+	PFN_vkCmdSetSampleLocationsEXT CmdSetSampleLocationsEXT;
 };
 extern VkExtFunctions vkx;
 
@@ -245,7 +247,11 @@ public:
 		float biasConst, biasSlope;
 		VkPrimitiveTopology topology;
 		const VkVertexDecl *decl;
+		bool msaa;                                     // D3DRS_MULTISAMPLEANTIALIAS
 	};
+	void SetMultisampleAA (bool enable);             // D3DRS_MULTISAMPLEANTIALIAS: off gives every sample the pixel centre's coverage
+	bool GetMultisampleAA () const { return st.msaa; }
+	bool sampleLocations;                            // VK_EXT_sample_locations with dynamic enable: SetMultisampleAA(false) takes effect
 	State GetState () const { return st; }           // RenderState::Capture (GetRenderState)
 	void SetState (const State &s);                  // RenderState::Restore (SetRenderState)
 	bool GetScissor (RECT *r) const;                 // GetScissorRect; false if the scissor test is off
@@ -274,6 +280,8 @@ public:
 private:
 	void CreateDevice ();
 	void ReplayState ();
+	void ApplySampleLocations ();
+	VkSampleCountFlags sampleLocationCounts;
 	void ReleaseFrame (int i);
 	void DrawCopy (VkTex *src, VkSurf *dst, const RECT &d); // StretchRect into a multisampled target
 	VkShaderEXT copyVS, copyFS;

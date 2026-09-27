@@ -1455,7 +1455,7 @@ void TileManager2<SurfTile>::Render (MATRIX4 &dwmat, bool use_zbuf, const vPlane
 
 	vp->InitEclipse(pShader);
 
-	// D3DRS_MULTISAMPLEANTIALIAS off for Config->NoPlanetAA left out: Vulkan has no per-draw multisample switch
+	if (Config->NoPlanetAA) pShader->GetDevice()->SetMultisampleAA(false);
 
 	// ------------------------------------------------------------------
 	// TODO: render full sphere for levels < 4
@@ -1474,7 +1474,7 @@ void TileManager2<SurfTile>::Render (MATRIX4 &dwmat, bool use_zbuf, const vPlane
 
 	loader->ReleaseMutex();
 
-	// D3DRS_MULTISAMPLEANTIALIAS back on: left out as above
+	if (Config->NoPlanetAA) pShader->GetDevice()->SetMultisampleAA(true);
 
 	// Backup the stats and clear counters
 	if (scene->GetRenderPass() == RENDERPASS_MAINSCENE) prevstat = elvstat;

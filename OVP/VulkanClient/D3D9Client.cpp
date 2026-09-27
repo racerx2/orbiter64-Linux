@@ -59,6 +59,8 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QClipboard>
+#include <QDBusInterface>
+#include <QDBusReply>
 #include <QGuiApplication>
 #include <sys/stat.h>
 #include <thread>
@@ -493,6 +495,24 @@ bool D3D9Client::clbkInitialise()
 // ==============================================================
 // This is called when a simulation session will begin
 //
+#ifdef __linux__
+// not upstream: SC_MONITORPOWER counterpart, the desktop's screen saver interface keeps the monitor on
+static uint s_inhibit = 0;
+static void InhibitScreenSaver (bool on)
+{
+	QDBusInterface ss("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver");
+	if (on && !s_inhibit) {
+		QDBusReply<uint> r = ss.call("Inhibit", QString("Orbiter"), QString("Fullscreen simulation"));
+		if (r.isValid()) s_inhibit = r.value();
+		else LogErr("Screen saver inhibit failed: %s", r.error().message().toUtf8().constData());
+	}
+	else if (!on && s_inhibit) {
+		ss.call("UnInhibit", s_inhibit);
+		s_inhibit = 0;
+	}
+}
+
+#endif // __linux__
 QWindow *D3D9Client::clbkCreateRenderWindow()
 {
 	_TRACE;
@@ -564,6 +584,9 @@ QWindow *D3D9Client::clbkCreateRenderWindow()
 	viewW		= pFramework->GetWidth();
 	viewH		= pFramework->GetHeight();
 	bFullscreen = (pFramework->IsFullscreen() == TRUE);
+#ifdef __linux__
+	if (bFullscreen) InhibitScreenSaver (true); // WM_SYSCOMMAND SC_MONITORPOWER: no power loss in fullscreen mode
+#endif // __linux__
 	bAAEnabled  = (pFramework->IsAAEnabled() == TRUE);
 	viewBPP		= 32;
 	bVertexTex  = (pFramework->HasVertexTextureSup() == TRUE);
@@ -1127,6 +1150,9 @@ void D3D9Client::clbkDestroyRenderWindow (bool fastclose)
 
 	// Close Render Window -----------------------------------------
 	GraphicsClient::clbkDestroyRenderWindow(fastclose);
+#ifdef __linux__
+	InhibitScreenSaver (false);
+#endif // __linux__
 
 	hRenderWnd		 = NULL;
 	pDevice			 = NULL;
@@ -2000,7 +2026,7 @@ bool D3D9Client::RenderWndProc (QWindow *hWnd, QEvent *event)
 			// If in windowed mode, move the Framework's window
 			break;
 
-		// WM_SYSCOMMAND left out: a Qt window has no system menu, Alt menu key or SC_MOVE/SC_SIZE/SC_MONITORPOWER commands to trap
+		// WM_SYSCOMMAND: no Alt menu key or SC_MOVE/SC_SIZE/SC_MAXIMIZE on a Qt window; SC_MONITORPOWER is InhibitScreenSaver
 
 		// WM_SYSKEYUP left out: Alt opens no menu on a Qt window (swallowing the key-up would also hide it from the keyboard device)
 

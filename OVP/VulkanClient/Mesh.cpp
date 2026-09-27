@@ -1922,11 +1922,20 @@ void D3D9Mesh::Render(const LPD3DXMATRIX pW, int iTech, VkTex **pEnv, int nEnv)
 			pDev->SetCullMode(VK_CULL_MODE_BACK_BIT);
 		}
 
-		// D3DRS_MULTISAMPLEANTIALIAS off for bOIT groups left out: Vulkan can't draw single-sampled into a multisampled target
+		DWORD dwMSAA;
+
+		if (bOIT) {
+			dwMSAA = pDev->GetMultisampleAA(); // GetRenderState(D3DRS_MULTISAMPLEANTIALIAS)
+			pDev->SetMultisampleAA(false);
+		}
 
 		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 
 		Grp[g].bRendered = true;
+
+		if (bOIT && dwMSAA) {
+			pDev->SetMultisampleAA(dwMSAA != 0);
+		}
 
 		if (Grp[g].bDualSided) {
 			pDev->SetDepthWrite(true);
@@ -2187,10 +2196,19 @@ void D3D9Mesh::RenderSimplified(const LPD3DXMATRIX pW, VkTex **pEnv, int nEnv, b
 		//
 		FX->CommitChanges();
 
-		// D3DRS_MULTISAMPLEANTIALIAS off for bOIT groups left out (as in Render)
+		DWORD dwMSAA = 0;
+
+		if (bOIT) {
+			dwMSAA = pDev->GetMultisampleAA(); // GetRenderState(D3DRS_MULTISAMPLEANTIALIAS)
+			pDev->SetMultisampleAA(false);
+		}
 
 		pDev->DrawIndexedPrimitive(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].VertOff, Grp[g].IdexOff, VkPrimVerts(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, Grp[g].nFace));
 		Grp[g].bRendered = true;
+
+		if (bOIT && dwMSAA) {
+			pDev->SetMultisampleAA(dwMSAA != 0);
+		}
 	}
 
 	if (CurrentShader != 0xFFFF) HR(FX->EndPass());

@@ -26,7 +26,6 @@ set(INCLUDE_TARGET_DIR ${ORBITER_BINARY_SDK_DIR}/include)
 
 set(InterfaceBuilder ${Python3_EXECUTABLE} ${D3D9_SOURCE_DIR}/samples/InterfaceBuilder/InterfaceBuilder.py) # InterfaceBuilder.exe is Windows only
 
-# not upstream: sources still commented out are not ported yet
 set(SourceFiles
 	AABBUtil.cpp
 	AtmoControls.cpp
@@ -195,6 +194,7 @@ target_link_libraries(D3D9Client
 	Orbitersdk
 	Vulkan::Vulkan
 	Qt6::Widgets
+	Qt6::DBus
 	glslang::glslang
 	glslang::SPIRV
 	glslang::glslang-default-resource-limits

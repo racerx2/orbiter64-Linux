@@ -11,6 +11,7 @@
 #include <time.h>
 #ifdef __linux__
 #include <unistd.h>
+#include "../ToolTerminal.h"
 #endif // __linux__
 #include "Mesh.h"
 
@@ -187,6 +188,9 @@ int main (int argc, char *argv[])
 	Mesh mesh;
 	Param param;
 
+#ifdef __linux__
+	OpenToolTerminal (argc, argv); // /SUBSYSTEM:CONSOLE: a console window of its own
+#endif // __linux__
 	cout << "+-----------------------------------------------------------------------+\n";
 	cout << "|                   meshc: Mesh compiler for ORBITER                    |\n";
 	cout << "|        Build: " << __DATE__ << "      (c) 2001-2026 Martin Schweiger         |\n";

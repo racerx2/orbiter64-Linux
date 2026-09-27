@@ -70,6 +70,7 @@
 #include <sys/wait.h>
 #include <unistd.h>   // direct.h: _getcwd -> getcwd
 #include "OrbiterPlatform.h" // windows.h left out: BYTE/WORD/DWORD/LONG
+#include "../ToolTerminal.h"
 #endif // __linux__
 #include <math.h>
 #ifndef __linux__
@@ -329,6 +330,7 @@ int main (int argc, char *argv[])
 	if (!_getcwd (g_cwd, 256)) FatalError ("Cannot get working directory");
 	strcat (g_cwd, "\\");
 #else // __linux__
+	OpenToolTerminal (argc, argv); // /SUBSYSTEM:CONSOLE: a console window of its own
 	if (!getcwd (g_cwd, 256)) FatalError ("Cannot get working directory");
 	strcat (g_cwd, "/");
 #endif // __linux__
@@ -366,6 +368,9 @@ int main (int argc, char *argv[])
 		cout << "(Q) Quit\n";
 		cout << "\n>> [G|L|C|M|Q]: ";
 		cin >> task;
+#ifdef __linux__
+		if (!cin) return 1; // end of input: the menu would repeat forever (a Windows console never ends)
+#endif // __linux__
 		cout << endl << endl;
 		switch (toupper(task)) {
 		case 'G':

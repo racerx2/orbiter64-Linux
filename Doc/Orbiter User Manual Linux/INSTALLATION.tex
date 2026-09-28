@@ -52,7 +52,8 @@ Important: Take care to preserve the directory structure of the package. The Orb
 
 \subsection{Add-ons from the Windows version}
 Orbiter on Linux looks up files the way Windows does: the case of file and folder names does not matter, and backslashes in paths inside configuration and scenario files are accepted. Add-ons made of meshes, textures, configuration files and scenarios therefore work without changes.\\
-Add-ons that contain program modules (.dll files) are different: a Windows .dll cannot be loaded by the Linux version. Such an add-on needs a Linux build of its modules (.so files), made from its source code (see the Orbiter Developer Manual).
+Add-ons that contain program modules (.dll files) are different: a Windows .dll cannot be loaded by the Linux version. Such an add-on needs a Linux build of its modules (.so files), made from its source code (see the Orbiter Developer Manual).\\
+Help files (.chm) of Windows add-ons are Microsoft compiled HTML files, which Orbiter's help window on Linux cannot show (Orbiter's own .chm files on Linux are zip archives of HTML pages). Such help files can be read with a CHM viewer, for example xCHM or KchmViewer.
 
 \subsection{Uninstall}
 Run \texttt{./OpenOrbiter -{}-remove-menu} in the Orbiter folder to take Orbiter out of the application menu, then simply remove the Orbiter folders with all contents and subdirectories. This will completely remove Orbiter from your hard drive. The launcher's own files are in \textasciitilde/.cache/orbiter64-linux and can be removed as well.

@@ -251,3 +251,16 @@ install(DIRECTORY ${D3D9_SOURCE_DIR}/samples/DX9ExtMFD/ DESTINATION ${ORBITER_IN
 install(DIRECTORY ${D3D9_SOURCE_DIR}/samples/GenericCamera/ DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/Orbitersdk/samples/GenericCamera ${Exclude})
 install(FILES ${INCLUDE_TARGET_DIR}/gcCoreAPI.h DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/Orbitersdk/include)
 install(FILES ${INCLUDE_TARGET_DIR}/gcGUI.h DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/Orbitersdk/include)
+
+# not upstream: the client's manual goes to Doc/VulkanClient
+install(FILES ${D3D9_SOURCE_DIR}/doc/VulkanClient.html DESTINATION ${ORBITER_INSTALL_DOC_DIR}/VulkanClient)
+install(FILES
+	"${D3D9_SOURCE_DIR}/doc/images/Video Tab.png"
+	"${D3D9_SOURCE_DIR}/doc/images/VulkanClient Advanced Setup.png"
+	"${D3D9_SOURCE_DIR}/doc/images/Vulkan Graphics Controls.png"
+	"${D3D9_SOURCE_DIR}/doc/images/Vulkan Atmospheric Controls.png"
+	"${D3D9_SOURCE_DIR}/doc/images/Vulkan Debug Controls.png"
+	${D3D9_SOURCE_DIR}/doc/images/PickInAction.png
+	${D3D9_SOURCE_DIR}/doc/images/rwylights.png
+	DESTINATION ${ORBITER_INSTALL_DOC_DIR}/VulkanClient/images
+)

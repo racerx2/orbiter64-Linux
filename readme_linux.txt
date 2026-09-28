@@ -74,12 +74,28 @@ dialog and click the "Launch Orbiter" button!
 4. Help
 -------
 Help files are located in the Doc subfolder.
-Orbiter User Manual.pdf is the main Orbiter manual, and it is
-highly recommended you read it.
+Orbiter User Manual (Linux).pdf is the main Orbiter manual, and it
+is highly recommended you read it. VulkanClient/VulkanClient.html
+describes the graphics client and its settings.
 
 The in-game help system can be opened via the "Help" button on
 the Orbiter Launchpad dialog, or with Alt-F1 while running
-Orbiter.
+Orbiter. KDE Plasma keeps Alt-F1, Ctrl-F1 to Ctrl-F4 and Ctrl-F9
+for its own shortcuts; the dialogs of these keys are also on
+Orbiter's main menu (F4). See "Keys taken by the desktop" in the
+User Manual.
 
 Remaining questions can be posted on the Orbiter user forum at
 https://orbiter-forum.com.
+
+
+5. Linux notes
+--------------
+Add-ons that consist of meshes, textures, configuration files and
+scenarios work as on Windows. Add-on modules (.dll files) are
+Windows programs and do not run on Linux: such an add-on needs a
+Linux build of its modules (.so files).
+
+Orbiter writes its log to Orbiter.log in the Orbiter folder. The
+VulkanClient writes its own log to
+Modules/VulkanClient/D3D9ClientLog.html.

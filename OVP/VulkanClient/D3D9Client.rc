@@ -485,7 +485,7 @@ FONT 8, "Ms Shell Dlg"
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 STRINGTABLE
 {
-    IDS_INFO                      "D3D9 Graphics Client:  *** Do not use with Orbiter.exe! ***\r\n\r\nA render engine plugin for Orbiter_ng."
+    IDS_INFO                      "Vulkan Graphics Client:\r\n\r\nA render engine plugin for Orbiter on Linux. See Doc/VulkanClient/VulkanClient.html." // not upstream: Vulkan in place of D3D9
     IDS_TYPE                      "Graphics engines"
 }
 

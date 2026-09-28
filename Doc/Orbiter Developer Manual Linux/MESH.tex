@@ -178,17 +178,18 @@ Additional texture maps are identified by adding an id in the end of texture's f
 \begin{itemize}
 \item	\texttt{\_rghn} Monochromatic smoothness map specifies material roughness/smoothness. Valid formats are (L8) and (DXT1) from which only green channel is used.
 \item	\texttt{\_metal} Monochromatic metalness map containing per pixel metalness value. Most commonly either '255' for metal or '0' for non-metal. Valid formats are (L8) and (DXT1) from which only green channel is used.
-\item	\texttt{\_norm} Tangent space normal map. Note: Loading of normal map is ignored if a bump map texture is also found. However, the normal map is the preferred one that should be used when you have a choice. 
+\item	\texttt{\_norm} Tangent space normal map. 
 \end{itemize}
 
 \textbf{Here's a list of supported additional texture maps:}
 \begin{itemize}
-\item	\texttt{\_bump} Bump maps are also supported by the VulkanClient (the D3D9Client in the Windows version). They are automatically converted into normal maps during loading of bump maps (see note). Valid formats are (L8) and (DXT1):  Where, (L8) is 1-byte per pixel luminance, from (DXT1) only green channel is used.
+\item	\texttt{\_bump} Bump maps are not loaded by the VulkanClient. Use a normal map (\texttt{\_norm}) instead.
 \item	\texttt{\_emis} Emission map is added to a final color after all other computations has been made. 
 \item	\texttt{\_transl} Translucence map controls the material translucency on a per pixel basis. The texture behaves much like a diffuse texture, except that it is illuminated from behind. Illumination is based on the angle of the sun relative to the surface; if the sun is directly behind the surface, the illumination is strong, and if the sun is at a low angle but still behind the surface, the illumination is dim. If the sun begins to illuminate the surface from in front, the translucence effect is no longer visible. Only (RGB) channels from a texture are used. 
 \item	\texttt{\_transm} Transmittance map controls the amount of light that passes through a translucent material without being diffused. The effect is very similar to a specular reflection, except that it simulates the bright spot on a semi-transparent material that is directly between the sun and the observer. The (RGBA) channels from a texture are used. The RGB channels provide color and brightness, while the alpha channel changes the size of the bright spot. This is analogous to how the specular map is used.
 \item	\texttt{\_spec} Specular map controls a specular reflection in per pixel basis. Alpha channel is containing a smoothness setting like a smoothness map do.
 \end{itemize}
+The VulkanClient manual (Doc/VulkanClient/VulkanClient.html, section \textit{Advanced Texture Maps}) lists all texture maps the client uses, including \texttt{\_refl} and \texttt{\_heat}.
 
 \break
 \subsection{Performance optimisation}

@@ -120,16 +120,18 @@ LINUX: PREREQUISITES
 ====================
 Ubuntu/Debian package names; other distros have the same libraries under their own names.
 
-- Build tools: `cmake` (3.26+), `ninja-build`, `g++` (C++20), `git`, `pkg-config`
-- Graphics: `libvulkan-dev`, `vulkan-validationlayers`, `glslang-tools` (glslangValidator)
+- Build tools: `cmake` (3.26+), `ninja-build`, `g++` (C++20), `git`, `pkg-config`, `python3`
+- Graphics: `libvulkan-dev`, `vulkan-validationlayers`, `glslang-tools` (glslangValidator), `glslang-dev`
 - Windows and dialogs: `qt6-base-dev`
 - Mouse look on Wayland (pointer lock): `libwayland-dev`, `wayland-protocols`
 - Sound: `libpipewire-0.3-dev`
 - Text: `libfreetype-dev`
+- Utilities (plsplit, tileedit): `libpng-dev`
+- Optional, Dragonfly's ADI ball (the vessel is left out without it): `libgl-dev`, `libglu1-mesa-dev`
 
 Lua 5.1, zlib 1.2.11, Dear ImGui, ImPlot and Tracy are fetched by CMake at the same tags
 upstream uses; Catch2 is v3.8.1. XRSound's decoders (stb_vorbis, dr_mp3, dr_flac, libxmp-lite
-for tracker modules) are fetched by CMake too.
+for tracker modules) and the VulkanClient's Vulkan Memory Allocator are fetched by CMake too.
 
 If you want to build the Orbiter documentation (`-DORBITER_MAKE_DOC=ON`), you need LaTeX:
 `texlive-latex-extra`, `texlive-fonts-recommended`, `texlive-fonts-extra`, `texlive-science`,
@@ -148,6 +150,15 @@ ctest --preset linux-x64-release
 
 Binaries and data land in `out/build/linux-x64-release`, in the same layout as upstream
 (Modules/, Modules/Plugin/, Modules/Celbody/, Config/, ...).
+
+To create a complete Orbiter folder, install it:
+```
+cmake --install out/build/linux-x64-release
+```
+This puts it in `out/install/linux-x64-release/Orbiter`. Start `OpenOrbiter` (or `Orbiter`) there.
+Its `readme.txt` is the Linux readme (`readme_linux.txt`). `Doc/VulkanClient/VulkanClient.html`
+describes the graphics client, and with `-DORBITER_MAKE_DOC=ON` `Doc/` also gets the Linux
+editions of the manuals.
 
 Other presets: `linux-x64-debug`, `linux-x64-asan`, `linux-x64-tracy`.
 
@@ -182,5 +193,6 @@ LaTeX sources), try disabling multithreaded build support (limit to a single
 thread). Some of the document converters/compilers you are using may not be
 thread-safe.
 
-* Running under Xvfb: the NVIDIA driver cannot present there; use lavapipe with
+* Running under Xvfb (e.g. for tests): set `QT_QPA_PLATFORM=xcb`. On a machine without a
+Vulkan capable GPU, the software driver lavapipe can be used with
 `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json`.

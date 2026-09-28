@@ -236,6 +236,7 @@ set(common_src
 	PathResolve.cpp
 	SleepWatch.cpp
 	WlPointer.cpp
+	WlShortcuts.cpp
 	ZTreeMgr.cpp
 # ImGui platform backend
 	imgui_impl_qt.cpp
@@ -306,12 +307,13 @@ if(NOT WIN32) # Linux port
 # the dialog templates, bitmaps, icons and strings of Orbiter.rc as a C++ resource table
 orbiter_rc_resources(Orbiter Orbiter.rc EXE SYMBOL OrbiterResources)
 
-# WlPointer.cpp: client code of the Wayland pointer-constraints and relative-pointer protocols
+# WlPointer.cpp, WlShortcuts.cpp: client code of the Wayland pointer-constraints, relative-pointer and
+# keyboard-shortcuts-inhibit protocols
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
-foreach(proto pointer-constraints relative-pointer)
+foreach(proto pointer-constraints relative-pointer keyboard-shortcuts-inhibit)
 	set(xml ${WAYLAND_PROTOCOLS_DIR}/unstable/${proto}/${proto}-unstable-v1.xml)
 	set(base ${CMAKE_CURRENT_BINARY_DIR}/${proto}-unstable-v1)
 	add_custom_command(OUTPUT ${base}-client-protocol.h ${base}-protocol.c

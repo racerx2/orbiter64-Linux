@@ -75,6 +75,7 @@
 #include <QIcon>
 #include <QImage>
 #include "WlPointer.h"
+#include "WlShortcuts.h"
 #include "SleepWatch.h"
 #endif // __linux__
 #include <filesystem>
@@ -1002,6 +1003,7 @@ QWindow *Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 			gclient->clbkSetSplashScreen(pState->SplashScreen(), pState->SplashColor());
 #ifdef __linux__
 		WlPointerAttach ();
+		WlShortcutsAttach ();
 #endif // __linux__
 		hRenderWnd = gclient->InitRenderWnd (gclient->clbkCreateRenderWindow());
 #ifdef __linux__
@@ -1201,6 +1203,9 @@ void Orbiter::CloseSession ()
 	DWORD i;
 
 	bSession = false;
+#ifdef __linux__
+	WlShortcutsDetach (); // before the render window's surface goes: KWin keeps an inhibitor of a destroyed surface
+#endif // __linux__
 
 	if      (bRecord)   ToggleRecorder();
 	else if (bPlayback) EndPlayback();
@@ -1505,6 +1510,7 @@ void Orbiter::TerminateOnError ()
 		"Terminating after critical error. See Orbiter.log for details.",
 		"Orbiter: Critical Error", MB_OK | MB_ICONERROR);
 #else // __linux__
+	WlShortcutsDetach ();
 	if (hRenderWnd) hRenderWnd->hide (); // ShowWindow (FALSE)
 	QMessageBox::critical (NULL, "Orbiter: Critical Error",
 		"Terminating after critical error. See Orbiter.log for details.");
@@ -3140,6 +3146,25 @@ static DWORD MouseKeyState (const QSinglePointEvent *e)
 	if (e->modifiers() & Qt::ControlModifier) state |= MK_CONTROL;
 	return state;
 }
+
+// a logical key of the keymap: the desktop's shortcut for it is not passed on (WlShortcuts)
+static bool IsKeymapKey (const Keymap &keymap, KeyboardDevice *kbd, const QKeyEvent *e)
+{
+	char kstate[256];
+	DWORD dik = KeyboardDevice::DIKCode ((int)e->nativeScanCode() - 8);
+	if (!dik) return false;
+	if (kbd->GetDeviceState (256, kstate) != DI_OK) { // not acquired yet: any side of a held modifier
+		memset (kstate, 0, 256);
+		if (e->modifiers() & Qt::ShiftModifier)   kstate[OAPI_KEY_LSHIFT]   = kstate[OAPI_KEY_RSHIFT]   = (char)0x80;
+		if (e->modifiers() & Qt::ControlModifier) kstate[OAPI_KEY_LCONTROL] = kstate[OAPI_KEY_RCONTROL] = (char)0x80;
+		if (e->modifiers() & Qt::AltModifier)     kstate[OAPI_KEY_LALT]     = kstate[OAPI_KEY_RALT]     = (char)0x80;
+	}
+	for (int i = 0; i < LKEY_COUNT; i++) {
+		DWORD key = dik;
+		if (keymap.IsLogicalKey (key, kstate, i, false)) return true;
+	}
+	return false;
+}
 #endif // __linux__
 
 #ifndef __linux__
@@ -3158,8 +3183,13 @@ bool Orbiter::MsgProc (QWindow *hWnd, QEvent *event)
 	// DirectInput read the keyboard beside the message queue; here the keyboard device takes every key event first
 	if ((event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) && GetKbdDevice()) {
 		QKeyEvent *ke = static_cast<QKeyEvent*>(event);
-		GetKbdDevice()->KeyEvent ((int)ke->nativeScanCode() - 8, event->type() == QEvent::KeyPress); // xkb keycode -> evdev
+		bool press = (event->type() == QEvent::KeyPress);
+		if (WlShortcutsKey (ke, press && IsKeymapKey (keymap, GetKbdDevice(), ke)))
+			return true; // the desktop's shortcut (KDE Plasma): passed on, as the desktop would have taken it
+		GetKbdDevice()->KeyEvent ((int)ke->nativeScanCode() - 8, press); // xkb keycode -> evdev
 	}
+	if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut)
+		WlShortcutsReset ();
 
 	if (ImGui_ImplQt_EventHandler(hWnd, event))
 		return true;

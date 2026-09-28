@@ -85,7 +85,9 @@ Note that certain spacecraft may define additional keyboard functions. Check ind
 \noindent
 \textbf{Keys taken by the desktop}
 \label{sssec:desktop_keys}\\
-Linux desktops reserve some keys for their own shortcuts, and those keys never reach Orbiter. With its default shortcuts, KDE Plasma takes \Alt\keystroke{F1} (application launcher), \Ctrl\keystroke{F1} to \Ctrl\keystroke{F4} (switch to desktop 1 to 4) and \Ctrl\keystroke{F9} (Present Windows). The dialogs these keys open are also on the main menu (\keystroke{F4}): \textit{help}, \textit{camera}, \textit{speed}, \textit{function} and \textit{options}, and the \textit{Previous} button of the \textit{ship} dialog switches back to the previous vessel. Alternatively, assign other keys to these functions in keymap.cfg, or change the desktop's shortcuts in its system settings.
+Linux desktops reserve some keys for their own shortcuts. With its default shortcuts, KDE Plasma uses \Alt\keystroke{F1} (application launcher), \Ctrl\keystroke{F1} to \Ctrl\keystroke{F4} (switch to desktop 1 to 4) and \Ctrl\keystroke{F9} (Present Windows).\\
+In a KDE Plasma Wayland session, Orbiter keeps its own keys while the simulation window has the keyboard focus: the keys of the keyboard mapping (keymap.cfg) go to Orbiter, and all other desktop shortcuts (for example \Alt\keystroke{Tab}, the Meta key and the volume keys) still work. In other dialogs and windows, the desktop's shortcuts work as usual.\\
+On other desktops and in X11 sessions, keys taken by the desktop never reach Orbiter. The dialogs these keys open are also on the main menu (\keystroke{F4}): \textit{help}, \textit{camera}, \textit{speed}, \textit{function} and \textit{options}, and the \textit{Previous} button of the \textit{ship} dialog switches back to the previous vessel. Alternatively, assign other keys to these functions in keymap.cfg, or change the desktop's shortcuts in its system settings.
 
 \noindent
 \\

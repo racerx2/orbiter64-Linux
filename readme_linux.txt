@@ -80,10 +80,12 @@ describes the graphics client and its settings.
 
 The in-game help system can be opened via the "Help" button on
 the Orbiter Launchpad dialog, or with Alt-F1 while running
-Orbiter. KDE Plasma keeps Alt-F1, Ctrl-F1 to Ctrl-F4 and Ctrl-F9
-for its own shortcuts; the dialogs of these keys are also on
-Orbiter's main menu (F4). See "Keys taken by the desktop" in the
-User Manual.
+Orbiter. In a KDE Plasma Wayland session Orbiter's keys (such as
+Alt-F1, Ctrl-F1 to Ctrl-F4 and Ctrl-F9) go to Orbiter while its
+simulation window has the focus, and the other desktop shortcuts
+keep working. Elsewhere the desktop may keep such keys for itself;
+their dialogs are also on Orbiter's main menu (F4). See "Keys
+taken by the desktop" in the User Manual.
 
 Remaining questions can be posted on the Orbiter user forum at
 https://orbiter-forum.com.

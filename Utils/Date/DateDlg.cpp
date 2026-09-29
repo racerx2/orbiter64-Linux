@@ -4,11 +4,7 @@
 // DateDlg.cpp : implementation file
 //
 
-#ifndef __linux__
-#include "stdafx.h"
-#else // __linux__
 #include "StdAfx.h"
-#endif // __linux__
 #include "Date.h"
 #include "DateDlg.h"
 #include "Convert.h"

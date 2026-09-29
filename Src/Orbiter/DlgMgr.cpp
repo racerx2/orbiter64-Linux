@@ -7,11 +7,7 @@
 #include <stdio.h>
 #include "OrbiterAPI.h"
 #include "DlgMgr.h"
-#ifndef __linux__
-#include "Resource.h"
-#else // __linux__
 #include "resource.h"
-#endif // __linux__
 #include "Orbiter.h"
 #include "Log.h"
 #include "imgui.h"

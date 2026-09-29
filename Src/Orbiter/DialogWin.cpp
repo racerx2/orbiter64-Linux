@@ -8,11 +8,7 @@
 #include "OrbiterResource.h"
 #endif // __linux__
 #include "Orbiter.h"
-#ifndef __linux__
-#include "Resource.h"
-#else // __linux__
 #include "resource.h"
-#endif // __linux__
 #include "Log.h"
 #ifdef __linux__
 #include <QKeyEvent>

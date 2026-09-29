@@ -4,11 +4,7 @@
 #ifndef __PANELS_H_
 #define __PANELS_H_
 
-#ifndef __linux__
-#include "orbitersdk.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "instruments.h"
 
 typedef struct

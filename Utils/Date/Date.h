@@ -21,11 +21,7 @@
 #endif
 #endif // __linux__
 
-#ifndef __linux__
-#include "resource.h"		// main symbols
-#else // __linux__
 #include "Resource.h"		// main symbols
-#endif // __linux__
 
 /////////////////////////////////////////////////////////////////////////////
 // CDateApp:

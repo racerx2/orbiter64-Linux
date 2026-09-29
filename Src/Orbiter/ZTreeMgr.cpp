@@ -3,11 +3,7 @@
 
 #include "ZTreeMgr.h"
 #include "zlib.h"
-#ifndef __linux__
-#include "util.h"
-#else // __linux__
 #include "Util.h"
-#endif // __linux__
 
 // =======================================================================
 // File header for compressed tree files

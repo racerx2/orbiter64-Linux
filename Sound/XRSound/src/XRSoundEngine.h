@@ -13,11 +13,7 @@
 #include <cassert>
 #endif // __linux__
 
-#ifndef __linux__
-#include "OrbiterSDK.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "XRSoundEngine30.h"   // latest interface version 
 
 using namespace std;

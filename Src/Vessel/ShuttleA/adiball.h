@@ -13,11 +13,7 @@
 #define __ADIBALL_H
 
 #include "ShuttleA.h"
-#ifndef __linux__
-#include "..\Common\Instrument.h"
-#else // __linux__
 #include "../Common/Instrument.h"
-#endif // __linux__
 
 // ==============================================================
 

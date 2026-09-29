@@ -25,13 +25,8 @@
 #include <cstring> // str* functions (windows.h brought in string.h)
 #endif // __linux__
 
-#ifndef __linux__
-#include "orbitersdk.h"
-#include "orbiterapi.h"
-#else // __linux__
 #include "Orbitersdk.h"
 #include "OrbiterAPI.h"
-#endif // __linux__
 #include "basefunction.h"
 #include "transxstate.h"
 #include "TransXFunction.h"

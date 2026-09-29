@@ -12,15 +12,9 @@
 #ifndef __DRAGONFLY_H
 #define __DRAGONFLY_H
 
-#ifndef __linux__
-#include "orbitersdk.h"
-#include "panel.h"
-#include "internal.h"
-#else // __linux__
 #include "Orbitersdk.h"
 #include "Panel.h"
 #include "Internal.h"
-#endif // __linux__
 // ==========================================================
 // Some vessel class caps
 // ==========================================================

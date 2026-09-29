@@ -22,11 +22,7 @@
 
 #include "Orbiter.h"
 #include "Vessel.h"
-#ifndef __linux__
-#include "Supervessel.h"
-#else // __linux__
 #include "SuperVessel.h"
-#endif // __linux__
 #include "Config.h"
 #include "Camera.h"
 #include "Pane.h"

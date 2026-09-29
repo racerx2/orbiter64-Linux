@@ -32,11 +32,7 @@
 #endif // __linux__
 #include <cstdio>
 #include <cmath>
-#ifndef __linux__
-#include "orbitersdk.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "mfd.h"
 #include "mfdfunction.h"
 

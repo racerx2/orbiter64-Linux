@@ -12,11 +12,7 @@
 #ifndef __INSTRHSI_H
 #define __INSTRHSI_H
 
-#ifndef __linux__
-#include "..\Common\Instrument.h"
-#else // __linux__
 #include "../Common/Instrument.h"
-#endif // __linux__
 
 // ==============================================================
 

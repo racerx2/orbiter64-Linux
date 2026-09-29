@@ -4,11 +4,7 @@
 #define ORBITER_MODULE
 
 #include "Saturn.h"
-#ifndef __linux__
-#include "..\Satsat\Satsat.h"
-#else // __linux__
 #include "../Satsat/Satsat.h"
-#endif // __linux__
 
 // ======================================================================
 // class Saturn: implementation

@@ -6,11 +6,7 @@
 // ==============================================================
 
 #define ORBITER_MODULE
-#ifndef __linux__
-#include "OrbiterSDK.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "XRSoundDLL.h"
 #include "VesselXRSoundEngine.h"
 #include "ModuleXRSoundEngine.h"

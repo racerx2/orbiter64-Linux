@@ -4,11 +4,7 @@
 // TransformDlg.cpp : implementation file
 //
 
-#ifndef __linux__
-#include "stdafx.h"
-#else // __linux__
 #include "StdAfx.h"
-#endif // __linux__
 #include "Shipedit.h"
 #ifndef __linux__
 #include "TransformDlg.h"

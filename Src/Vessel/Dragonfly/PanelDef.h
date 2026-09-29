@@ -1,13 +1,8 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#ifndef __linux__
-#include "panel.h"
-#include "hsystems.h"
-#else // __linux__
 #include "Panel.h"
 #include "Hsystems.h"
-#endif // __linux__
 #include <string.h>
 
 const int NumPanels=2;

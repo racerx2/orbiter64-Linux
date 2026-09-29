@@ -16,13 +16,8 @@
 #include "panel.cpp"
 #include "math.h"
 #include "resource.h"
-#ifndef __linux__
-#include "orbitersdk.h"
-#include "dragonfly.h"
-#else // __linux__
 #include "Orbitersdk.h"
 #include "Dragonfly.h"
-#endif // __linux__
 
 using std::min;
 

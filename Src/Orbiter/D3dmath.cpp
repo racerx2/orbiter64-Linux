@@ -19,11 +19,7 @@
 #endif // __linux__
 #include <math.h>
 #include <stdio.h>
-#ifndef __linux__
-#include "D3DMath.h"
-#else // __linux__
 #include "D3dmath.h"
-#endif // __linux__
 
 #ifndef __linux__
 VOID VMAT_rotx (D3DMATRIX &a, double r)

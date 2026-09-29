@@ -4,11 +4,7 @@
 // Date.cpp : Defines the class behaviors for the application.
 //
 
-#ifndef __linux__
-#include "stdafx.h"
-#else // __linux__
 #include "StdAfx.h"
-#endif // __linux__
 #include "Date.h"
 #include "DateDlg.h"
 #ifdef __linux__

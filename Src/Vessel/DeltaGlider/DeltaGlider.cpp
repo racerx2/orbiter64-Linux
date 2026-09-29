@@ -40,11 +40,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
-#ifndef __linux__
-#include "OrbiterSDK.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include <imgui.h>
 
 using std::min;

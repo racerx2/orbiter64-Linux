@@ -11,15 +11,9 @@
 #include <stdio.h>
 
 extern "C" {
-#ifndef __linux__
-#include <lua/lua.h>
-#include <lua/lualib.h>
-#include <lua/lauxlib.h>
-#else // __linux__
 #include <Lua/lua.h>
 #include <Lua/lualib.h>
 #include <Lua/lauxlib.h>
-#endif // __linux__
 }
 
 // ==========================================================================

@@ -11,11 +11,7 @@
 // windows.h left out: POINT comes with the SDK (OrbiterPlatform.h), the GDI handles are Qt types
 #endif // __linux__
 #include "vectors.h"
-#ifndef __linux__
-#include "orbitersdk.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 
 #ifdef __linux__
 class QOffscreenSurface;

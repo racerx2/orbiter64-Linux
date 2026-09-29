@@ -8,11 +8,7 @@
 
 #pragma once
 
-#ifndef __linux__
-#include "OrbiterSDK.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "XRSoundEngine.h"
 
 // Defines the master map of all known Orbiter vessels (handles) -> XRSoundEngine * for it.

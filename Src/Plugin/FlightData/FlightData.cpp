@@ -14,11 +14,7 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
-#ifndef __linux__
-#include "orbitersdk.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "imgui.h"
 #include "imgui_extras.h"
 #include "implot.h"

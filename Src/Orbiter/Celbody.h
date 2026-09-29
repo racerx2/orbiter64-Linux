@@ -9,11 +9,7 @@
 #ifndef __CELBODY_H
 #define __CELBODY_H
 
-#ifndef __linux__
-#include "RigidBody.h"
-#else // __linux__
 #include "Rigidbody.h"
-#endif // __linux__
 #include "OrbiterAPI.h"
 #include "PinesGrav.h"
 

@@ -7,11 +7,7 @@
 // STRICT left out: windows.h handle type-checking switch
 #endif // __linux__
 #define ORBITER_MODULE
-#ifndef __linux__
-#include "orbitersdk.h"
-#else // __linux__
 #include "Orbitersdk.h"
-#endif // __linux__
 #include "LuaMFD.h"
 #ifdef __linux__
 #include <cstring>

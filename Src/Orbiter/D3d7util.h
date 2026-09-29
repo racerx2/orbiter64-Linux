@@ -23,11 +23,7 @@
 #include "DrawAPI.h"
 #endif // __linux__
 
-#ifndef __linux__
-struct VECTOR2D     { D3DVALUE x, y; };
-#else // __linux__
 struct VECTOR2D     { float x, y; };
-#endif // __linux__
 
 #ifndef __linux__
 struct VERTEX_XYZ   { D3DVALUE x, y, z; };                   // transformed vertex
@@ -43,13 +39,8 @@ struct VERTEX_XYZHC { float x, y, z, h; DWORD col; };  // transformed vertex wit
 
 // untransformed unlit vertex with two sets of texture coordinates
 struct VERTEX_2TEX  {
-#ifndef __linux__
-	D3DVALUE x, y, z, nx, ny, nz;
-	D3DVALUE tu0, tv0, tu1, tv1;
-#else // __linux__
 	float x, y, z, nx, ny, nz;
 	float tu0, tv0, tu1, tv1;
-#endif // __linux__
 	inline VERTEX_2TEX() {}
 #ifndef __linux__
 	inline VERTEX_2TEX (D3DVECTOR p, D3DVECTOR n, D3DVALUE u0, D3DVALUE v0, D3DVALUE u1, D3DVALUE v1)

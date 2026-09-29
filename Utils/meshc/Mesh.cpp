@@ -146,11 +146,7 @@ Mesh::~Mesh ()
 void Mesh::Setup ()
 {
 	DWORD g, i;
-#ifndef __linux__
-	D3DVALUE x, y, z, dx, dy, dz, d2, d2max;
-#else // __linux__
 	float x, y, z, dx, dy, dz, d2, d2max;
-#endif // __linux__
 
 	if (GrpVis) { // allocated already
 		delete []GrpCnt;
@@ -166,11 +162,7 @@ void Mesh::Setup ()
 #endif // __linux__
 	GrpVis  = new DWORD[nGrp];
 	for (g = 0; g < nGrp; g++) {
-#ifndef __linux__
-		D3DVALUE invtx = (D3DVALUE)(1.0/Grp[g].nVtx);
-#else // __linux__
 		float invtx = (float)(1.0/Grp[g].nVtx);
-#endif // __linux__
 		x = y = z = 0.0f;
 		for (i = 0; i < Grp[g].nVtx; i++) {
 			x += Grp[g].Vtx[i].x;
@@ -324,11 +316,7 @@ void Mesh::Clear ()
 	ReleaseTextures ();
 }
 
-#ifndef __linux__
-void Mesh::ScaleGroup (DWORD grp, D3DVALUE sx, D3DVALUE sy, D3DVALUE sz)
-#else // __linux__
 void Mesh::ScaleGroup (DWORD grp, float sx, float sy, float sz)
-#endif // __linux__
 {
 	int i, nv = Grp[grp].nVtx;
 #ifndef __linux__
@@ -342,20 +330,12 @@ void Mesh::ScaleGroup (DWORD grp, float sx, float sy, float sz)
 		vtx[i].z *= sz;
 	}
 	if (sx == sy && sx == sz) return; // no change in normals
-#ifndef __linux__
-	D3DVALUE snx = sy*sz, sny = sx*sz, snz = sx*sy;
-#else // __linux__
 	float snx = sy*sz, sny = sx*sz, snz = sx*sy;
-#endif // __linux__
 	for (i = 0; i < nv; i++) {
 		vtx[i].nx *= snx;
 		vtx[i].ny *= sny;
 		vtx[i].nz *= snz;
-#ifndef __linux__
-		D3DVALUE ilen = (D3DVALUE)(1.0/sqrt (vtx[i].nx*vtx[i].nx + vtx[i].ny*vtx[i].ny + vtx[i].nz*vtx[i].nz));
-#else // __linux__
 		float ilen = (float)(1.0/sqrt (vtx[i].nx*vtx[i].nx + vtx[i].ny*vtx[i].ny + vtx[i].nz*vtx[i].nz));
-#endif // __linux__
 		vtx[i].nx *= ilen;
 		vtx[i].ny *= ilen;
 		vtx[i].nz *= ilen;
@@ -363,21 +343,13 @@ void Mesh::ScaleGroup (DWORD grp, float sx, float sy, float sz)
 	GrpSetup = false;
 }
 
-#ifndef __linux__
-void Mesh::Scale (D3DVALUE sx, D3DVALUE sy, D3DVALUE sz)
-#else // __linux__
 void Mesh::Scale (float sx, float sy, float sz)
-#endif // __linux__
 {
 	for (DWORD grp = 0; grp < nGrp; grp++)
 		ScaleGroup (grp, sx, sy, sz);
 }
 
-#ifndef __linux__
-void Mesh::TranslateGroup (DWORD grp, D3DVALUE dx, D3DVALUE dy, D3DVALUE dz)
-#else // __linux__
 void Mesh::TranslateGroup (DWORD grp, float dx, float dy, float dz)
-#endif // __linux__
 {
 	int i, nv = Grp[grp].nVtx;
 #ifndef __linux__
@@ -393,21 +365,13 @@ void Mesh::TranslateGroup (DWORD grp, float dx, float dy, float dz)
 	GrpSetup = false;
 }
 
-#ifndef __linux__
-void Mesh::Translate (D3DVALUE dx, D3DVALUE dy, D3DVALUE dz)
-#else // __linux__
 void Mesh::Translate (float dx, float dy, float dz)
-#endif // __linux__
 {
 	for (DWORD grp = 0; grp < nGrp; grp++)
 		TranslateGroup (grp, dx, dy, dz);
 }
 
-#ifndef __linux__
-void Mesh::RotateGroup (DWORD grp, RotAxis axis, D3DVALUE angle)
-#else // __linux__
 void Mesh::RotateGroup (DWORD grp, RotAxis axis, float angle)
-#endif // __linux__
 {
 	int i, nv = Grp[grp].nVtx;
 #ifndef __linux__
@@ -420,54 +384,30 @@ void Mesh::RotateGroup (DWORD grp, RotAxis axis, float angle)
 	switch (axis) {
 	case ROTATE_X:
 		for (i = 0; i < nv; i++) {
-#ifndef __linux__
-			D3DVALUE y = vtx[i].y, z = vtx[i].z;
-#else // __linux__
 			float y = vtx[i].y, z = vtx[i].z;
-#endif // __linux__
 			vtx[i].y = cosa*y - sina*z;
 			vtx[i].z = sina*y + cosa*z;
-#ifndef __linux__
-			D3DVALUE ny = vtx[i].ny, nz = vtx[i].nz;
-#else // __linux__
 			float ny = vtx[i].ny, nz = vtx[i].nz;
-#endif // __linux__
 			vtx[i].ny = cosa*ny - sina*nz;
 			vtx[i].nz = sina*ny + cosa*nz;
 		}
 		break;
 	case ROTATE_Y:
 		for (i = 0; i < nv; i++) {
-#ifndef __linux__
-			D3DVALUE x = vtx[i].x, z = vtx[i].z;
-#else // __linux__
 			float x = vtx[i].x, z = vtx[i].z;
-#endif // __linux__
 			vtx[i].x = cosa*x - sina*z;
 			vtx[i].z = sina*x + cosa*z;
-#ifndef __linux__
-			D3DVALUE nx = vtx[i].nx, nz = vtx[i].nz;
-#else // __linux__
 			float nx = vtx[i].nx, nz = vtx[i].nz;
-#endif // __linux__
 			vtx[i].nx = cosa*nx - sina*nz;
 			vtx[i].nz = sina*nx + cosa*nz;
 		}
 		break;
 	case ROTATE_Z:
 		for (i = 0; i < nv; i++) {
-#ifndef __linux__
-			D3DVALUE x = vtx[i].x, y = vtx[i].y;
-#else // __linux__
 			float x = vtx[i].x, y = vtx[i].y;
-#endif // __linux__
 			vtx[i].x = cosa*x - sina*y;
 			vtx[i].y = sina*x + cosa*y;
-#ifndef __linux__
-			D3DVALUE nx = vtx[i].nx, ny = vtx[i].ny;
-#else // __linux__
 			float nx = vtx[i].nx, ny = vtx[i].ny;
-#endif // __linux__
 			vtx[i].nx = cosa*nx - sina*ny;
 			vtx[i].ny = sina*nx + cosa*ny;
 		}
@@ -476,11 +416,7 @@ void Mesh::RotateGroup (DWORD grp, RotAxis axis, float angle)
 	GrpSetup = false;
 }
 
-#ifndef __linux__
-void Mesh::Rotate (RotAxis axis, D3DVALUE angle)
-#else // __linux__
 void Mesh::Rotate (RotAxis axis, float angle)
-#endif // __linux__
 {
 	for (DWORD grp = 0; grp < nGrp; grp++)
 		RotateGroup (grp, axis, angle);
@@ -531,11 +467,7 @@ void Mesh::Mirror (MirrorDir dir)
 		MirrorGroup (grp, dir);
 }
 
-#ifndef __linux__
-void Mesh::TexScaleGroup (DWORD grp, D3DVALUE su, D3DVALUE sv)
-#else // __linux__
 void Mesh::TexScaleGroup (DWORD grp, float su, float sv)
-#endif // __linux__
 {
 	int i, nv = Grp[grp].nVtx;
 #ifndef __linux__
@@ -549,11 +481,7 @@ void Mesh::TexScaleGroup (DWORD grp, float su, float sv)
 	}
 }
 
-#ifndef __linux__
-void Mesh::TexScale (D3DVALUE su, D3DVALUE sv)
-#else // __linux__
 void Mesh::TexScale (float su, float sv)
-#endif // __linux__
 {
 	for (DWORD grp = 0; grp < nGrp; grp++)
 		TexScaleGroup (grp, su, sv);
@@ -605,37 +533,19 @@ void Mesh::CalcNormals (DWORD grp, bool missingonly)
 
 		if (len >= eps) {
 			nm.x /= len, nm.y /= len, nm.z /= len;
-#ifndef __linux__
-			D3DVALUE d01 = D3DMath_Length(V01);
-			D3DVALUE d02 = D3DMath_Length(V02);
-			D3DVALUE d12 = D3DMath_Length(V12);
-#else // __linux__
 			float d01 = D3DMath_Length(V01);
 			float d02 = D3DMath_Length(V02);
 			float d12 = D3DMath_Length(V12);
-#endif // __linux__
 			if (calcNml[i0]) {
-#ifndef __linux__
-				D3DVALUE a0 = acos((d01 * d01 + d02 * d02 - d12 * d12) / (2.0f * d01 * d02));
-#else // __linux__
 				float a0 = acos((d01 * d01 + d02 * d02 - d12 * d12) / (2.0f * d01 * d02));
-#endif // __linux__
 				vtx[i0].nx += nm.x * a0, vtx[i0].ny += nm.y * a0, vtx[i0].nz += nm.z * a0;
 			}
 			if (calcNml[i1]) {
-#ifndef __linux__
-				D3DVALUE a1 = acos((d01 * d01 + d12 * d12 - d02 * d02) / (2.0f * d01 * d12));
-#else // __linux__
 				float a1 = acos((d01 * d01 + d12 * d12 - d02 * d02) / (2.0f * d01 * d12));
-#endif // __linux__
 				vtx[i1].nx += nm.x * a1, vtx[i1].ny += nm.y * a1, vtx[i1].nz += nm.z * a1;
 			}
 			if (calcNml[i2]) {
-#ifndef __linux__
-				D3DVALUE a2 = acos((d02 * d02 + d12 * d12 - d01 * d01) / (2.0f * d02 * d12));
-#else // __linux__
 				float a2 = acos((d02 * d02 + d12 * d12 - d01 * d01) / (2.0f * d02 * d12));
-#endif // __linux__
 				vtx[i2].nx += nm.x * a2, vtx[i2].ny += nm.y * a2, vtx[i2].nz += nm.z * a2;
 			}
 		}
@@ -675,13 +585,8 @@ void Mesh::CalcTexCoords (DWORD grp)
 		D3DMath_Normalise (pos);
 		double tht = acos (pos.y);
 		double phi = atan2 (pos.z, pos.x);
-#ifndef __linux__
-		vtx[i].tu = (D3DVALUE)(phi >= 0.0 ? phi*i2pi : (phi+Pi2)*i2pi);
-		vtx[i].tv = (D3DVALUE)(tht*ipi);
-#else // __linux__
 		vtx[i].tu = (float)(phi >= 0.0 ? phi*i2pi : (phi+Pi2)*i2pi);
 		vtx[i].tv = (float)(tht*ipi);
-#endif // __linux__
 	}
 }
 

@@ -50,11 +50,7 @@ public:
 	void Move (LONG dx, LONG dy);
 	// scrolls panel by the specified amount in x and y
 
-#ifndef __linux__
-	void Point2Screen (long srcX, long srcY, long &tgtX, long &tgtY) const;
-#else // __linux__
 	void Point2Screen (LONG srcX, LONG srcY, LONG &tgtX, LONG &tgtY) const;
-#endif // __linux__
 	// converts point from unscaled panel space to viewport space
 
 	void Area2Screen (const RECT &srcR, RECT &tgtR) const;

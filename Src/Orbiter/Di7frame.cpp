@@ -341,11 +341,7 @@ int CDIFramework7::Create (void *hInst)
 // Name: Destroy()
 // Desc: Deletes devices and DI object
 //-----------------------------------------------------------------------------
-#ifndef __linux__
-VOID CDIFramework7::Destroy ()
-#else // __linux__
 void CDIFramework7::Destroy ()
-#endif // __linux__
 {
 	DestroyDevices();
 #ifndef __linux__

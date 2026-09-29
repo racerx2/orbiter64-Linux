@@ -25,13 +25,8 @@
 #include "Vecmat.h"
 
 typedef struct {
-#ifndef __linux__
-	D3DVALUE x, y, z;
-	D3DVALUE tu, tv;
-#else // __linux__
 	float x, y, z;
 	float tu, tv;
-#endif // __linux__
 } POSTEXVERTEX;
 #ifndef __linux__
 const DWORD POSTEXVERTEXFLAG = D3DFVF_XYZ | D3DFVF_TEX1 | D3DFVF_TEXCOORDSIZE2(0);
@@ -351,11 +346,7 @@ D3DMath_Normalise (D3DVECTOR &v)
 D3DMath_Normalise (oapi::FVECTOR3 &v)
 #endif // __linux__
 {
-#ifndef __linux__
-	D3DVALUE ilen = 1.0f/D3DMath_Length (v);
-#else // __linux__
 	float ilen = 1.0f/D3DMath_Length (v);
-#endif // __linux__
 	v.x *= ilen, v.y *= ilen, v.z *= ilen;
 }
 

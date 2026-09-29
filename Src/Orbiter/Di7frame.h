@@ -140,11 +140,7 @@ public:
 #endif // __linux__
 	// Initialize the DirectInput objects
 
-#ifndef __linux__
-	VOID Destroy ();
-#else // __linux__
 	void Destroy ();
-#endif // __linux__
 	// Destroys devices and DI object
 
 #ifndef __linux__

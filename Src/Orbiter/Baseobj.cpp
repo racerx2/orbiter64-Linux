@@ -147,11 +147,7 @@ void BaseObject::Setup ()
 	relpos.y += yofs;
 }
 
-#ifndef __linux__
-D3DVALUE BaseObject::ElevCorrection (D3DVALUE px, D3DVALUE pz)
-#else // __linux__
 float BaseObject::ElevCorrection (float px, float pz)
-#endif // __linux__
 {
 	double r = base->RefPlanet()->Size();
 	double r2 = r*r;
@@ -447,19 +443,11 @@ void Block::Activate ()
 {
 	if (dyndata) return;  // active already
 	dyndata = new struct DYNDATA; TRACENEW
-#ifndef __linux__
-	dyndata->databuf = new D3DVALUE[13]; TRACENEW
-	D3DVALUE dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
-	D3DVALUE srot = (D3DVALUE)sin(rot), crot = (D3DVALUE)cos(rot);
-	D3DVALUE dxcrot = dx*crot, dxsrot = dx*srot;
-	D3DVALUE dzsrot = dz*srot, dzcrot = dz*crot;
-#else // __linux__
 	dyndata->databuf = new float[13]; TRACENEW
 	float dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
 	float srot = (float)sin(rot), crot = (float)cos(rot);
 	float dxcrot = dx*crot, dxsrot = dx*srot;
 	float dzsrot = dz*srot, dzcrot = dz*crot;
-#endif // __linux__
 	dyndata->databuf[0] =  dxcrot + dzsrot + relpos.x;
 	dyndata->databuf[1] = -dxcrot + dzsrot + relpos.x;
 	dyndata->databuf[2] = -dxcrot - dzsrot + relpos.x;
@@ -505,11 +493,7 @@ void Block::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 	static WORD sidx[12] = {0,1,2,2,3,0,4,5,6,6,7,4};
 	DWORD i;
 	WORD iofs = (WORD)idx_ofs;
-#ifndef __linux__
-	D3DVALUE *db = dyndata->databuf;
-#else // __linux__
 	float *db = dyndata->databuf;
-#endif // __linux__
 
 	switch (grp) {
 	case 0:
@@ -585,11 +569,7 @@ void Block::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 Mesh *Block::ExportShadowMesh (double &shelev)
 {
 	static WORD sidx[30] = {0,1,4, 4,1,5, 1,2,5, 5,2,6, 2,3,6, 6,3,7, 3,0,7, 7,0,4, 4,5,6, 6,7,4};
-#ifndef __linux__
-	D3DVALUE *db = dyndata->databuf;
-#else // __linux__
 	float *db = dyndata->databuf;
-#endif // __linux__
 	DWORD i, nvtx = 8, nidx = 30;
 	NTVERTEX *vtx = new NTVERTEX[nvtx]; TRACENEW
 	WORD *idx = new WORD[nidx]; TRACENEW
@@ -722,17 +702,6 @@ void Hangar::Activate ()
 	dyndata = new struct DYNDATA; TRACENEW
 	dyndata->Vtx = new NTVERTEX[44]; TRACENEW
 	NTVERTEX *Vtx = dyndata->Vtx;
-#ifndef __linux__
-	D3DVALUE dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
-	D3DVALUE dy1 = 0.5f*dy; // side wall height
-	D3DVALUE dy2 = dy-dy1;  // roof height
-	D3DVALUE srot = (D3DVALUE)sin(rot), crot = (D3DVALUE)cos(rot);
-	D3DVALUE dxcrot = dx*crot, dxsrot = dx*srot;
-	D3DVALUE dzsrot = dz*srot, dzcrot = dz*crot;
-	D3DVALUE dxcrot1 = 0.72f*dxcrot, dxcrot2 = 0.28f*dxcrot;
-	D3DVALUE dxsrot1 = 0.72f*dxsrot, dxsrot2 = 0.28f*dxsrot;
-	D3DVALUE tufac = tuscale[0]*dz/dx;
-#else // __linux__
 	float dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
 	float dy1 = 0.5f*dy; // side wall height
 	float dy2 = dy-dy1;  // roof height
@@ -742,7 +711,6 @@ void Hangar::Activate ()
 	float dxcrot1 = 0.72f*dxcrot, dxcrot2 = 0.28f*dxcrot;
 	float dxsrot1 = 0.72f*dxsrot, dxsrot2 = 0.28f*dxsrot;
 	float tufac = tuscale[0]*dz/dx;
-#endif // __linux__
 
 	Vtx[0].x  = Vtx[7].x  = Vtx[17].x = Vtx[18].x = Vtx[29].x =  dxcrot  + dzsrot + relpos.x;
 	Vtx[1].x  = Vtx[2].x  = Vtx[20].x = Vtx[23].x = Vtx[39].x = -dxcrot  + dzsrot + relpos.x;
@@ -911,11 +879,7 @@ void Hangar::ExportShadow (VERTEX_XYZ *vtx, WORD *idx)
 void Hangar::UpdateShadow (Vector &fromsun, double az)
 {
 	static VECTOR2D proj[16];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	DWORD i, nCH;
 	WORD *CHidx;
 #ifndef __linux__
@@ -1062,11 +1026,7 @@ void Hangar2::ExportShadow (VERTEX_XYZ *vtx, WORD *idx)
 void Hangar2::UpdateShadow (Vector &fromsun, double az)
 {
 	static VECTOR2D proj[10];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	DWORD i, nCH;
 	WORD *CHidx;
 #ifndef __linux__
@@ -1096,15 +1056,6 @@ void Hangar2::Activate ()
     dyndata = new struct DYNDATA; TRACENEW
     dyndata->Vtx = new NTVERTEX[26]; TRACENEW
     NTVERTEX *Vtx = dyndata->Vtx;
-#ifndef __linux__
-    D3DVALUE dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
-    D3DVALUE dy2 = (roofh < 0.0 || roofh > dy ? 0.5f*dy : roofh); // roof height
-    D3DVALUE dy1 = dy - dy2; // side wall height
-    D3DVALUE srot = (D3DVALUE)sin(rot), crot = (D3DVALUE)cos(rot);
-    D3DVALUE dxcrot = dx*crot, dxsrot = dx*srot;
-    D3DVALUE dzsrot = dz*srot, dzcrot = dz*crot;
-    D3DVALUE tufac = tuscale[0]*dz/dx;
-#else // __linux__
     float dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
     float dy2 = (roofh < 0.0 || roofh > dy ? 0.5f*dy : roofh); // roof height
     float dy1 = dy - dy2; // side wall height
@@ -1112,7 +1063,6 @@ void Hangar2::Activate ()
     float dxcrot = dx*crot, dxsrot = dx*srot;
     float dzsrot = dz*srot, dzcrot = dz*crot;
     float tufac = tuscale[0]*dz/dx;
-#endif // __linux__
 
     Vtx[0].x = Vtx[4].x = Vtx[11].x = Vtx[12].x = Vtx[19].x =  dxcrot + dzsrot + relpos.x;
     Vtx[1].x = Vtx[2].x = Vtx[15].x = Vtx[16].x = Vtx[23].x = -dxcrot + dzsrot + relpos.x;
@@ -1288,11 +1238,7 @@ void Hangar3::ExportShadow (VERTEX_XYZ *vtx, WORD *idx)
 void Hangar3::UpdateShadow (Vector &fromsun, double az)
 {
 	static VECTOR2D proj[14];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	DWORD i, nCH;
 	WORD *CHidx;
 #ifndef __linux__
@@ -1318,25 +1264,11 @@ void Hangar3::UpdateShadow (Vector &fromsun, double az)
 
 void Hangar3::Activate ()
 {
-#ifndef __linux__
-    static D3DVALUE recess = 2.0f; // should be configurable
-#else // __linux__
     static float recess = 2.0f; // should be configurable
-#endif // __linux__
     if (dyndata) return; // active already
     dyndata = new struct DYNDATA; TRACENEW
     dyndata->Vtx = new NTVERTEX[40]; TRACENEW
     NTVERTEX *Vtx = dyndata->Vtx;
-#ifndef __linux__
-    D3DVALUE dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
-    D3DVALUE h1 = 0.543f*dy, h2 = 0.884f*dy, h3 = dy;
-    D3DVALUE srot = (D3DVALUE)sin(rot), crot = (D3DVALUE)cos(rot);
-    D3DVALUE dxcrot = dx*crot, dxsrot = dx*srot;
-    D3DVALUE dzsrot = dz*srot, dzcrot = dz*crot;
-    D3DVALUE dxcrot1 = 0.707f*dxcrot, dxcrot2 = 0.366f*dxcrot;
-    D3DVALUE dxsrot1 = 0.707f*dxsrot, dxsrot2 = 0.366f*dxsrot;
-    D3DVALUE dzcrot1 = (dz-recess)*crot, dzsrot1 = (dz-recess)*srot;
-#else // __linux__
     float dx = 0.5f*scale.x, dy = scale.y, dz = 0.5f*scale.z;
     float h1 = 0.543f*dy, h2 = 0.884f*dy, h3 = dy;
     float srot = (float)sin(rot), crot = (float)cos(rot);
@@ -1345,7 +1277,6 @@ void Hangar3::Activate ()
     float dxcrot1 = 0.707f*dxcrot, dxcrot2 = 0.366f*dxcrot;
     float dxsrot1 = 0.707f*dxsrot, dxsrot2 = 0.366f*dxsrot;
     float dzcrot1 = (dz-recess)*crot, dzsrot1 = (dz-recess)*srot;
-#endif // __linux__
     Vtx[ 0].x = Vtx[26].x =  dxcrot  + dzsrot + relpos.x;
     Vtx[ 1].x = Vtx[27].x =  dxcrot1 + dzsrot + relpos.x;
     Vtx[ 2].x = Vtx[28].x =  dxcrot2 + dzsrot + relpos.x;
@@ -1479,30 +1410,16 @@ void Tank::Activate ()
 	dyndata = new struct DYNDATA; TRACENEW
 	dyndata->Vtx = new NTVERTEX[nstep*3+3]; TRACENEW
 	NTVERTEX *Vtx = dyndata->Vtx;
-#ifndef __linux__
-	D3DVALUE dx, dz, dnx, dnz, fac, ifac = 1.0f/(D3DVALUE)nstep;
-	D3DVALUE srot = (D3DVALUE)sin(rot), crot = (D3DVALUE)cos(rot);
-#else // __linux__
 	float dx, dz, dnx, dnz, fac, ifac = 1.0f/(float)nstep;
 	float srot = (float)sin(rot), crot = (float)cos(rot);
-#endif // __linux__
 	DWORD i, ofs1 = nstep+1, ofs2 = 2*nstep+2;
 	double alpha;
 
 	for (i = 0; i < nstep; i++) {
-#ifndef __linux__
-		fac = (D3DVALUE)i*ifac;
-#else // __linux__
 		fac = (float)i*ifac;
-#endif // __linux__
 		alpha = Pi2*fac;
-#ifndef __linux__
-		dx = (dnx = (D3DVALUE)cos(alpha)) * scale.x;
-		dz = (dnz = (D3DVALUE)sin(alpha)) * scale.z;
-#else // __linux__
 		dx = (dnx = (float)cos(alpha)) * scale.x;
 		dz = (dnz = (float)sin(alpha)) * scale.z;
-#endif // __linux__
 		Vtx[i].x = Vtx[ofs1+i].x = Vtx[ofs2+i].x = crot*dx - srot*dz + relpos.x;
 		Vtx[i].z = Vtx[ofs1+i].z = Vtx[ofs2+i].z = srot*dx + crot*dz + relpos.z;
 		Vtx[i].y = relpos.y;
@@ -1638,11 +1555,7 @@ void Tank::UpdateShadow (Vector &fromsun, double az)
 {
 	static DWORD nproj = 24;
 	static VECTOR2D *proj = new VECTOR2D[24];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	DWORD i, nCH;
 	WORD *CHidx;
 #ifndef __linux__
@@ -1781,11 +1694,7 @@ bool Lpad01::GetGroupSpec (int grp, DWORD &nvtx, DWORD &nidx, LONGLONG &_texid,
 void Lpad01::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 {
 	if (grp == 0) {
-#ifndef __linux__
-		D3DVALUE cosr = scale.x*(D3DVALUE)cos(rot), sinr = scale.x*(D3DVALUE)sin(rot);
-#else // __linux__
 		float cosr = scale.x*(float)cos(rot), sinr = scale.x*(float)sin(rot);
-#endif // __linux__
 		DWORD i;
 		WORD iofs = (WORD)idx_ofs;
 		NTVERTEX *src = Vtx;
@@ -1884,11 +1793,7 @@ bool Lpad02::GetGroupSpec (int grp, DWORD &nvtx, DWORD &nidx, LONGLONG &_texid,
 void Lpad02::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 {
 	if (grp == 0) {
-#ifndef __linux__
-		D3DVALUE cosr = scale.x*(D3DVALUE)cos(rot), sinr = scale.x*(D3DVALUE)sin(rot);
-#else // __linux__
 		float cosr = scale.x*(float)cos(rot), sinr = scale.x*(float)sin(rot);
-#endif // __linux__
 		DWORD i;
 		WORD iofs = (WORD)idx_ofs;
 		NTVERTEX *src = Vtx;
@@ -2006,11 +1911,7 @@ bool Lpad02a::GetGroupSpec (int grp, DWORD &nvtx, DWORD &nidx, LONGLONG &_texid,
 void Lpad02a::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 {
 	if (grp == 0) {
-#ifndef __linux__
-		D3DVALUE cosr = scale.x*(D3DVALUE)cos(rot), sinr = scale.x*(D3DVALUE)sin(rot);
-#else // __linux__
 		float cosr = scale.x*(float)cos(rot), sinr = scale.x*(float)sin(rot);
-#endif // __linux__
 		DWORD i;
 		WORD iofs = (WORD)idx_ofs;
 		NTVERTEX *src = Vtx;
@@ -2756,11 +2657,7 @@ void Train::Init (const oapi::FVECTOR3 &_end1, const oapi::FVECTOR3 &_end2)
 	dir.x = end2.x - end1.x;
 	dir.y = end2.y - end1.y;
 	dir.z = end2.z - end1.z;
-#ifndef __linux__
-	length = (D3DVALUE)sqrt (dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
-#else // __linux__
 	length = (float)sqrt (dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
-#endif // __linux__
 	dir.x /= length;
 	dir.y /= length;
 	dir.z /= length;
@@ -2785,25 +2682,13 @@ void Train::SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res, const oapi
 #endif // __linux__
 {
 	// rotation matrix
-#ifndef __linux__
-	D3DVALUE sinth, costh, cosph, sinph, vx, vy, vz;
-	costh = (D3DVALUE)cos (asin (sinth = (end2.y-end1.y)/length));
-#else // __linux__
 	float sinth, costh, cosph, sinph, vx, vy, vz;
 	costh = (float)cos (asin (sinth = (end2.y-end1.y)/length));
-#endif // __linux__
 	double ph = atan2 (end2.x-end1.x, end2.z-end1.z);
-#ifndef __linux__
-	cosph = (D3DVALUE)cos(ph), sinph = (D3DVALUE)sin(ph);
-	D3DVALUE r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
-	D3DVALUE r21 =  0.0,   r22 =  costh,       r23 = sinth;
-	D3DVALUE r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#else // __linux__
 	cosph = (float)cos(ph), sinph = (float)sin(ph);
 	float r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
 	float r21 =  0.0,   r22 =  costh,       r23 = sinth;
 	float r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#endif // __linux__
 
 	for (DWORD i = 0; i < nvtx; i++) {
 		const NTVERTEX &vtx = ref[i];
@@ -2816,18 +2701,10 @@ void Train::SetCabin (DWORD nvtx, const NTVERTEX *ref, NTVERTEX *res, const oapi
 	}
 }
 
-#ifndef __linux__
-D3DVALUE Train::MoveCabin (D3DVALUE &pos, D3DVALUE &vel, bool &atmin)
-#else // __linux__
 float Train::MoveCabin (float &pos, float &vel, bool &atmin)
-#endif // __linux__
 {
 	atmin = false;
-#ifndef __linux__
-	D3DVALUE ds = vel*(D3DVALUE)td.SimDT;
-#else // __linux__
 	float ds = vel*(float)td.SimDT;
-#endif // __linux__
 	if ((pos += ds) < slowzone) {
 		if (pos < minpos) ds -= pos-minpos, pos = minpos, vel = 1.0, atmin = true;
 		else vel = ((pos-minpos)*speedfac+1.0f) * (vel > 0.0 ? 1.0f:-1.0f);
@@ -2946,25 +2823,13 @@ void Train1::Activate ()
 	NTVERTEX *Vtx = dyndata->Vtx;
 
 	// rotation matrix
-#ifndef __linux__
-	D3DVALUE sinth, costh, cosph, sinph;
-	costh = (D3DVALUE)cos (asin (sinth = (end2.y-end1.y)/length));
-#else // __linux__
 	float sinth, costh, cosph, sinph;
 	costh = (float)cos (asin (sinth = (end2.y-end1.y)/length));
-#endif // __linux__
 	double ph = atan2 (end2.x-end1.x, end2.z-end1.z);
-#ifndef __linux__
-	cosph = (D3DVALUE)cos(ph), sinph = (D3DVALUE)sin(ph);
-	D3DVALUE r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
-	D3DVALUE r21 =  0.0,   r22 =  costh,       r23 = sinth;
-	D3DVALUE r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#else // __linux__
 	cosph = (float)cos(ph), sinph = (float)sin(ph);
 	float r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
 	float r21 =  0.0,   r22 =  costh,       r23 = sinth;
 	float r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#endif // __linux__
 
 	// cabin vertices
 	for (i = 0; i < 30; i++) {
@@ -2981,11 +2846,7 @@ void Train1::Activate ()
 	for (i = 0; i < 8; i++) {
 		NTVERTEX &src = mrail1[i];
 		NTVERTEX &tgt = Vtx[30+i];
-#ifndef __linux__
-		D3DVALUE vz = (i%2 ? length : 0.0f);
-#else // __linux__
 		float vz = (i%2 ? length : 0.0f);
-#endif // __linux__
 		tgt.x  = src.x*r11 + src.y*r12 + vz*r13 + end1.x;
 		tgt.y  = src.x*r21 + src.y*r22 + vz*r23 + end1.y;
 		tgt.z  = src.x*r31 + src.y*r32 + vz*r33 + end1.z;
@@ -3084,13 +2945,8 @@ void Train1::Update ()
 	DWORD i;
 	// update cabin position
 	bool reset;
-#ifndef __linux__
-	D3DVALUE shift = MoveCabin (cpos, cvel, reset);
-	D3DVALUE dx = shift*dir.x, dy = shift*dir.y, dz = shift*dir.z;
-#else // __linux__
 	float shift = MoveCabin (cpos, cvel, reset);
 	float dx = shift*dir.x, dy = shift*dir.y, dz = shift*dir.z;
-#endif // __linux__
 	if (reset && ++dyndata->tick > 10000) {
 #ifndef __linux__
 		D3DVECTOR ofs; ofs.x = ofs.y = 0.0f; ofs.z = minpos;
@@ -3115,11 +2971,7 @@ void Train1::UpdateShadow (Vector &fromsun, double az)
 {
 	static DWORD i, j, nCH, ii[12] = {2,3,4,5,6,7,10,11,12,13,14,15};
 	static VECTOR2D proj[12];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	WORD *CHidx;
 	NTVERTEX *cvtx = cabinvtx;
 	VERTEX_XYZ *vptr = shvtx;
@@ -3257,42 +3109,24 @@ void Train2::Activate ()
 	shvtx = 0;
 	dyndata->tick = rand()%10000;
 
-#ifndef __linux__
-	D3DVALUE dx = (end2.x-end1.x)/(D3DVALUE)ng;
-	D3DVALUE dy = (end2.y-end1.y)/(D3DVALUE)ng;
-	D3DVALUE dz = (end2.z-end1.z)/(D3DVALUE)ng;
-#else // __linux__
 	float dx = (end2.x-end1.x)/(float)ng;
 	float dy = (end2.y-end1.y)/(float)ng;
 	float dz = (end2.z-end1.z)/(float)ng;
-#endif // __linux__
 
 	// rotation matrix
 	double ph = atan2 (end2.x-end1.x, end2.z-end1.z);
-#ifndef __linux__
-	D3DVALUE sinth = (end2.y-end1.y)/length, costh = (D3DVALUE)(cos(asin(sinth)));
-	D3DVALUE cosph = (D3DVALUE)cos(ph), sinph = (D3DVALUE)sin(ph);
-	D3DVALUE r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
-	D3DVALUE r21 =  0.0f,  r22 =  costh,       r23 = sinth;
-	D3DVALUE r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#else // __linux__
 	float sinth = (end2.y-end1.y)/length, costh = (float)(cos(asin(sinth)));
 	float cosph = (float)cos(ph), sinph = (float)sin(ph);
 	float r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
 	float r21 =  0.0f,  r22 =  costh,       r23 = sinth;
 	float r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#endif // __linux__
 
 	// first girder
 	for (i = 0; i < 12; i++) {
 		// note we don't tilt girders even if p1.y != p2.y
 		NTVERTEX &src = girder_template[i];
 		NTVERTEX &tgt = dyndata->rail[i];
-#ifndef __linux__
-		D3DVALUE vy = (i%2 ? (i==5 || i==11 ? 0:height+4) : (i==0 || i==6 ? 0:height));
-#else // __linux__
 		float vy = (i%2 ? (i==5 || i==11 ? 0:height+4) : (i==0 || i==6 ? 0:height));
-#endif // __linux__
 		tgt.x  =  src.x*cosph + src.z*sinph + end1.x;
 		tgt.y  =  vy + end1.y;
 		tgt.z  = -src.x*sinph + src.z*cosph + end1.z;
@@ -3314,11 +3148,7 @@ void Train2::Activate ()
 	for (i = 0; i < 8; i++) { // rotate and move to start position
 		NTVERTEX &src = support_template[i];
 		NTVERTEX &tgt = dyndata->rail[(ng+1)*12+i];
-#ifndef __linux__
-		D3DVALUE vz = (i==2 || i==3 || i==6 || i==7 ? length/(D3DVALUE)dyndata->ng : 0.0f);
-#else // __linux__
 		float vz = (i==2 || i==3 || i==6 || i==7 ? length/(float)dyndata->ng : 0.0f);
-#endif // __linux__
 		tgt.x  = src.x*r11 + vz*r13 + end1.x;
 		tgt.y  = src.x*r21 + vz*r23 + end1.y + height;
 		tgt.z  = src.x*r31 + vz*r33 + end1.z;
@@ -3394,19 +3224,11 @@ void Train2::ExportGroup (int grp, NTVERTEX *vtx, WORD *idx, DWORD &idx_ofs)
 
 	// rotation matrix
 	double ph = atan2 (end2.x-end1.x, end2.z-end1.z);
-#ifndef __linux__
-	D3DVALUE sinth = (end2.y-end1.y)/length, costh = (D3DVALUE)(cos(asin(sinth)));
-	D3DVALUE cosph = (D3DVALUE)cos(ph), sinph = (D3DVALUE)sin(ph);
-	D3DVALUE r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
-	D3DVALUE r21 =  0.0f,  r22 =  costh,       r23 = sinth;
-	D3DVALUE r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#else // __linux__
 	float sinth = (end2.y-end1.y)/length, costh = (float)(cos(asin(sinth)));
 	float cosph = (float)cos(ph), sinph = (float)sin(ph);
 	float r11 =  cosph, r12 = -sinph*sinth, r13 = sinph*costh;
 	float r21 =  0.0f,  r22 =  costh,       r23 = sinth;
 	float r31 = -sinph, r32 = -cosph*sinth, r33 = cosph*costh;
-#endif // __linux__
 
 	switch (grp) {
 	case 0:
@@ -3457,13 +3279,8 @@ void Train2::Update ()
 	// update cabin position
 	bool reset;
 	for (j = 0; j < 2; j++) {
-#ifndef __linux__
-		D3DVALUE shift = MoveCabin (dyndata->cpos[j], dyndata->cvel[j], reset);
-		D3DVALUE dx = shift*dir.x, dy = shift*dir.y, dz = shift*dir.z;
-#else // __linux__
 		float shift = MoveCabin (dyndata->cpos[j], dyndata->cvel[j], reset);
 		float dx = shift*dir.x, dy = shift*dir.y, dz = shift*dir.z;
-#endif // __linux__
 		if (reset && ++dyndata->tick > 10000) {
 #ifndef __linux__
 			D3DVECTOR ofs;
@@ -3493,21 +3310,12 @@ void Train2::UpdateShadow (Vector &fromsun, double az)
 {
 	static DWORD i, j, nCH, ii[12] = {2,3,4,5,6,7,10,11,12,13,14,15};
 	static VECTOR2D proj[12];
-#ifndef __linux__
-	D3DVALUE dx = (D3DVALUE)fromsun.x, dz = (D3DVALUE)fromsun.z;
-#else // __linux__
 	float dx = (float)fromsun.x, dz = (float)fromsun.z;
-#endif // __linux__
 	WORD *CHidx;
 	NTVERTEX *vtx = cabinvtx[0];
 	VERTEX_XYZ *vptr = shvtx;
-#ifndef __linux__
-	D3DVALUE ddx = cabinvtx[1][0].x - vtx[0].x;
-	D3DVALUE ddz = cabinvtx[1][0].z - vtx[0].z;
-#else // __linux__
 	float ddx = cabinvtx[1][0].x - vtx[0].x;
 	float ddz = cabinvtx[1][0].z - vtx[0].z;
-#endif // __linux__
 
 	// project bounding vertices onto y=0
 	for (i = 0; i < 12; i++) {
@@ -3523,13 +3331,8 @@ void Train2::UpdateShadow (Vector &fromsun, double az)
 	}
 
 	// update rail shadow
-#ifndef __linux__
-	ddx = (end2.x-end1.x)/(D3DVALUE)dyndata->ng;
-	ddz = (end2.z-end1.z)/(D3DVALUE)dyndata->ng;
-#else // __linux__
 	ddx = (end2.x-end1.x)/(float)dyndata->ng;
 	ddz = (end2.z-end1.z)/(float)dyndata->ng;
-#endif // __linux__
 	WORD ng = dyndata->ng;
 	for (i = 0; i < 2; i++) {
 		vptr = dyndata->rshvtx+i;
@@ -3744,11 +3547,7 @@ void SolarPlant::Activate ()
 	}
 	// the panel stands
 	idx_ofs = npanel*12; vtx_ofs = npanel*8;
-#ifndef __linux__
-	D3DVALUE v1 = 2.89f*scale, v2 = 2.5f*scale, v3 = 1.44f*scale;
-#else // __linux__
 	float v1 = 2.89f*scale, v2 = 2.5f*scale, v3 = 1.44f*scale;
-#endif // __linux__
 	for (i = 0; i < npanel; i++) {
 		Idx[idx_ofs++] = vtx_ofs;
 		Idx[idx_ofs++] = vtx_ofs+1;
@@ -3832,30 +3631,15 @@ void SolarPlant::Update ()
 	}
 
 	int i, vtx_ofs = npanel*4;
-#ifndef __linux__
-	D3DVALUE dx = 8.0f*scale, dz = 4.0f*scale;
-#else // __linux__
 	float dx = 8.0f*scale, dz = 4.0f*scale;
-#endif // __linux__
 	double tht = acos (nml.y);         // tilt angle
 	double phi = atan2 (nml.z, nml.x); // rotation angle
-#ifndef __linux__
-	D3DVALUE ctht = (D3DVALUE)cos(tht), stht = (D3DVALUE)sin(tht);
-	D3DVALUE cphi = (D3DVALUE)cos(phi), sphi = (D3DVALUE)sin(phi);
-#else // __linux__
 	float ctht = (float)cos(tht), stht = (float)sin(tht);
 	float cphi = (float)cos(phi), sphi = (float)sin(phi);
-#endif // __linux__
 	// rotation matrix
-#ifndef __linux__
-	D3DVALUE r11 = cphi*ctht, r12 = cphi*stht, r13 = -sphi;
-	D3DVALUE r21 = -stht,     r22 = ctht,      r23 = 0.0f;
-	D3DVALUE r31 = sphi*ctht, r32 = sphi*stht, r33 = cphi;
-#else // __linux__
 	float r11 = cphi*ctht, r12 = cphi*stht, r13 = -sphi;
 	float r21 = -stht,     r22 = ctht,      r23 = 0.0f;
 	float r31 = sphi*ctht, r32 = sphi*stht, r33 = cphi;
-#endif // __linux__
 
 	for (i = 0; i < npanel; i++) { // rotate panels into sun
 		Vtx[i*4].x   = Vtx[vtx_ofs+i*4].x   = ppos[i].x - r11*dx - r13*dz;
@@ -3870,21 +3654,12 @@ void SolarPlant::Update ()
 		Vtx[i*4+3].x = Vtx[vtx_ofs+i*4+3].x = ppos[i].x + r11*dx - r13*dz;
 		Vtx[i*4+3].y = Vtx[vtx_ofs+i*4+3].y = ppos[i].y + r21*dx;
 		Vtx[i*4+3].z = Vtx[vtx_ofs+i*4+3].z = ppos[i].z + r31*dx - r33*dz;
-#ifndef __linux__
-		Vtx[i*4].nx = Vtx[i*4+1].nx = Vtx[i*4+2].nx = Vtx[i*4+3].nx = (D3DVALUE)nml.x;
-		Vtx[i*4].ny = Vtx[i*4+1].ny = Vtx[i*4+2].ny = Vtx[i*4+3].ny = (D3DVALUE)nml.y;
-		Vtx[i*4].nz = Vtx[i*4+1].nz = Vtx[i*4+2].nz = Vtx[i*4+3].nz = (D3DVALUE)nml.z;
-		Vtx[vtx_ofs+i*4].nx = Vtx[vtx_ofs+i*4+1].nx = Vtx[vtx_ofs+i*4+2].nx = Vtx[vtx_ofs+i*4+3].nx = -(D3DVALUE)nml.x;
-		Vtx[vtx_ofs+i*4].ny = Vtx[vtx_ofs+i*4+1].ny = Vtx[vtx_ofs+i*4+2].ny = Vtx[vtx_ofs+i*4+3].ny = -(D3DVALUE)nml.x;
-		Vtx[vtx_ofs+i*4].nz = Vtx[vtx_ofs+i*4+1].nz = Vtx[vtx_ofs+i*4+2].nz = Vtx[vtx_ofs+i*4+3].nz = -(D3DVALUE)nml.x;
-#else // __linux__
 		Vtx[i*4].nx = Vtx[i*4+1].nx = Vtx[i*4+2].nx = Vtx[i*4+3].nx = (float)nml.x;
 		Vtx[i*4].ny = Vtx[i*4+1].ny = Vtx[i*4+2].ny = Vtx[i*4+3].ny = (float)nml.y;
 		Vtx[i*4].nz = Vtx[i*4+1].nz = Vtx[i*4+2].nz = Vtx[i*4+3].nz = (float)nml.z;
 		Vtx[vtx_ofs+i*4].nx = Vtx[vtx_ofs+i*4+1].nx = Vtx[vtx_ofs+i*4+2].nx = Vtx[vtx_ofs+i*4+3].nx = -(float)nml.x;
 		Vtx[vtx_ofs+i*4].ny = Vtx[vtx_ofs+i*4+1].ny = Vtx[vtx_ofs+i*4+2].ny = Vtx[vtx_ofs+i*4+3].ny = -(float)nml.x;
 		Vtx[vtx_ofs+i*4].nz = Vtx[vtx_ofs+i*4+1].nz = Vtx[vtx_ofs+i*4+2].nz = Vtx[vtx_ofs+i*4+3].nz = -(float)nml.x;
-#endif // __linux__
 	}
 	updT = td.SimT1 + 60.0;
 }
@@ -3895,18 +3670,10 @@ void SolarPlant::UpdateShadow (Vector &fromsun, double az)
 	if (have_shadows = (nml.y > 0.2)) {
 		int i, j;
 		double a;
-#ifndef __linux__
-		D3DVALUE anx, anz;
-#else // __linux__
 		float anx, anz;
-#endif // __linux__
 		for (i = 0; i < 4; i++) {
 			a = Vtx[i].y/nml.y;
-#ifndef __linux__
-			anx = (D3DVALUE)(a*nml.x), anz = (D3DVALUE)(a*nml.z);
-#else // __linux__
 			anx = (float)(a*nml.x), anz = (float)(a*nml.z);
-#endif // __linux__
 			for (j = 0; j < npanel; j++) {
 				ShVtx[j*4+i].x = Vtx[j*4+i].x - anx;
 				ShVtx[j*4+i].z = Vtx[j*4+i].z - anz;

@@ -40,11 +40,7 @@
 
 using namespace std;
 
-#ifndef __linux__
-extern const TCHAR* CurrentScenario;
-#else // __linux__
 extern const char* CurrentScenario;
-#endif // __linux__
 const char *htmlstyle = "<style type=""text/css"">body{font-family:Arial;font-size:12px} p{margin-top:0;margin-bottom:0.5em} h1{font-size:150%;font-weight:normal;margin-bottom:0.5em;color:#000080;background-color:#E6E6FF;padding:0.1em}</style>";
 
 //-----------------------------------------------------------------------------

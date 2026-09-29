@@ -74,17 +74,10 @@ VOID VMAT_rotation_from_axis (const oapi::FVECTOR3 &axis, float angle, oapi::FMA
 {
 	// Calculate quaternion
 	angle *= 0.5f;
-#ifndef __linux__
-	D3DVALUE w = cosf(angle), sina = sinf(angle);
-	D3DVALUE x = sina * axis.x;
-	D3DVALUE y = sina * axis.y;
-	D3DVALUE z = sina * axis.z;
-#else // __linux__
 	float w = cosf(angle), sina = sinf(angle);
 	float x = sina * axis.x;
 	float y = sina * axis.y;
 	float z = sina * axis.z;
-#endif // __linux__
 
 	// Rotation matrix
 #ifndef __linux__

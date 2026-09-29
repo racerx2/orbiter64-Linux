@@ -380,11 +380,7 @@ void Panel::RegisterMFD (int id, const MFDSPEC &spec)
 	mfd[id].exist = true;
 }
 
-#ifndef __linux__
-void Panel::Point2Screen (long srcX, long srcY, long &tgtX, long &tgtY) const
-#else // __linux__
 void Panel::Point2Screen (LONG srcX, LONG srcY, LONG &tgtX, LONG &tgtY) const
-#endif // __linux__
 {
 	if (scaled) {
 		srcX = (long)(srcX*scale);

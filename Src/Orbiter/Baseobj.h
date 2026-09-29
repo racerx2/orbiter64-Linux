@@ -108,11 +108,7 @@ public:
 	// The radius value includes ground elevation
 	// x=lng [rad], y=lat [rad], z=radius [m]
 
-#ifndef __linux__
-	D3DVALUE ElevCorrection (D3DVALUE px, D3DVALUE pz);
-#else // __linux__
 	float ElevCorrection (float px, float pz);
-#endif // __linux__
 	// Calculate elevation (y) correction as a result of sphere curvature
 	// for position px, pz.
 
@@ -201,17 +197,9 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-#ifndef __linux__
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
-#else // __linux__
 	float  tuscale[3], tvscale[3]; // texture scaling factors
-#endif // __linux__
 	struct DYNDATA {
-#ifndef __linux__
-		D3DVALUE *databuf;    // some geometry data
-#else // __linux__
 		float *databuf;    // some geometry data
-#endif // __linux__
 		//D3DVERTEX *gv0;       // location of exported vertices for group 0
 		//VERTEX_XYZ *shvtx;    // location of exported shadow
 	} *dyndata;               // lives only during activation
@@ -238,11 +226,7 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-#ifndef __linux__
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
-#else // __linux__
 	float  tuscale[3], tvscale[3]; // texture scaling factors
-#endif // __linux__
 	struct DYNDATA {
 		NTVERTEX *Vtx;       // block vertices
 		//VERTEX_XYZ *shvtx;    // location of exported shadow
@@ -269,17 +253,9 @@ public:
 	void Deactivate ();
 
 private:
-#ifndef __linux__
-	D3DVALUE  roofh;      // roof height from base to ridge
-#else // __linux__
 	float  roofh;      // roof height from base to ridge
-#endif // __linux__
 	LONGLONG  texid[3];   // texture ids
-#ifndef __linux__
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
-#else // __linux__
 	float  tuscale[3], tvscale[3]; // texture scaling factors
-#endif // __linux__
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
 		//VERTEX_XYZ *shvtx;   // location of exported shadow
@@ -308,11 +284,7 @@ public:
 
 private:
 	LONGLONG  texid[3];   // texture ids
-#ifndef __linux__
-	D3DVALUE  tuscale[3], tvscale[3]; // texture scaling factors
-#else // __linux__
 	float  tuscale[3], tvscale[3]; // texture scaling factors
-#endif // __linux__
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
 		//VERTEX_XYZ *shvtx;   // location of exported shadow
@@ -339,11 +311,7 @@ public:
 
 private:
 	LONGLONG  texid[2];   // texture ids
-#ifndef __linux__
-	D3DVALUE  tuscale[2], tvscale[2]; // texture scaling factors (mantle and top)
-#else // __linux__
 	float  tuscale[2], tvscale[2]; // texture scaling factors (mantle and top)
-#endif // __linux__
 	DWORD     nstep;      // segments for circle
 	struct DYNDATA {
 		NTVERTEX *Vtx;      // block vertices
@@ -490,19 +458,10 @@ private:
 	DWORD nrwseg;      // number of texture segments in runway mesh
 	struct RWSEG {                   // runway segment specs
 		DWORD subseg;                // number of sub-segments
-#ifndef __linux__
-		D3DVALUE len;                // segment length (1=full runway)
-		D3DVALUE tu0, tu1, tv0, tv1; // segment texture coordinates
-#else // __linux__
 		float len;                // segment length (1=full runway)
 		float tu0, tu1, tv0, tv1; // segment texture coordinates
-#endif // __linux__
 	} *rwseg;
-#ifndef __linux__
-	D3DVALUE width;    // runway (half-)width [m]
-#else // __linux__
 	float width;    // runway (half-)width [m]
-#endif // __linux__
 	LONGLONG texid[1]; // texture ids
 	struct DYNDATA {
 		DWORD nRwVtx;        // number of vertices for runway mesh
@@ -544,11 +503,7 @@ private:
 	oapi::FVECTOR3 end1, end2;
 #endif // __linux__
 	DWORD count1;   // number of side line beacons
-#ifndef __linux__
-	D3DVALUE width; // runway (half-)width [m]
-#else // __linux__
 	float width; // runway (half-)width [m]
-#endif // __linux__
 	struct VASIDATA {                 // parameters for Visual Approach Slope Indicator (VASI)
 		float apprangle;              //    designated approach angle
 		float lightsep;               //    separation between red and white indicator lights
@@ -615,11 +570,7 @@ protected:
 	// to end1) and return transformed vertices in 'res'
 	// 'ofs' is a translation applied up front
 
-#ifndef __linux__
-	D3DVALUE MoveCabin (D3DVALUE &pos, D3DVALUE &vel, bool &atmin);
-#else // __linux__
 	float MoveCabin (float &pos, float &vel, bool &atmin);
-#endif // __linux__
 	// update cabin position 'pos' and velocity 'vel' and return
 	// the displacement. if 'atmin' is true on exit, the cabin is
 	// at minpos
@@ -641,11 +592,7 @@ protected:
 #endif // __linux__
 
 private:
-#ifndef __linux__
-	D3DVALUE speedfac;       // aux for cabin movement
-#else // __linux__
 	float speedfac;       // aux for cabin movement
-#endif // __linux__
 };
 
 // ======================================================================================
@@ -668,17 +615,9 @@ public:
 	void Deactivate ();
 
 private:
-#ifndef __linux__
-	D3DVALUE cpos, cvel;          // cabin position (from p1) and speed
-#else // __linux__
 	float cpos, cvel;          // cabin position (from p1) and speed
-#endif // __linux__
 	LONGLONG texid;               // texture id for cabin and track
-#ifndef __linux__
-	D3DVALUE tuscale_track;       // texture scaling (for track only)
-#else // __linux__
 	float tuscale_track;       // texture scaling (for track only)
-#endif // __linux__
 	NTVERTEX *cabinvtx;           // pointer to exported cabin vertices
 	VERTEX_XYZ *shvtx;            // pointer to exported shadow vertices
 	struct DYNDATA {
@@ -719,27 +658,14 @@ public:
 #endif // __linux__
 
 private:
-#ifndef __linux__
-	D3DVALUE height;            // height of supports over ground
-#else // __linux__
 	float height;            // height of supports over ground
-#endif // __linux__
 	LONGLONG texid;             // texture id for cabin and track
-#ifndef __linux__
-	D3DVALUE tuscale_track;     // texture scaling (for track only)
-#else // __linux__
 	float tuscale_track;     // texture scaling (for track only)
-#endif // __linux__
 	NTVERTEX *cabinvtx[2];     // pointers to exported cabin vertices
 	VERTEX_XYZ *shvtx;          // pointer to exported shadow vertices
 	struct DYNDATA {
-#ifndef __linux__
-		D3DVALUE cpos[2];       // cabin positions (from end1)
-		D3DVALUE cvel[2];		// cabin speeds
-#else // __linux__
 		float cpos[2];       // cabin positions (from end1)
 		float cvel[2];		// cabin speeds
-#endif // __linux__
 		NTVERTEX *rail;        // girder and traverse vertices
 		VERTEX_XYZ *rshvtx;     // pointer to rail shadow
 #ifndef __linux__

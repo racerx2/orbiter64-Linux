@@ -191,32 +191,17 @@ public:
 	void SetTexMixture (DWORD grp, DWORD ntex, float mix);
 	void SetTexMixture (DWORD ntex, float mix);
 
-#ifndef __linux__
-	void ScaleGroup (DWORD grp, D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
-	void Scale (D3DVALUE sx, D3DVALUE sy, D3DVALUE sz);
-#else // __linux__
 	void ScaleGroup (DWORD grp, float sx, float sy, float sz);
 	void Scale (float sx, float sy, float sz);
-#endif // __linux__
 	// scale an individual group or the whole mesh
 
-#ifndef __linux__
-	void TranslateGroup (DWORD grp, D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
-	void Translate (D3DVALUE dx, D3DVALUE dy, D3DVALUE dz);
-#else // __linux__
 	void TranslateGroup (DWORD grp, float dx, float dy, float dz);
 	void Translate (float dx, float dy, float dz);
-#endif // __linux__
 	// translate an individual group or the whole mesh
 
 	enum RotAxis { ROTATE_X, ROTATE_Y, ROTATE_Z };
-#ifndef __linux__
-	void RotateGroup (DWORD grp, RotAxis axis, D3DVALUE angle);
-	void Rotate (RotAxis axis, D3DVALUE angle);
-#else // __linux__
 	void RotateGroup (DWORD grp, RotAxis axis, float angle);
 	void Rotate (RotAxis axis, float angle);
-#endif // __linux__
 	// rotate the mesh 'angle' rad around a coordiate axis
 
 #ifndef __linux__
@@ -228,13 +213,8 @@ public:
 #endif // __linux__
 	// rotate mesh using the provided rotation matrix
 
-#ifndef __linux__
-	void TexScaleGroup (DWORD grp, D3DVALUE su, D3DVALUE sv);
-	void TexScale (D3DVALUE su, D3DVALUE sv);
-#else // __linux__
 	void TexScaleGroup (DWORD grp, float su, float sv);
 	void TexScale (float su, float sv);
-#endif // __linux__
 	// scale the texture coordinates of an individual group or the whole mesh
 
 	void CalcNormals (DWORD grp, bool missingonly);

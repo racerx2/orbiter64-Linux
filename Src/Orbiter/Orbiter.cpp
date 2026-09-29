@@ -102,23 +102,11 @@ const int MAX_TEXTURE_BUFSIZE = 8000000;
 // Texture manager buffer size. Should be determined from
 // memory size (System or Video?)
 
-#ifndef __linux__
-const TCHAR* g_strAppTitle = "OpenOrbiter";
-#else // __linux__
 const char* g_strAppTitle = "OpenOrbiter";
-#endif // __linux__
 
-#ifndef __linux__
-const TCHAR* MasterConfigFile = "Orbiter.cfg";
-#else // __linux__
 const char* MasterConfigFile = "Orbiter.cfg";
-#endif // __linux__
 
-#ifndef __linux__
-const TCHAR* CurrentScenario = "(Current state)";
-#else // __linux__
 const char* CurrentScenario = "(Current state)";
-#endif // __linux__
 char ScenarioName[256] = "\0";
 // some global string resources
 

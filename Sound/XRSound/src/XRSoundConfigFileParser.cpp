@@ -504,11 +504,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
-#ifndef __linux__
-        VALIDATE_INT(&soundID, 0, MAXINT32, -1);
-#else // __linux__
         VALIDATE_INT(&soundID, 0, INT32_MAX, -1);
-#endif // __linux__
         if (soundID >= -0)
             pAnimationSounds->SetOpenCloseSoundID(soundID);
     }
@@ -516,11 +512,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
-#ifndef __linux__
-        VALIDATE_INT(&soundID, 0, MAXINT32, -1);
-#else // __linux__
         VALIDATE_INT(&soundID, 0, INT32_MAX, -1);
-#endif // __linux__
         if (soundID >= -0)
             pAnimationSounds->SetMovingSoundID(soundID);
     }

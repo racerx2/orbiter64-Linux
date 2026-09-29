@@ -311,11 +311,7 @@ MemTreeNode *MemTree::FindNode(int lvl, int ilat, int ilng)
 // Table of contents entry for a tree node
 
 struct TOCEntry {
-#ifndef __linux__
-	__int64 pos;     // file position of compressed data block (from end of TOC)
-#else // __linux__
 	int64_t pos;     // file position of compressed data block (from end of TOC)
-#endif // __linux__
 	DWORD size;      // uncompressed data size
 	DWORD child[4];  // array positions of the children ((DWORD)-1=no child)
 
@@ -339,11 +335,7 @@ public:
 	~TreeTOC();
 	TOCEntry &operator[](int idx);
 	DWORD length() const { return header.ntoc; }
-#ifndef __linux__
-	__int64 DataSize() const { return header.totlength; }
-#else // __linux__
 	int64_t DataSize() const { return header.totlength; }
-#endif // __linux__
 	size_t fwrite(FILE *f);
 	size_t fread(FILE *f);
 	void WriteData(FILE *f);
@@ -360,11 +352,7 @@ private:
 		DWORD size;         // header size [BYTE]
 		DWORD flags;		// bit flags
 		DWORD dataOfs;      // file offset of start of data block (header + TOC)
-#ifndef __linux__
-		__int64 totlength;  // total deflated data size
-#else // __linux__
 		int64_t totlength;  // total deflated data size
-#endif // __linux__
 		DWORD ntoc;         // number of tree nodes
 		DWORD rootPos1;     // array index of level 1 tilWriteSubtreeDatae ((DWORD)-1 for not present)
 		DWORD rootPos2;     // array index of level 2 tile ((DWORD)-1 for not present)

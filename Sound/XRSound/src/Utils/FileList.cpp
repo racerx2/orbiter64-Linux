@@ -106,11 +106,7 @@ bool FileList::clbkFilterNode(const fs::directory_entry& entry)
             // see if we have a case-insensitive match for this extension in our master list
             for (auto it = m_fileTypesToAccept.begin(); it != m_fileTypesToAccept.end(); it++)
             {
-#ifndef __linux__
-                if (stricmp(entry.path().extension().string().c_str(), it->c_str()) == 0)
-#else // __linux__
                 if (strcasecmp(entry.path().extension().string().c_str(), it->c_str()) == 0)
-#endif // __linux__
                 {
                     bAcceptFile = true;
                     break;

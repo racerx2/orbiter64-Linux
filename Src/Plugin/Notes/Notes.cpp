@@ -155,29 +155,13 @@ public:
 		char *line;
 		double scale = 2.0;
 		while (oapiReadScenario_nextline(scn, line)) {
-#ifndef __linux__
-			if (!strnicmp (line, "NAME = ", 7)) {
-#else // __linux__
 			if (!strncasecmp (line, "NAME = ", 7)) {
-#endif // __linux__
 				name = line + 7;
-#ifndef __linux__
-			} else if (!strnicmp (line, "SCALE = ", 8)) {
-#else // __linux__
 			} else if (!strncasecmp (line, "SCALE = ", 8)) {
-#endif // __linux__
 				scale = atof(line + 8);
-#ifndef __linux__
-			} else if (!stricmp (line, "END_NOTE")) {
-#else // __linux__
 			} else if (!strcasecmp (line, "END_NOTE")) {
-#endif // __linux__
 				break;
-#ifndef __linux__
-			} else if (!strnicmp (line, "DATA ", 5)) {
-#else // __linux__
 			} else if (!strncasecmp (line, "DATA ", 5)) {
-#endif // __linux__
 				char *hexstream = line + 5;
 				char *next;
 				do {
@@ -275,11 +259,7 @@ DLLCLBK void opcLoadState (FILEHANDLE scn)
 {
 	char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-#ifndef __linux__
-		if (!stricmp (line, "BEGIN_NOTE")) {
-#else // __linux__
 		if (!strcasecmp (line, "BEGIN_NOTE")) {
-#endif // __linux__
 			oapiOpenDialog(ImGuiNote::Load(scn));
 		}
 	}

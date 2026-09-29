@@ -108,17 +108,9 @@ static void outC(const Param& param, const Mesh& mesh)
 	int grp = 0;
 	bool havelabel = false;
 	while (ifs.getline(cbuf, 256)) {
-#ifndef __linux__
-		if (!_strnicmp(cbuf, "GEOM", 4))
-#else // __linux__
 		if (!strncasecmp(cbuf, "GEOM", 4))
-#endif // __linux__
 			grp++;
-#ifndef __linux__
-		else if (!_strnicmp(cbuf, "LABEL", 5)) {
-#else // __linux__
 		else if (!strncasecmp(cbuf, "LABEL", 5)) {
-#endif // __linux__
 			if (!havelabel) {
 				ofs << "\n// Named mesh groups:\n";
 				havelabel = true;
@@ -160,17 +152,9 @@ static void outLua(const Param& param, const Mesh& mesh)
 	int grp = 0;
 	bool havelabel = false;
 	while (ifs.getline(cbuf, 256)) {
-#ifndef __linux__
-		if (!_strnicmp(cbuf, "GEOM", 4))
-#else // __linux__
 		if (!strncasecmp(cbuf, "GEOM", 4))
-#endif // __linux__
 			grp++;
-#ifndef __linux__
-		else if (!_strnicmp(cbuf, "LABEL", 5)) {
-#else // __linux__
 		else if (!strncasecmp(cbuf, "LABEL", 5)) {
-#endif // __linux__
 			if (!havelabel) {
 				ofs << "\n-- Named mesh groups:\n";
 				havelabel = true;

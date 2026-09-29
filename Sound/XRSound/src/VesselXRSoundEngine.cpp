@@ -689,11 +689,7 @@ bool VesselXRSoundEngine::AddDefaultSound(DefaultSoundPreStep *pPreStep, const i
 #endif // __linux__
 
     // see if this sound is disabled
-#ifndef __linux__
-    if (!(*pSoundFileOrFolderName) || (_stricmp(pSoundFileOrFolderName, "none") == 0))
-#else // __linux__
     if (!(*pSoundFileOrFolderName) || (strcasecmp(pSoundFileOrFolderName, "none") == 0))
-#endif // __linux__
     {
         // no sound filename set, so sound was disabled by the user in XRSound.cfg (or vessel class .cfg override)
         VERBOSE_LOG(this, "XRSoundEngine::AddDefaultSound INFO: default sound ID %d disabled via config file.", soundID);

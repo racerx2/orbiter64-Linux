@@ -76,11 +76,7 @@ Base::Base (char *fname, Planet *_planet, double _lng, double _lat)
 	if (FindLine (ifs, "BEGIN_NAVBEACON")) {
 		char cbuf[256];
 		for (;;) {
-#ifndef __linux__
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_NAVBEACON", 13)) break;
-#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_NAVBEACON", 13)) break;
-#endif // __linux__
 			Nav *nv = ParseNav (cbuf, _planet);
 			if (nv) {
 				_planet->NavMgr().AddNav (nv);
@@ -159,11 +155,7 @@ Base::Base (char *fname, Planet *_planet, double _lng, double _lat)
 		char cbuf[256];
 		int res, texflag, ilng, ilat;
 		for (;;) {
-#ifndef __linux__
-			if (!ifs.getline(cbuf,256) || !_strnicmp (cbuf, "END_SURFTILELIST", 16)) break;
-#else // __linux__
 			if (!ifs.getline(cbuf,256) || !strncasecmp (cbuf, "END_SURFTILELIST", 16)) break;
-#endif // __linux__
 			sscanf (cbuf, "%d%d%d%d", &res, &ilng, &ilat, &texflag);
 			if (ntile == ntilebuf) {
 				SurftileSpec *tmp = new SurftileSpec[ntilebuf+32]; TRACENEW
@@ -223,11 +215,7 @@ void Base::CreateStaticDeviceObjects ()
 		// load list of generic texture names
 		if (FindLine (ifs, "begin_textures")) {
 			for (;;) {
-#ifndef __linux__
-				if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "end_textures", 12)) break;
-#else // __linux__
 				if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "end_textures", 12)) break;
-#endif // __linux__
 				char *str = trim_string (cbuf);
 				if (*str) {
 					tmp_list = new char*[ngenerictex+1]; TRACENEW

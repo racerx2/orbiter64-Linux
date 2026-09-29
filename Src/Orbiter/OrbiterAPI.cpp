@@ -2512,11 +2512,7 @@ DLLEXPORT bool oapiReadScenario_nextline (FILEHANDLE file, char *&line)
 	char *cbuf = readline(ifs);
 	if (!cbuf) return false;
 	line = trim_string (cbuf);
-#ifndef __linux__
-	if (!_stricmp (line, "END")) return false;
-#else // __linux__
 	if (!strcasecmp (line, "END")) return false;
-#endif // __linux__
 	return true;
 }
 
@@ -2811,11 +2807,7 @@ DLLEXPORT int Date2Int (char *date)
 	int day, month, year, v;
 	sscanf (date, "%s%d%d", ms, &day, &year);
 	for (month = 0; month < 12; month++)
-#ifndef __linux__
-		if (!_strnicmp (ms, mstr[month], 3)) break;
-#else // __linux__
 		if (!strncasecmp (ms, mstr[month], 3)) break;
-#endif // __linux__
 	v = (year%100)*10000 + (month+1)*100 + day;
 	return v;
 }

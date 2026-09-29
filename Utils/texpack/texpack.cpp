@@ -87,35 +87,15 @@ MemTree::MemTree(const char *rootpath, const char *layer)
 	if (!strcasecmp(layer, "Surf"))
 #endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Mask"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Mask"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Cloud"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Cloud"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev_mod"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev_mod"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Label"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Label"))
-#endif // __linux__
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 }
@@ -412,41 +392,17 @@ TreeTOC::TreeTOC(const char *_root, const char *_layer, const MemTree *tree): mt
 	root = new char[strlen(_root)+1]; strcpy(root, _root);
 	layer = new char[strlen(_layer)+1]; strcpy(layer, _layer);
 
-#ifndef __linux__
-	if (!stricmp(layer, "Surf"))
-#else // __linux__
 	if (!strcasecmp(layer, "Surf"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Mask"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Mask"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Cloud"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Cloud"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev_mod"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev_mod"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Label"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Label"))
-#endif // __linux__
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 
@@ -479,41 +435,17 @@ TreeTOC::TreeTOC(const char *_root, const char *_layer): mtree(0)
 	root = new char[strlen(_root)+1]; strcpy(root, _root);
 	layer = new char[strlen(_layer)+1]; strcpy(layer, _layer);
 
-#ifndef __linux__
-	if (!stricmp(layer, "Surf"))
-#else // __linux__
 	if (!strcasecmp(layer, "Surf"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Mask"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Mask"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Cloud"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Cloud"))
-#endif // __linux__
 		strcpy(ext, "dds");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Elev_mod"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Elev_mod"))
-#endif // __linux__
 		strcpy(ext, "elv");
-#ifndef __linux__
-	else if (!stricmp(layer, "Label"))
-#else // __linux__
 	else if (!strcasecmp(layer, "Label"))
-#endif // __linux__
 		strcpy(ext, "lab");
 	else ext[0] = '\0';
 

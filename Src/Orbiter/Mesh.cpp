@@ -1072,18 +1072,10 @@ istream &operator>> (istream &is, Mesh &mesh)
 
 	for (;;) {
 		if (!is.getline (cbuf, 256)) return is;
-#ifndef __linux__
-		if (!_strnicmp (cbuf, "GROUPS", 6)) {
-#else // __linux__
 		if (!strncasecmp (cbuf, "GROUPS", 6)) {
-#endif // __linux__
 			if (sscanf (cbuf+6, "%d", &ngrp) != 1) return is;
 			break;
-#ifndef __linux__
-		} else if (!_strnicmp (cbuf, "STATICMESH", 10)) {
-#else // __linux__
 		} else if (!strncasecmp (cbuf, "STATICMESH", 10)) {
-#endif // __linux__
 			staticmesh = true;
 		}
 	}
@@ -1104,40 +1096,20 @@ istream &operator>> (istream &is, Mesh &mesh)
 
 		for (;;) {
 			if (!is.getline (cbuf, 256)) { term = true; break; }
-#ifndef __linux__
-			if (!_strnicmp (cbuf, "MATERIAL", 8)) {       // read material index
-#else // __linux__
 			if (!strncasecmp (cbuf, "MATERIAL", 8)) {       // read material index
-#endif // __linux__
 				sscanf (cbuf+8, "%d", &mtrl_idx);
 				mtrl_idx--;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "TEXTURE", 7)) { // read texture index
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "TEXTURE", 7)) { // read texture index
-#endif // __linux__
 				sscanf (cbuf+7, "%d", &tex_idx);
 				tex_idx--;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "ZBIAS", 5)) {   // read z-bias
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "ZBIAS", 5)) {   // read z-bias
-#endif // __linux__
 				sscanf (cbuf+5, "%hu", &zbias);
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "TEXWRAP", 7)) { // read wrap flags
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "TEXWRAP", 7)) { // read wrap flags
-#endif // __linux__
 				char uvstr[10] = "";
 				sscanf (cbuf+7, "%9s", uvstr);
 				if (uvstr[0] == 'U' || uvstr[1] == 'U') flag |= 0x01;
 				if (uvstr[0] == 'V' || uvstr[1] == 'V') flag |= 0x02;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "NONORMAL", 8)) {
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "NONORMAL", 8)) {
-#endif // __linux__
 				bnormal = false; calcnml = true;
 #ifndef __linux__
 			} else if (!_strnicmp (cbuf, "FLAG", 4)) {
@@ -1149,29 +1121,13 @@ istream &operator>> (istream &is, Mesh &mesh)
 			} else if (!strncasecmp (cbuf, "FLIP", 4)) {
 #endif // __linux__
 				flipidx = true;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "LABEL", 5)) {
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "LABEL", 5)) {
-#endif // __linux__
 				// ignore group labels here
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "STATIC", 6)) {
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "STATIC", 6)) {
-#endif // __linux__
 				flag |= 0x04;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "DYNAMIC", 7)) {
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "DYNAMIC", 7)) {
-#endif // __linux__
 				flag ^= 0x04;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "GEOM", 4)) {    // read geometry
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "GEOM", 4)) {    // read geometry
-#endif // __linux__
 				if (sscanf (cbuf+4, "%d%d", &nvtx, &ntri) != 2) break; // parse error - skip group
 				nidx = ntri*3;
 				vtx = new NTVERTEX[nvtx]; TRACENEW
@@ -1404,11 +1360,7 @@ const Mesh *MeshManager::LoadMesh (const char *fname, bool *firstload)
 	int i;
 	DWORDLONG crc = Str2Crc (fname);
 	for (i = 0; i < nmlist; i++) {
-#ifndef __linux__
-		if (crc == mlist[i].crc && !_strnicmp (fname, mlist[i].fname, 32)) {
-#else // __linux__
 		if (crc == mlist[i].crc && !strncasecmp (fname, mlist[i].fname, 32)) {
-#endif // __linux__
 			if (firstload) *firstload = false;
 			return mlist[i].mesh; // found it
 		}

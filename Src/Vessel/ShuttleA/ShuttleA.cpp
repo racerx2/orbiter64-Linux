@@ -1318,57 +1318,25 @@ void ShuttleA::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-#ifndef __linux__
-		if (!_strnicmp (line, "PODANGLE", 8)) {
-#else // __linux__
 		if (!strncasecmp (line, "PODANGLE", 8)) {
-#endif // __linux__
 			sscanf (line+8, "%lf%lf", pod_angle+0, pod_angle+1);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "DOCKSTATE", 9)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "DOCKSTATE", 9)) {
-#endif // __linux__
 			sscanf (line+9, "%d%lf", &dock_status, &dock_proc);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "AIRLOCK", 7)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "AIRLOCK", 7)) {
-#endif // __linux__
 			sscanf (line+7, "%d%lf", &lock_status[0], &lock_proc[0]);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "IAIRLOCK", 8)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "IAIRLOCK", 8)) {
-#endif // __linux__
 			sscanf (line+8, "%d%lf", &lock_status[1], &lock_proc[1]);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "GEAR", 4)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "GEAR", 4)) {
-#endif // __linux__
 			sscanf (line+4, "%d%lf", &gear_status, &gear_proc);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "PAYLOAD MASS", 12)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "PAYLOAD MASS", 12)) {
-#endif // __linux__
 			sscanf (line+12, "%lf%d", &payload_mass,&cargo_arm_status);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "ATTREF", 6)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "ATTREF", 6)) {
-#endif // __linux__
 			int mode, tgtmode, navid;
 			sscanf (line+6, "%d%d%d", &mode, &tgtmode, &navid);
 			attref->SetMode (mode);
 			attref->SetTgtmode (tgtmode);
 			attref->SetNavid (navid);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "ADI_LAYOUT", 10)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "ADI_LAYOUT", 10)) {
-#endif // __linux__
 			int layout = 0;
 			if (sscanf (line+10, "%d", &layout) && layout >= 0 && layout <= 1)
 				adi_layout = layout;
@@ -1431,76 +1399,33 @@ void ShuttleA::clbkSaveState (FILEHANDLE scn)
 // --------------------------------------------------------------
 bool ShuttleA::clbkPlaybackEvent (double simt, double event_t, const char *event_type, const char *event)
 {
-#ifndef __linux__
-	if (!_stricmp (event_type, "DOCK")) {
-		ActivateDockingPort (!_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#else // __linux__
 	if (!strcasecmp (event_type, "DOCK")) {
 		ActivateDockingPort (!strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#endif // __linux__
 		return true;
-#ifndef __linux__
-	} else if (!_stricmp (event_type, "AIRLOCK")) {
-		ActivateAirlock (0, !_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#else // __linux__
 	} else if (!strcasecmp (event_type, "AIRLOCK")) {
 		ActivateAirlock (0, !strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#endif // __linux__
 		return true;
-#ifndef __linux__
-	} else if (!_stricmp (event_type, "IAIRLOCK")) {
-		ActivateAirlock (1, !_stricmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#else // __linux__
 	} else if (!strcasecmp (event_type, "IAIRLOCK")) {
 		ActivateAirlock (1, !strcasecmp (event, "CLOSE") ? DOOR_CLOSING : DOOR_OPENING);
-#endif // __linux__
 		return true;
-#ifndef __linux__
-	} else if (!_stricmp (event_type, "GEAR")) {
-		ActivateLandingGear (!_stricmp (event, "UP") ? DOOR_CLOSING : DOOR_OPENING);
-#else // __linux__
 	} else if (!strcasecmp (event_type, "GEAR")) {
 		ActivateLandingGear (!strcasecmp (event, "UP") ? DOOR_CLOSING : DOOR_OPENING);
-#endif // __linux__
 		return true;
-#ifndef __linux__
-	} else if (!_stricmp (event_type, "POD")) {
-#else // __linux__
 	} else if (!strcasecmp (event_type, "POD")) {
-#endif // __linux__
 		UINT which;
 		double angle;
 		char action[256];
 		sscanf (event, "%d %s %lf", &which, action, &angle);
-#ifndef __linux__
-		if (!_stricmp (action, "SET")) CommandPodAngle (which, angle);
-		else if (!_stricmp (action, "FWD")) CommandPodAngle (which, PI);
-		else if (!_stricmp (action, "BACK")) CommandPodAngle (which, 0);
-#else // __linux__
 		if (!strcasecmp (action, "SET")) CommandPodAngle (which, angle);
 		else if (!strcasecmp (action, "FWD")) CommandPodAngle (which, PI);
 		else if (!strcasecmp (action, "BACK")) CommandPodAngle (which, 0);
-#endif // __linux__
 		return true;
-#ifndef __linux__
-	} else if (!_stricmp (event_type, "CARGO")) {
-		if (!_strnicmp (event, "ARM", 3))
-#else // __linux__
 	} else if (!strcasecmp (event_type, "CARGO")) {
 		if (!strncasecmp (event, "ARM", 3))
-#endif // __linux__
 			ActivateCargo (1);
-#ifndef __linux__
-		else if (!_strnicmp (event, "DISARM", 6))
-#else // __linux__
 		else if (!strncasecmp (event, "DISARM", 6))
-#endif // __linux__
 			ActivateCargo (0);
-#ifndef __linux__
-		else if (!_strnicmp (event, "GRAPPLE", 7)) {
-#else // __linux__
 		else if (!strncasecmp (event, "GRAPPLE", 7)) {
-#endif // __linux__
 			int grapple;
 			sscanf (event+7, "%d", &grapple);
 			ToggleGrapple (grapple);

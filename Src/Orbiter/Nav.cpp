@@ -23,11 +23,7 @@ Nav *ParseNav (const char *line, const Planet *planet)
 {
 	char typestr[32];
 	sscanf (line, "%s", typestr);
-#ifndef __linux__
-	if (!_stricmp (typestr, "VOR") && planet) {
-#else // __linux__
 	if (!strcasecmp (typestr, "VOR") && planet) {
-#endif // __linux__
 		TRACENEW; return new Nav_VOR (planet, line+3);
 	}
 	return NULL;
@@ -325,11 +321,7 @@ DWORD NavManager::Read (ifstream &ifs, const Planet *planet, bool append)
 	if (FindLine (ifs, "BEGIN_NAVBEACON")) {
 		char cbuf[256];
 		for (;;) {
-#ifndef __linux__
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_NAVBEACON", 13)) break;
-#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_NAVBEACON", 13)) break;
-#endif // __linux__
 			Nav *nv = ParseNav (cbuf, planet);
 			if (nv) AddNav (nv);
 		}

@@ -709,11 +709,7 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 		for (;;) {
 			Vector pos, dir, rot;
 			int n, ids_step;
-#ifndef __linux__
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_DOCKLIST", 12)) break;
-#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_DOCKLIST", 12)) break;
-#endif // __linux__
 			n = sscanf (cbuf, "%lf%lf%lf%lf%lf%lf%lf%lf%lf%d",
 				&pos.x, &pos.y, &pos.z,
 				&dir.x, &dir.y, &dir.z,
@@ -731,11 +727,7 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 		int n;
 		bool toparent;
 		for (;;) {
-#ifndef __linux__
-			if (!ifs.getline (cbuf, 256) || !_strnicmp (cbuf, "END_ATTACHMENT", 14)) break;
-#else // __linux__
 			if (!ifs.getline (cbuf, 256) || !strncasecmp (cbuf, "END_ATTACHMENT", 14)) break;
-#endif // __linux__
 			n = sscanf (trim_string (cbuf), "%c%lf%lf%lf%lf%lf%lf%lf%lf%lf%s",
 				&type,
 				&pos.x, &pos.y, &pos.z,
@@ -6147,11 +6139,7 @@ bool Vessel::ParseScenario (ifstream &scn, VESSELSTATUS &vs)
 	for (;;) {
 		if (!scn.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-#ifndef __linux__
-		if (!_stricmp (pc, "END")) break;
-#else // __linux__
 		if (!strcasecmp (pc, "END")) break;
-#endif // __linux__
 		ParseScenarioLine (pc, vs);
 	}
 	return true;
@@ -6164,11 +6152,7 @@ bool Vessel::ParseScenarioEx (ifstream &scn, void *status)
 	for (;;) {
 		if (!scn.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-#ifndef __linux__
-		if (!_stricmp (pc, "END")) break;
-#else // __linux__
 		if (!strcasecmp (pc, "END")) break;
-#endif // __linux__
 		ParseScenarioLineEx (pc, status);
 	}
 	return true;

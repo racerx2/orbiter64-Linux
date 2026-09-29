@@ -72,11 +72,7 @@ bool ConfigFileParser::ParseFile(const char *pFilename)
     if (pFilename == nullptr)
         pFilename = GetDefaultFilename();
 
-#ifndef __linux__
-    const bool bParsingOverrideFile = (_stricmp(pFilename, GetDefaultFilename()) != 0);  // true if we are parsing an override file
-#else // __linux__
     const bool bParsingOverrideFile = (strcasecmp(pFilename, GetDefaultFilename()) != 0);  // true if we are parsing an override file
-#endif // __linux__
 
     static char temp[256]; // reused for messages
 

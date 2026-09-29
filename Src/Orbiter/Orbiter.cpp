@@ -716,11 +716,7 @@ int Orbiter::GetVersion () const
 		int day, month, year;
 		sscanf (__DATE__, "%s%d%d", ms, &day, &year);
 		for (month = 0; month < 12; month++)
-#ifndef __linux__
-			if (!_strnicmp (ms, mstr[month], 3)) break;
-#else // __linux__
 			if (!strncasecmp (ms, mstr[month], 3)) break;
-#endif // __linux__
 		v = (year%100)*10000 + (month+1)*100 + day;
 	}
 	return v;

@@ -230,30 +230,14 @@ void Dragonfly::LoadState (FILEHANDLE scn, void *vs)
 {
     char *line;
 	while (oapiReadScenario_nextline (scn, line)) {
-#ifndef __linux__
-        if (!strnicmp (line, "UPPERANT", 8)) {
-#else // __linux__
         if (!strncasecmp (line, "UPPERANT", 8)) {
-#endif // __linux__
 			sscanf (line+8, "%f %f %i %i %i", &UP_pos ,&UY_pos,&UP_handle, &UY_handle,&UAnt_handle);
-#ifndef __linux__
-		} else if (!strnicmp (line, "LOWERANT", 8)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "LOWERANT", 8)) {
-#endif // __linux__
 			sscanf (line+8, "%f %f %i %i %i", &LP_pos, &LY_pos,&LP_handle,&LY_handle,&LAnt_handle);
 			//SetGearParameters (gear_proc);
-#ifndef __linux__
-		} else if (!strnicmp (line, "HATCH", 5)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "HATCH", 5)) {
-#endif // __linux__
 			sscanf (line+5, "%f %i", &dock_latched, &latch_handle);
-#ifndef __linux__
-		} else if (!strnicmp (line, "ANTTRG", 6)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "ANTTRG", 6)) {
-#endif // __linux__
 			Dock_target_object=oapiGetObjectByName(line+7);
 			//sscanf (line+5, "%f %i", &dock_latched, &latch_handle);
         } else {

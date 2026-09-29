@@ -164,6 +164,7 @@ endif() # WIN32
 if(WIN32) # Windows: upstream
 if(MSVC)
   add_compile_options(/we4311 /DNOMINMAX)
+  add_compile_definitions(strcasecmp=_stricmp strncasecmp=_strnicmp) # not upstream: shared lines use POSIX names
   add_link_options("/NODEFAULTLIB:\"LIBCMTD\"")
 else()
   set(CMAKE_BUILD_WITH_INSTALL_RPATH true)

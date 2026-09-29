@@ -47,101 +47,37 @@ BaseObject *BaseObject::Create (const Base *_base, istream &is)
 		if (!is.getline (cbuf, 256)) return 0;
 		trim_string (cbuf);
 		if ((tok = strtok (cbuf, " \t")) == NULL) continue;
-#ifndef __linux__
-		if      (!_stricmp (tok, "END_OBJECTLIST"))
-#else // __linux__
 		if      (!strcasecmp (tok, "END_OBJECTLIST"))
-#endif // __linux__
 			return 0;
-#ifndef __linux__
-		else if (!_stricmp (tok, "MESH")) {
-#else // __linux__
 		else if (!strcasecmp (tok, "MESH")) {
-#endif // __linux__
 			bo = new MeshObject (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "BLOCK")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "BLOCK")) {
-#endif // __linux__
 			bo = new Block (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "HANGAR")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "HANGAR")) {
-#endif // __linux__
 			bo = new Hangar (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "HANGAR2")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "HANGAR2")) {
-#endif // __linux__
 			bo = new Hangar2 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "HANGAR3")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "HANGAR3")) {
-#endif // __linux__
 			bo = new Hangar3 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "TANK")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "TANK")) {
-#endif // __linux__
 			bo = new Tank (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "LPAD1")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "LPAD1")) {
-#endif // __linux__
 			bo = new Lpad01 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "LPAD2")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "LPAD2")) {
-#endif // __linux__
 			bo = new Lpad02 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "LPAD2A")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "LPAD2A")) {
-#endif // __linux__
 			bo = new Lpad02a (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "RUNWAY")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "RUNWAY")) {
-#endif // __linux__
 			bo = new Runway (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "RUNWAYLIGHTS")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "RUNWAYLIGHTS")) {
-#endif // __linux__
 			bo = new RunwayLights (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "BEACONARRAY")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "BEACONARRAY")) {
-#endif // __linux__
 			bo = new BeaconArray (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "TRAIN1")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "TRAIN1")) {
-#endif // __linux__
 			bo = new Train1 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "TRAIN2")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "TRAIN2")) {
-#endif // __linux__
 			bo = new Train2 (_base); TRACENEW
-#ifndef __linux__
-		} else if (!_stricmp (tok, "SOLARPLANT")) {
-#else // __linux__
 		} else if (!strcasecmp (tok, "SOLARPLANT")) {
-#endif // __linux__
 			bo = new SolarPlant (_base); TRACENEW
 		} else {
 			LOGOUT ("BaseObject: Parse error");
@@ -170,20 +106,12 @@ int BaseObject::Read (istream &is)
 			continue; // empty line
 		sscanf (cp, "%s", label);
 		value = trim_string(cp+strlen(label));
-#ifndef __linux__
-		if (!_stricmp (label, "POS")) {
-#else // __linux__
 		if (!strcasecmp (label, "POS")) {
-#endif // __linux__
 			if (sscanf (value, "%lf%lf%lf", &relpos.x, &relpos.y, &relpos.z) != 3) {
 				ParseError("POS: expected 3 scalar values");
 				res = 2;
 			}
-#ifndef __linux__
-		} else if (!_stricmp (label, "SCALE")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "SCALE")) {
-#endif // __linux__
 			int nv = sscanf (value, "%lf%lf%lf", &scale.x, &scale.y, &scale.z);
 			if (nv < 3) {
 				if (nv == 1) {
@@ -193,11 +121,7 @@ int BaseObject::Read (istream &is)
 					res = 2;
 				}
 			}
-#ifndef __linux__
-		} else if (!_stricmp (label, "ROT")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "ROT")) {
-#endif // __linux__
 			if (sscanf (value, "%lf", &rot) != 1) {
 				ParseError("ROT: expected a scalar value");
 				res = 2;
@@ -208,11 +132,7 @@ int BaseObject::Read (istream &is)
 			r = ParseLine (label, value);
 			if (!res) res = r;
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 	return res;
 }
 
@@ -311,49 +231,21 @@ int MeshObject::ParseLine (const char *label, const char *value)
 	} else if (!strcasecmp (label, "WRAPTOSURFACE")) {
 #endif // __linux__
 		specs |= OBJSPEC_WRAPTOSURFACE;
-#ifndef __linux__
-	} else if (!_stricmp (label, "SHADOW")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "SHADOW")) {
-#endif // __linux__
 		specs |= OBJSPEC_RENDERSHADOW /*| OBJSPEC_EXPORTSHADOWMESH*/;
 		// removed OBJSPEC_EXPORTSHADOWMESH to avoid accumulated shadow meshes with excessive
 		// vertex numbers (vertex buffers are limited to 64000 vertices)
-#ifndef __linux__
-	} else if (!_stricmp (label, "OWNSHADOW")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "OWNSHADOW")) {
-#endif // __linux__
 		specs |= OBJSPEC_OWNSHADOW;
-#ifndef __linux__
-	} else if (!_stricmp (label, "UNDERSHADOWS")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "UNDERSHADOWS")) {
-#endif // __linux__
 		undersh = true;
-#ifndef __linux__
-	} else if (!_stricmp (label, "PRELOAD")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "PRELOAD")) {
-#endif // __linux__
 		preload = true;
-#ifndef __linux__
-	} else if (!_stricmp (label, "LPAD")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "LPAD")) {
-#endif // __linux__
 		specs |= OBJSPEC_LPAD;
-#ifndef __linux__
-	} else if (!_stricmp (label, "OWNMATERIAL")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "OWNMATERIAL")) {
-#endif // __linux__
 		ownmat = true;
-#ifndef __linux__
-	} else if (!_stricmp (label, "TEX")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 		texid = NameToId (value);
 	}
 	return res;
@@ -532,13 +424,8 @@ Block::~Block ()
 int Block::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_strnicmp (label, "TEX", 3)) {
-		D3DVALUE su, sv;
-#else // __linux__
 	if (!strncasecmp (label, "TEX", 3)) {
 		float su, sv;
-#endif // __linux__
 		int i;
 		char name[32];
 		if (sscanf (label+3, "%d", &i) != 1 || i < 1 || i > 3) {
@@ -810,13 +697,8 @@ Hangar::~Hangar ()
 int Hangar::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_strnicmp (label, "TEX", 3)) {
-		D3DVALUE su, sv;
-#else // __linux__
 	if (!strncasecmp (label, "TEX", 3)) {
 		float su, sv;
-#endif // __linux__
 		int i;
 		char name[32];
 		if (sscanf (label+3, "%d", &i) != 1 || i < 1 || i > 3) {
@@ -1079,22 +961,13 @@ Hangar2::~Hangar2 ()
 int Hangar2::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_stricmp (label, "ROOFH")) {
-#else // __linux__
 	if (!strcasecmp (label, "ROOFH")) {
-#endif // __linux__
 		if (sscanf (value, "%f", &roofh) != 1) {
 			ParseError("Hangar2: ROOFH: Expected scalar value");
 			res = 2;
 		}
-#ifndef __linux__
-	} else if (!_strnicmp (label, "TEX", 3)) {
-		D3DVALUE su, sv;
-#else // __linux__
 	} else if (!strncasecmp (label, "TEX", 3)) {
 		float su, sv;
-#endif // __linux__
 		int i;
 		char name[32];
 		if (sscanf (label+3, "%d", &i) != 1 || i < 1 || i > 3) {
@@ -1317,13 +1190,8 @@ Hangar3::~Hangar3 ()
 int Hangar3::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_strnicmp (label, "TEX", 3)) {
-		D3DVALUE su, sv;
-#else // __linux__
 	if (!strncasecmp (label, "TEX", 3)) {
 		float su, sv;
-#endif // __linux__
 		int i;
 		char name[32];
 		if (sscanf (label+3, "%d", &i) != 1 || i < 1 || i > 3) {
@@ -1580,23 +1448,14 @@ Tank::Tank (const Base *_base): BaseObject (_base)
 int Tank::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_stricmp (label, "NSTEP")) {
-#else // __linux__
 	if (!strcasecmp (label, "NSTEP")) {
-#endif // __linux__
 		if (sscanf (value, "%d", &nstep) != 1) {
 			ParseError("Tank: NSTEP: Expected integer value");
 			res = 2;
 		}
 		if (nstep < 3) nstep = 3;
-#ifndef __linux__
-	} else if (!_strnicmp (label, "TEX", 3)) {
-		D3DVALUE su, sv;
-#else // __linux__
 	} else if (!strncasecmp (label, "TEX", 3)) {
 		float su, sv;
-#endif // __linux__
 		int i;
 		char name[32];
 		if (sscanf (label+3, "%d", &i) != 1 || i < 1 || i > 2) {
@@ -1895,17 +1754,9 @@ Lpad01::Lpad01 (const Base *_base): Lpad (_base)
 int Lpad01::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_stricmp (label, "TEX")) {
-#else // __linux__
 	if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 		texid = NameToId (value);
-#ifndef __linux__
-	} else if (!_stricmp (label, "NAV")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "NAV")) {
-#endif // __linux__
 		if (sscanf (value, "%f", &ILSfreq) != 1) {
 			ParseError ("Lpad1: NAV: expected scalar value");
 			res = 2;
@@ -2006,17 +1857,9 @@ Lpad02::Lpad02 (const Base *_base): Lpad (_base)
 int Lpad02::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_stricmp (label, "TEX")) {
-#else // __linux__
 	if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 		texid = NameToId (value);
-#ifndef __linux__
-	} else if (!_stricmp (label, "NAV")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "NAV")) {
-#endif // __linux__
 		if (sscanf (value, "%f", &ILSfreq) != 1) {
 			ParseError ("Lpad2: NAV: expected scalar value");
 			res = 2;
@@ -2136,17 +1979,9 @@ Lpad02a::Lpad02a (const Base *_base): Lpad (_base)
 int Lpad02a::ParseLine (const char *label, const char *value)
 {
 	int res = 0;
-#ifndef __linux__
-	if (!_stricmp (label, "TEX")) {
-#else // __linux__
 	if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 		texid = NameToId (value);
-#ifndef __linux__
-	} else if (!_stricmp (label, "NAV")) {
-#else // __linux__
 	} else if (!strcasecmp (label, "NAV")) {
-#endif // __linux__
 		if (sscanf (value, "%f", &ILSfreq) != 1) {
 			ParseError ("Lpad2a: NAV: expected scalar value");
 			res = 2;
@@ -2277,38 +2112,18 @@ int Runway::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "END1"))
-#else // __linux__
 		if (!strcasecmp (label, "END1"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end1.x, &end1.y, &end1.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "END2"))
-#else // __linux__
 		else if (!strcasecmp (label, "END2"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end2.x, &end2.y, &end2.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "WIDTH")) {
-#else // __linux__
 		else if (!strcasecmp (label, "WIDTH")) {
-#endif // __linux__
 			sscanf (cp+5, "%f", &width);
 			width *= 0.5f;
-#ifndef __linux__
-		} else if (!_strnicmp (label, "ILS", 3)) {
-#else // __linux__
 		} else if (!strncasecmp (label, "ILS", 3)) {
-#endif // __linux__
 			float freq;
 			sscanf (cp+3, "%d%f", &i, &freq);
 			ILSfreq[i-1] = freq;
-#ifndef __linux__
-		} else if (!_stricmp (label, "NRWSEG")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "NRWSEG")) {
-#endif // __linux__
 			if (nrwseg) {
 				delete []rwseg;
 				rwseg = NULL;
@@ -2325,13 +2140,8 @@ int Runway::Read (istream &is)
 					rwseg[k].tv1    = 10.0f;
 				}
 			}
-#ifndef __linux__
-		} else if (!_strnicmp (label, "RWSEG", 5)) {
-			D3DVALUE seglen, tu0, tu1, tv0, tv1;
-#else // __linux__
 		} else if (!strncasecmp (label, "RWSEG", 5)) {
 			float seglen, tu0, tu1, tv0, tv1;
-#endif // __linux__
 			DWORD subseg;
 			sscanf (cp+5, "%d%d%f%f%f%f%f", &i, &subseg, &seglen, &tu0, &tu1, &tv0, &tv1);
 			if (--i >= 0 && i < (int)nrwseg) {
@@ -2342,19 +2152,11 @@ int Runway::Read (istream &is)
 				rwseg[i].tv0    = tv0;
 				rwseg[i].tv1    = tv1;
 			}
-#ifndef __linux__
-		} else if (!_stricmp (label, "RWTEX")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "RWTEX")) {
-#endif // __linux__
 			sscanf (cp+5, "%s", label);
 			texid[0] = NameToId (label);
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 	return 0;
 }
 
@@ -2479,54 +2281,26 @@ int RunwayLights::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "END1"))
-#else // __linux__
 		if (!strcasecmp (label, "END1"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end1.x, &end1.y, &end1.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "END2"))
-#else // __linux__
 		else if (!strcasecmp (label, "END2"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end2.x, &end2.y, &end2.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "COUNT1"))
-#else // __linux__
 		else if (!strcasecmp (label, "COUNT1"))
-#endif // __linux__
 			sscanf (cp+6, "%d", &count1);
-#ifndef __linux__
-		else if (!_stricmp (label, "WIDTH")) {
-#else // __linux__
 		else if (!strcasecmp (label, "WIDTH")) {
-#endif // __linux__
 			sscanf (cp+5, "%f", &width);
 			width *= 0.5f;
-#ifndef __linux__
-		} else if (!_stricmp (label, "PAPI")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "PAPI")) {
-#endif // __linux__
 			if (!papi) { papi = new struct PAPIDATA; TRACENEW }
 			sscanf (cp+4, "%f%f%f", &papi->apprangle, &papi->aperture, &papi->ofs);
 			papi->apprangle *= (float)RAD;
 			papi->aperture *= (float)RAD;
-#ifndef __linux__
-		} else if (!_stricmp (label, "VASI")) {
-#else // __linux__
 		} else if (!strcasecmp (label, "VASI")) {
-#endif // __linux__
 			if (!vasi) { vasi = new struct VASIDATA; TRACENEW }
 			sscanf (cp+4, "%f%f%f", &vasi->apprangle, &vasi->lightsep, &vasi->ofs);
 			vasi->apprangle *= (float)RAD;
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 	return 0;
 }
 
@@ -2837,41 +2611,17 @@ int BeaconArray::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "END1"))
-#else // __linux__
 		if (!strcasecmp (label, "END1"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end1.x, &end1.y, &end1.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "END2"))
-#else // __linux__
 		else if (!strcasecmp (label, "END2"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end2.x, &end2.y, &end2.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "COUNT"))
-#else // __linux__
 		else if (!strcasecmp (label, "COUNT"))
-#endif // __linux__
 			sscanf (cp+5, "%d", &count);
-#ifndef __linux__
-		else if (!_stricmp (label, "SIZE"))
-#else // __linux__
 		else if (!strcasecmp (label, "SIZE"))
-#endif // __linux__
 			sscanf (cp+4, "%lf", &size);
-#ifndef __linux__
-		else if (!_stricmp (label, "COL"))
-#else // __linux__
 		else if (!strcasecmp (label, "COL"))
-#endif // __linux__
 			sscanf (cp+3, "%f%f%f", &col_r, &col_g, &col_b);
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 	return 0;
 }
 
@@ -3166,43 +2916,19 @@ int Train1::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "END1"))
-#else // __linux__
 		if (!strcasecmp (label, "END1"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end1.x, &end1.y, &end1.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "END2"))
-#else // __linux__
 		else if (!strcasecmp (label, "END2"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end2.x, &end2.y, &end2.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "MAXSPEED"))
-#else // __linux__
 		else if (!strcasecmp (label, "MAXSPEED"))
-#endif // __linux__
 			sscanf (cp+8, "%f", &maxspeed);
-#ifndef __linux__
-		else if (!_stricmp (label, "SLOWZONE"))
-#else // __linux__
 		else if (!strcasecmp (label, "SLOWZONE"))
-#endif // __linux__
 			sscanf (cp+8, "%f", &slowzone);
-#ifndef __linux__
-		else if (!_stricmp (label, "TEX")) {
-#else // __linux__
 		else if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 			sscanf (cp+3, "%s%f", label, &tuscale_track);
 			texid = NameToId (label);
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 
 	Init (end1, end2);
 	return 0;
@@ -3498,49 +3224,21 @@ int Train2::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "END1"))
-#else // __linux__
 		if (!strcasecmp (label, "END1"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end1.x, &end1.y, &end1.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "END2"))
-#else // __linux__
 		else if (!strcasecmp (label, "END2"))
-#endif // __linux__
 			sscanf (cp+4, "%f%f%f", &end2.x, &end2.y, &end2.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "HEIGHT"))
-#else // __linux__
 		else if (!strcasecmp (label, "HEIGHT"))
-#endif // __linux__
 			sscanf (cp+6, "%f", &height);
-#ifndef __linux__
-		else if (!_stricmp (label, "MAXSPEED"))
-#else // __linux__
 		else if (!strcasecmp (label, "MAXSPEED"))
-#endif // __linux__
 			sscanf (cp+8, "%f", &maxspeed);
-#ifndef __linux__
-		else if (!_stricmp (label, "SLOWZONE"))
-#else // __linux__
 		else if (!strcasecmp (label, "SLOWZONE"))
-#endif // __linux__
 			sscanf (cp+8, "%f", &slowzone);
-#ifndef __linux__
-		else if (!_stricmp (label, "TEX")) {
-#else // __linux__
 		else if (!strcasecmp (label, "TEX")) {
-#endif // __linux__
 			sscanf (cp+3, "%s%f", label, &tuscale_track);
 			texid = NameToId (label);
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 
 	Init (end1, end2);
 	return 0;
@@ -3915,55 +3613,25 @@ int SolarPlant::Read (istream &is)
 		if (!is.getline (cbuf, 256)) return 1; // premature end of file
 		cp = trim_string (cbuf);
 		sscanf (cp, "%s", label);
-#ifndef __linux__
-		if (!_stricmp (label, "POS"))
-#else // __linux__
 		if (!strcasecmp (label, "POS"))
-#endif // __linux__
 			sscanf (cp+3, "%f%f%f", &pos.x, &pos.y, &pos.z);
-#ifndef __linux__
-		else if (!_stricmp (label, "SCALE"))
-#else // __linux__
 		else if (!strcasecmp (label, "SCALE"))
-#endif // __linux__
 			sscanf (cp+5, "%f", &scale);
-#ifndef __linux__
-		else if (!_stricmp (label, "SPACING"))
-#else // __linux__
 		else if (!strcasecmp (label, "SPACING"))
-#endif // __linux__
 			sscanf (cp+7, "%f%f", &sepx, &sepz);
-#ifndef __linux__
-		else if (!_stricmp (label, "GRID"))
-#else // __linux__
 		else if (!strcasecmp (label, "GRID"))
-#endif // __linux__
 			sscanf (cp+4, "%d%d", &nrow, &ncol);
-#ifndef __linux__
-		else if (!_stricmp (label, "ROT")) {
-#else // __linux__
 		else if (!strcasecmp (label, "ROT")) {
-#endif // __linux__
 			sscanf (cp+3, "%f", &rot);
-#ifndef __linux__
-			rot *= (D3DVALUE)RAD;
-		} else if (!_stricmp (label, "TEX")) {
-			D3DVALUE su, sv;
-#else // __linux__
 			rot *= (float)RAD;
 		} else if (!strcasecmp (label, "TEX")) {
 			float su, sv;
-#endif // __linux__
 			i = sscanf (cp+3, "%s%f%f", label, &su, &sv);
 			texid = NameToId (label);
 			if (i > 1) tuscale = su;
 			if (i > 2) tvscale = sv;
 		}
-#ifndef __linux__
-	} while (_stricmp (label, "END"));
-#else // __linux__
 	} while (strcasecmp (label, "END"));
-#endif // __linux__
 	npanel = nrow*ncol;
 	return 0;
 }

@@ -208,20 +208,12 @@ bool XRSoundConfigFileParser::ParseLine(const char *pSection, const char *pPrope
         }
         else if (PNAME_MATCHES("MusicOrder"))
         {
-#ifndef __linux__
-            if (_stricmp(pValue, "random") == 0)
-#else // __linux__
             if (strcasecmp(pValue, "random") == 0)
-#endif // __linux__
             {
                 MusicOrder = SeqRandom::Random;
                 return true;
             }
-#ifndef __linux__
-            else if (_stricmp(pValue, "sequential") == 0)
-#else // __linux__
             else if (strcasecmp(pValue, "sequential") == 0)
-#endif // __linux__
             {
                 MusicOrder = SeqRandom::Sequential;
                 return true;
@@ -250,29 +242,17 @@ bool XRSoundConfigFileParser::ParseLine(const char *pSection, const char *pPrope
         else if (PNAME_MATCHES("MusicPlayInternal") || PNAME_MATCHES("MusicPlayExternal"))
         {
             MusicPlay &playVar = ((PNAME_MATCHES("MusicPlayInternal") ? MusicPlayInternal : MusicPlayExternal));
-#ifndef __linux__
-            if (_stricmp(pValue, "off") == 0)
-#else // __linux__
             if (strcasecmp(pValue, "off") == 0)
-#endif // __linux__
             {
                 playVar = MusicPlay::Off;
                 return true;
             }
-#ifndef __linux__
-            else if (_stricmp(pValue, "space") == 0)
-#else // __linux__
             else if (strcasecmp(pValue, "space") == 0)
-#endif // __linux__
             {
                 playVar = MusicPlay::Space;
                 return true;
             }
-#ifndef __linux__
-            else if (_stricmp(pValue, "on") == 0)
-#else // __linux__
             else if (strcasecmp(pValue, "on") == 0)
-#endif // __linux__
             {
                 playVar = MusicPlay::On;
                 return true;
@@ -520,11 +500,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
 #endif // __linux__
 
     // parse non-wav file path paraemters
-#ifndef __linux__
-    if (_stricmp(pName, "OpenCloseSoundID") == 0)
-#else // __linux__
     if (strcasecmp(pName, "OpenCloseSoundID") == 0)
-#endif // __linux__
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
@@ -536,11 +512,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         if (soundID >= -0)
             pAnimationSounds->SetOpenCloseSoundID(soundID);
     }
-#ifndef __linux__
-    else if (_stricmp(pName, "MovingSoundID") == 0)
-#else // __linux__
     else if (strcasecmp(pName, "MovingSoundID") == 0)
-#endif // __linux__
     {
         int soundID = -1;
         SSCANF1("%d", &soundID);
@@ -552,11 +524,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         if (soundID >= -0)
             pAnimationSounds->SetMovingSoundID(soundID);
     }
-#ifndef __linux__
-    else if (_stricmp(pName, "PlaybackType") == 0)
-#else // __linux__
     else if (strcasecmp(pName, "PlaybackType") == 0)
-#endif // __linux__
     {
         // this sets the playbacktype for each default sound in this animation
         XRSound::PlaybackType type;
@@ -584,11 +552,7 @@ bool XRSoundConfigFileParser::AddOrUpdateAnimationState(const int animationID, c
         // playback type is valid!
         pAnimationSounds->SetPlaybackType(type);
     }
-#ifndef __linux__
-    else if (_stricmp(pName, "IsLandingGear") == 0)
-#else // __linux__
     else if (strcasecmp(pName, "IsLandingGear") == 0)
-#endif // __linux__
     { 
         bool bIsLandingGear = false;
         SSCANF_BOOL("%c", &bIsLandingGear);

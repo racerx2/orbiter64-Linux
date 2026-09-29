@@ -128,11 +128,7 @@ void CommandLine::MapKeys()
 		bool found = false;
 		for (auto it_key = keys.begin(); it_key < keys.end(); it_key++) {
 			if (isLong) {
-#ifndef __linux__
-				if (!stricmp(it_key->longName, it->strKey.c_str()))
-#else // __linux__
 				if (!strcasecmp(it_key->longName, it->strKey.c_str()))
-#endif // __linux__
 					found = true;
 			}
 			else {

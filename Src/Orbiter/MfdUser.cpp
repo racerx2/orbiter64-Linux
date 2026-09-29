@@ -110,11 +110,7 @@ bool Instrument_User::ReadParams (ifstream &ifs)
 	MFDMODESPECEX *spec;
 	if (!ifs.getline (cbuf, 256)) return false;
 	pc = trim_string (cbuf);
-#ifndef __linux__
-	if (_strnicmp (pc, "MODE", 4)) return false;
-#else // __linux__
 	if (strncasecmp (pc, "MODE", 4)) return false;
-#endif // __linux__
 	modestr = trim_string (pc+4);
 	int tp = ModeFromName (modestr, &spec);
 	if (tp <= BUILTIN_MFD_MODES)

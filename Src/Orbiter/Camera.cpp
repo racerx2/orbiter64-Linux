@@ -1443,80 +1443,39 @@ bool Camera::Read (ifstream &ifs)
 	for (;;) {
 		if (!ifs.getline (cbuf, 256)) break;
 		pc = trim_string (cbuf);
-#ifndef __linux__
-		if (!_strnicmp (pc, "END_CAMERA", 10)) break;
-		if (!_strnicmp (pc, "TARGET", 6)) {
-#else // __linux__
 		if (!strncasecmp (pc, "END_CAMERA", 10)) break;
 		if (!strncasecmp (pc, "TARGET", 6)) {
-#endif // __linux__
 			pc = trim_string (pc+6);
 			if (!(tg = g_psys->GetObj (pc, true)))
 				tg = g_psys->GetBase (pc, true);
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "MODE", 4)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "MODE", 4)) {
-#endif // __linux__
 			pc = trim_string (pc+4);
-#ifndef __linux__
-			if (!_strnicmp (pc, "Extern", 6)) external_view = true;
-#else // __linux__
 			if (!strncasecmp (pc, "Extern", 6)) external_view = true;
-#endif // __linux__
 			else                             external_view = false;
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "POS", 3)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "POS", 3)) {
-#endif // __linux__
 			n = sscanf (pc+3, "%lf%lf%lf", &rd, &ph, &th);
 			ph *= RAD, th *= RAD;
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "FOV", 3)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "FOV", 3)) {
-#endif // __linux__
 			double a;
 			n = sscanf (pc+3, "%lf", &a);
 			if (a < 10.0) a = 10.0;
 			else if (a > 160.0) a = 160.0;
 			a *= RAD*0.5;
 			ap_int = ap_ext = a;
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "TRACKMODE", 9)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "TRACKMODE", 9)) {
-#endif // __linux__
 			n = sscanf (pc+9, "%s%s", ctrackmode, cdirref);
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "GROUNDLOCATION", 14)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "GROUNDLOCATION", 14)) {
-#endif // __linux__
 			n = sscanf (pc+14, "%lf%lf%lf", &go.lng, &go.lat, &go.alt);
 			go.lng *= RAD, go.lat *= RAD;
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "GROUNDDIRECTION", 15)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "GROUNDDIRECTION", 15)) {
-#endif // __linux__
 			n = sscanf (pc+15, "%lf%lf", &go.phi, &go.tht);
 			go.phi *= RAD, go.tht *= RAD;
 			go.tgtlock = false;
-#ifndef __linux__
-		} else if (!_strnicmp (pc, "BEGIN_PRESET", 12)) {
-#else // __linux__
 		} else if (!strncasecmp (pc, "BEGIN_PRESET", 12)) {
-#endif // __linux__
 			for (;;) {
 				if (!ifs.getline (cbuf, 256)) break;
 				pc = trim_string (cbuf);
-#ifndef __linux__
-				if (!_strnicmp (pc, "END_PRESET", 10)) break;
-#else // __linux__
 				if (!strncasecmp (pc, "END_PRESET", 10)) break;
-#endif // __linux__
 				AddPreset (CameraMode::Create (pc));
 			}
 		}
@@ -1524,35 +1483,15 @@ bool Camera::Read (ifstream &ifs)
 	if (tg && external_view) target = tg;
 	if (external_view) {
 		rdist = rd, ephi = ph, etheta = th;
-#ifndef __linux__
-		if (!_stricmp (ctrackmode, "AbsoluteDirection"))
-#else // __linux__
 		if (!strcasecmp (ctrackmode, "AbsoluteDirection"))
-#endif // __linux__
 			extmode = CAMERA_ABSDIRECTION;
-#ifndef __linux__
-		else if (!_stricmp (ctrackmode, "GlobalFrame"))
-#else // __linux__
 		else if (!strcasecmp (ctrackmode, "GlobalFrame"))
-#endif // __linux__
 			extmode = CAMERA_GLOBALFRAME;
-#ifndef __linux__
-		else if (!_stricmp (ctrackmode, "TargetTo") && (dirref = g_psys->GetObj (cdirref, true)))
-#else // __linux__
 		else if (!strcasecmp (ctrackmode, "TargetTo") && (dirref = g_psys->GetObj (cdirref, true)))
-#endif // __linux__
 			extmode = CAMERA_TARGETTOOBJECT;
-#ifndef __linux__
-		else if (!_stricmp (ctrackmode, "TargetFrom") && (dirref = g_psys->GetObj (cdirref, true)))
-#else // __linux__
 		else if (!strcasecmp (ctrackmode, "TargetFrom") && (dirref = g_psys->GetObj (cdirref, true)))
-#endif // __linux__
 			extmode = CAMERA_TARGETFROMOBJECT;
-#ifndef __linux__
-		else if (!_stricmp (ctrackmode, "Ground") && (dirref = g_psys->GetObj (cdirref, true)))
-#else // __linux__
 		else if (!strcasecmp (ctrackmode, "Ground") && (dirref = g_psys->GetObj (cdirref, true)))
-#endif // __linux__
 			extmode = CAMERA_GROUNDOBSERVER;
 		else 
 			extmode = CAMERA_TARGETRELATIVE;
@@ -1664,23 +1603,11 @@ CameraMode *CameraMode::Create (char *str)
 
 	if (!(pc = strtok (str, ":"))) return 0;
 	tc = trim_string (pc);
-#ifndef __linux__
-	if (!_stricmp (tc, "Cockpit")) {
-#else // __linux__
 	if (!strcasecmp (tc, "Cockpit")) {
-#endif // __linux__
 		cm = new CameraMode_Cockpit; TRACENEW
-#ifndef __linux__
-	} else if (!_stricmp (tc, "Track")) {
-#else // __linux__
 	} else if (!strcasecmp (tc, "Track")) {
-#endif // __linux__
 		cm = new CameraMode_Track; TRACENEW
-#ifndef __linux__
-	} else if (!_stricmp (tc, "Ground")) {
-#else // __linux__
 	} else if (!strcasecmp (tc, "Ground")) {
-#endif // __linux__
 		cm = new CameraMode_Ground; TRACENEW
 	} else {
 		cm = new CameraMode_Cockpit; TRACENEW
@@ -1714,27 +1641,15 @@ void CameraMode_Cockpit::Init (char *str)
 {
 	if (!str || str[0] == '\0') return;
 
-#ifndef __linux__
-	if (!strnicmp(str, "generic", 7)) {
-#else // __linux__
 	if (!strncasecmp(str, "generic", 7)) {
-#endif // __linux__
 		cmode = CM_GENERIC;
 		str += 7;
-#ifndef __linux__
-	} else if (!strnicmp(str, "panel2d", 7)) {
-#else // __linux__
 	} else if (!strncasecmp(str, "panel2d", 7)) {
-#endif // __linux__
 		cmode = CM_PANEL2D;
 		str += 7;
 		if (str[0] == ':' && sscanf(++str, "%d", &pos))
 			while (*str != ' ' && *str != '\0') str++;
-#ifndef __linux__
-	} else if (!strnicmp(str, "vc", 2)) {
-#else // __linux__
 	} else if (!strncasecmp(str, "vc", 2)) {
-#endif // __linux__
 		cmode = CM_VC;
 		str += 2;
 		if (str[0] == ':' && sscanf(++str, "%d", &pos)) {
@@ -1748,11 +1663,7 @@ void CameraMode_Cockpit::Init (char *str)
 				}
 			}
 		}
-#ifndef __linux__
-	} else if (!strnicmp(str, "current", 7)) {
-#else // __linux__
 	} else if (!strncasecmp(str, "current", 7)) {
-#endif // __linux__
 		cmode = CM_CURRENT;
 		str += 7;
 	}
@@ -1784,38 +1695,18 @@ void CameraMode_Track::Init (char *str)
 {
 	char tm[64], rf[256];
 	sscanf (str, "%s%lf%lf%lf%s", tm, &reldist, &phi, &theta, rf);
-#ifndef __linux__
-	if (!_stricmp (tm, "RELATIVE"))
-#else // __linux__
 	if (!strcasecmp (tm, "RELATIVE"))
-#endif // __linux__
 		tmode = TM_RELATIVE;
-#ifndef __linux__
-	else if (!_stricmp (tm, "ABSDIR"))
-#else // __linux__
 	else if (!strcasecmp (tm, "ABSDIR"))
-#endif // __linux__
 		tmode = TM_ABSDIR;
-#ifndef __linux__
-	else if (!_stricmp (tm, "GLOBAL"))
-#else // __linux__
 	else if (!strcasecmp (tm, "GLOBAL"))
-#endif // __linux__
 		tmode = TM_GLOBAL;
-#ifndef __linux__
-	else if (!_stricmp (tm, "TARGETTOREF")) {
-#else // __linux__
 	else if (!strcasecmp (tm, "TARGETTOREF")) {
-#endif // __linux__
 		tmode = TM_TARGETTOREF;
 		Body *r = g_psys->GetObj (rf, true);
 		if (r) ref = (OBJHANDLE)r;
 		else tmode = TM_CURRENT;
-#ifndef __linux__
-	} else if (!_stricmp (tm, "TARGETFROMREF")) {
-#else // __linux__
 	} else if (!strcasecmp (tm, "TARGETFROMREF")) {
-#endif // __linux__
 		tmode = TM_TARGETFROMREF;
 		Body *r = g_psys->GetObj (rf, true);
 		if (r) ref = (OBJHANDLE)r;

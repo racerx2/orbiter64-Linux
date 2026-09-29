@@ -855,46 +855,22 @@ istream &operator>> (istream &is, Mesh &mesh)
 
 		for (;;) {
 			if (!is.getline (cbuf, 256)) { term = true; break; }
-#ifndef __linux__
-			if (!_strnicmp (cbuf, "MATERIAL", 8)) {       // read material index
-#else // __linux__
 			if (!strncasecmp (cbuf, "MATERIAL", 8)) {       // read material index
-#endif // __linux__
 				sscanf (cbuf+8, "%d", &mtrl_idx);
 				mtrl_idx--;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "TEXTURE", 7)) { // read texture index
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "TEXTURE", 7)) { // read texture index
-#endif // __linux__
 				sscanf (cbuf+7, "%d", &tex_idx);
 				tex_idx--;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "ZBIAS", 5)) {   // read z-bias
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "ZBIAS", 5)) {   // read z-bias
-#endif // __linux__
 				sscanf (cbuf+5, "%hu", &zbias);
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "TEXWRAP", 7)) { // read wrap flags
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "TEXWRAP", 7)) { // read wrap flags
-#endif // __linux__
 				char uvstr[10] = "";
 				sscanf (cbuf+7, "%9s", uvstr);
 				if (uvstr[0] == 'U' || uvstr[1] == 'U') flag |= 0x01;
 				if (uvstr[0] == 'V' || uvstr[1] == 'V') flag |= 0x02;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "NONORMAL", 8)) {
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "NONORMAL", 8)) {
-#endif // __linux__
 				bnormal = false; calcnml = true;
-#ifndef __linux__
-			} else if (!_strnicmp (cbuf, "GEOM", 4)) {    // read geometry
-#else // __linux__
 			} else if (!strncasecmp (cbuf, "GEOM", 4)) {    // read geometry
-#endif // __linux__
 				if (sscanf (cbuf+4, "%d%d", &nvtx, &ntri) != 2) break; // parse error - skip group
 				for (i = 4; cbuf[i]; i++)           // read comment (preceeded by ';')
 					if (cbuf[i] == ';') { strcpy (comment, cbuf+i+1); break; }

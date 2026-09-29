@@ -331,27 +331,12 @@ bool Keymap::ScanStr (char *cbuf, WORD &key) const
 	char *tok = strtok (cbuf, " ");
 	if (!tok) return false;
 	for (i = 0; i < NKEY; i++)
-#ifndef __linux__
-		if (!_stricmp (tok, keyname[i].name)) break;
-#else // __linux__
 		if (!strcasecmp (tok, keyname[i].name)) break;
-#endif // __linux__
 	if (i == NKEY) return false; // key not found
 	key = keyname[i].id;
 	for (;;) {
 		tok = strtok (NULL, " ");
 		if (!tok) break;
-#ifndef __linux__
-		if      (!_stricmp (tok, "LSHIFT")) key |= KMOD_LSHIFT;
-		else if (!_stricmp (tok, "RSHIFT")) key |= KMOD_RSHIFT;
-		else if (!_stricmp (tok, "SHIFT"))  key |= KMOD_SHIFT;
-		else if (!_stricmp (tok, "LCTRL"))  key |= KMOD_LCTRL;
-		else if (!_stricmp (tok, "RCTRL"))  key |= KMOD_RCTRL;
-		else if (!_stricmp (tok, "CTRL"))   key |= KMOD_CTRL;
-		else if (!_stricmp (tok, "LALT"))   key |= KMOD_LALT;
-		else if (!_stricmp (tok, "RALT"))   key |= KMOD_RALT;
-		else if (!_stricmp (tok, "ALT"))    key |= KMOD_ALT;
-#else // __linux__
 		if      (!strcasecmp (tok, "LSHIFT")) key |= KMOD_LSHIFT;
 		else if (!strcasecmp (tok, "RSHIFT")) key |= KMOD_RSHIFT;
 		else if (!strcasecmp (tok, "SHIFT"))  key |= KMOD_SHIFT;
@@ -361,7 +346,6 @@ bool Keymap::ScanStr (char *cbuf, WORD &key) const
 		else if (!strcasecmp (tok, "LALT"))   key |= KMOD_LALT;
 		else if (!strcasecmp (tok, "RALT"))   key |= KMOD_RALT;
 		else if (!strcasecmp (tok, "ALT"))    key |= KMOD_ALT;
-#endif // __linux__
 	}
 	return true;
 }

@@ -143,17 +143,9 @@ void ShuttleA_PL::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 	char *line;
 
 	while (oapiReadScenario_nextline (scn, line)) {
-#ifndef __linux__
-		if (!_strnicmp (line, "PARACHUTE", 9)) {
-#else // __linux__
 		if (!strncasecmp (line, "PARACHUTE", 9)) {
-#endif // __linux__
 			sscanf (line+9, "%d", &Parachute_mode);
-#ifndef __linux__
-		} else if (!_strnicmp (line, "TIMER", 5)) {
-#else // __linux__
 		} else if (!strncasecmp (line, "TIMER", 5)) {
-#endif // __linux__
 			sscanf (line+5, "%lf", &timer);
 		
 		} else {

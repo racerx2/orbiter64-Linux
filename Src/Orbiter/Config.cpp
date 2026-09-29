@@ -354,21 +354,13 @@ bool GetItemString (istream &is, const char *label, char *val)
 
 	while (is.getline (cbuf, 512)) {
 		cl = trim_string(cbuf);
-#ifndef __linux__
-		if (!_stricmp(cl, "END_PARSE")) return false;
-#else // __linux__
 		if (!strcasecmp(cl, "END_PARSE")) return false;
-#endif // __linux__
 		
 		for (i = 0; cl[i] && cl[i] != '='; i++);
 		cv = (cl[i] ? cl+(i+1) : cl+i);
 		for (cl[i--] = '\0'; i >= 0 && (cl[i] == ' ' || cl[i] == '\t'); i--)
 			cl[i] = '\0';
-#ifndef __linux__
-		if (!_stricmp (cl, label)) {
-#else // __linux__
 		if (!strcasecmp (cl, label)) {
-#endif // __linux__
 			while (*cv == ' ' || *cv == '\t') cv++;
 			if (*cv) {
 				strcpy (val, cv);
@@ -410,13 +402,8 @@ bool GetItemHex (istream &is, const char *label, int &val)
 bool GetItemBool (istream &is, const char *label, bool &val)
 {
 	if (!GetItemString (is, label, g_cbuf)) return false;
-#ifndef __linux__
-	if (!_strnicmp (g_cbuf, "true", 4)) { val = true; return true; }
-	else if (!_strnicmp (g_cbuf, "false", 5)) { val = false; return true; }
-#else // __linux__
 	if (!strncasecmp (g_cbuf, "true", 4)) { val = true; return true; }
 	else if (!strncasecmp (g_cbuf, "false", 5)) { val = false; return true; }
-#endif // __linux__
 	return false;
 }
 
@@ -449,11 +436,7 @@ bool FindLine (istream &is, const char *line)
 				if (is.eof()) break;               // EOF
 				else is.clear();                   // heal stream to continue after truncation error
 			}
-#ifndef __linux__
-			if (!_strnicmp (g_cbuf, line, len)) {  // found string
-#else // __linux__
 			if (!strncasecmp (g_cbuf, line, len)) {  // found string
-#endif // __linux__
 				ok = true;
 				break;
 			}
@@ -469,11 +452,7 @@ bool FindLine (istream &is, const char *line)
 int ListIndex (int listlen, char **list, char *label)
 {
 	for (int i = 0; i < listlen; i++)
-#ifndef __linux__
-		if (!_stricmp (label, list[i])) return i;
-#else // __linux__
 		if (!strcasecmp (label, list[i])) return i;
-#endif // __linux__
 	return -1;
 }
 
@@ -834,11 +813,7 @@ bool Config::Load(const char *fname)
 	// list of active modules
 	if (FindLine (ifs, "ACTIVE_MODULES")) {
 		char cbuf[256];
-#ifndef __linux__
-		while (ifs.getline (cbuf, 256) && _strnicmp (cbuf, "END_MODULES", 11))
-#else // __linux__
 		while (ifs.getline (cbuf, 256) && strncasecmp (cbuf, "END_MODULES", 11))
-#endif // __linux__
 			m_activeModules.push_back(std::string(trim_string(cbuf)));
 	}
 	return true;
@@ -1571,13 +1546,8 @@ bool Config::GetSize (istream& is, const char* category, size_t& val)
 bool Config::GetBool (istream &is, const char *category, bool &val)
 {
 	if (!GetString (is, category, g_cbuf)) return false;
-#ifndef __linux__
-	if (!_strnicmp (g_cbuf, "true", 4)) { val = true; return true; }
-	else if (!_strnicmp (g_cbuf, "false", 5)) { val = false; return true; }
-#else // __linux__
 	if (!strncasecmp (g_cbuf, "true", 4)) { val = true; return true; }
 	else if (!strncasecmp (g_cbuf, "false", 5)) { val = false; return true; }
-#endif // __linux__
 	return false;
 }
 

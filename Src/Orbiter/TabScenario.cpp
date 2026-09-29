@@ -587,11 +587,7 @@ char *ScanFileDesc (std::istream &is, const char *blockname)
 				if (is.eof()) break;
 				else is.clear();
 			}
-#ifndef __linux__
-			if (_strnicmp (line, blockend, strlen(blockend))) {
-#else // __linux__
 			if (strncasecmp (line, blockend, strlen(blockend))) {
-#endif // __linux__
 				len = strlen(line);
 				if (len) strcat (line, " "), len++;    // convert newline to space
 				else     strcpy (line, "\r\n"), len=2; // convert empty line to CR

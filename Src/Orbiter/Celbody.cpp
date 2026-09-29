@@ -130,13 +130,8 @@ CelestialBody::CelestialBody (char *fname)
 	}
 
 	if (GetItemBool (ifs, "HasElements", bInitFromElements) && bInitFromElements) {
-#ifndef __linux__
-		if (GetItemString (ifs, "ElReference", cbuf) &&
-			!_stricmp (cbuf, "ParentEquator"))
-#else // __linux__
 		if (GetItemString (ifs, "ElReference", cbuf) &&
 			!strcasecmp (cbuf, "ParentEquator"))
-#endif // __linux__
 			elframe = ELFRAME_PARENTEQU;
 		el = new Elements (fname); TRACENEW
 	}
@@ -962,11 +957,7 @@ void CELBODY2::clbkInit (FILEHANDLE cfg)
 		strcat (name, "\\Atmosphere.cfg");
 		FILEHANDLE hFile = oapiOpenFile (name, FILE_IN, CONFIG);
 		if (oapiReadItem_string (hFile, (char*)"MODULE_ATM", fname) || oapiReadItem_string (cfg, (char*)"MODULE_ATM", fname)) {
-#ifndef __linux__
-			if (_stricmp (fname, "[None]"))
-#else // __linux__
 			if (strcasecmp (fname, "[None]"))
-#endif // __linux__
 				LoadAtmosphereModule (fname);
 		}
 		oapiCloseFile (hFile, FILE_IN);

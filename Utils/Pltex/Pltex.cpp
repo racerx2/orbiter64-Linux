@@ -450,11 +450,7 @@ void CreateGlobalSurface ()
 		cout << "bitmap should be approximately 2:1 for best results.\n\n";
 		cout << ">> Surface map file name (.bmp): ";
 		cin >> fname;
-#ifndef __linux__
-		if (!_stricmp (fname+(strlen(fname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (fname+(strlen(fname)-4), ".bmp"))
-#endif // __linux__
 			fname[strlen(fname)-4] = '\0';
 		cout << endl;
 	}
@@ -492,11 +488,7 @@ void CreateGlobalSurface ()
 		cout << "and black for diffuse reflection areas (land).\n\n";
 		cout << ">> Mask map file name (.bmp): ";
 		cin >> aname;
-#ifndef __linux__
-		if (!_stricmp (aname+(strlen(aname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (aname+(strlen(aname)-4), ".bmp"))
-#endif // __linux__
 			aname[strlen(aname)-4] = '\0';
 		cout << endl;
 
@@ -543,11 +535,7 @@ void CreateGlobalSurface ()
 		cout << "(but not necessarily white) in lit areas.\n\n";
 		cout << ">> City light map file name: (.bmp): ";
 		cin >> lname;
-#ifndef __linux__
-		if (!_stricmp (lname+(strlen(lname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (lname+(strlen(lname)-4), ".bmp"))
-#endif // __linux__
 			lname[strlen(lname)-4] = '\0';
 		cout << endl;
 
@@ -976,11 +964,7 @@ void CreateLocalArea ()
 		cout << "horizontal axis, and latitude linear along the vertical axis.\n\n";
 		cout << ">> Surface map file name (.bmp): ";
 		cin >> fname;
-#ifndef __linux__
-		if (!_stricmp (fname+(strlen(fname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (fname+(strlen(fname)-4), ".bmp"))
-#endif // __linux__
 			fname[strlen(fname)-4] = '\0';
 		cout << endl;
 	}
@@ -1032,11 +1016,7 @@ void CreateLocalArea ()
 		cout << "and black for diffuse reflection areas (land).\n\n";
 		cout << ">> Mask map file name (.bmp): ";
 		cin >> aname;
-#ifndef __linux__
-		if (!_stricmp (aname+(strlen(aname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (aname+(strlen(aname)-4), ".bmp"))
-#endif // __linux__
 			aname[strlen(aname)-4] = '\0';
 		cout << endl;
 
@@ -1106,11 +1086,7 @@ void CreateLocalArea ()
 		cout << "(but not necessarily white) in lit areas.\n\n";
 		cout << ">> City light map file name: (.bmp): ";
 		cin >> lname;
-#ifndef __linux__
-		if (!_stricmp (lname+(strlen(lname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (lname+(strlen(lname)-4), ".bmp"))
-#endif // __linux__
 			lname[strlen(lname)-4] = '\0';
 		cout << endl;
 
@@ -1745,11 +1721,7 @@ void CreateCloudMap ()
 	cout << "2:1 for best results.\n\n";
 	cout << ">> Cloud colour map file name (.bmp): ";
 	cin >> fname;
-#ifndef __linux__
-	if (!_stricmp (fname+(strlen(fname)-4), ".bmp"))
-#else // __linux__
 	if (!strcasecmp (fname+(strlen(fname)-4), ".bmp"))
-#endif // __linux__
 		fname[strlen(fname)-4] = '\0';
 	cout << endl;
 
@@ -1784,11 +1756,7 @@ void CreateCloudMap ()
 		cout << "pixels are fully opaque, black pixels are fully transparent.\n\n";
 		cout << ">> Opacity map file name (.bmp): ";
 		cin >> aname;
-#ifndef __linux__
-		if (!_stricmp (aname+(strlen(aname)-4), ".bmp"))
-#else // __linux__
 		if (!strcasecmp (aname+(strlen(aname)-4), ".bmp"))
-#endif // __linux__
 			aname[strlen(aname)-4] = '\0';
 		cout << endl;
 	}

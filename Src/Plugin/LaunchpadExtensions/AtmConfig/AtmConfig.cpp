@@ -147,11 +147,7 @@ void AtmConfig::Read (const char *celbody)
 		char name[256];
 		oapiReadItem_string (hFile, (char*)ModuleItem, name);
 		for (module_curr = module_first; module_curr; module_curr = module_curr->next)
-#ifndef __linux__
-			if (!_stricmp (module_curr->module_name, name)) break;
-#else // __linux__
 			if (!strcasecmp (module_curr->module_name, name)) break;
-#endif // __linux__
 		oapiCloseFile (hFile, FILE_IN);
 	}
 }

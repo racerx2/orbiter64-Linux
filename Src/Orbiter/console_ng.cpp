@@ -134,59 +134,27 @@ bool orbiter::ConsoleNG::ParseCmd()
 #endif // __linux__
 
 	DWORD i;
-#ifndef __linux__
-	if (!_strnicmp(cmd, "help", 4)) {
-#else // __linux__
 	if (!strncasecmp(cmd, "help", 4)) {
-#endif // __linux__
 		pc = trim_string(cmd + 4);
-#ifndef __linux__
-		if (!_strnicmp(pc, "help", 4)) {
-#else // __linux__
 		if (!strncasecmp(pc, "help", 4)) {
-#endif // __linux__
 			Echo("Brief onscreen help for console commands.");
 			Echo("Type \"help\" followed by a top-level command to get information for this command.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "exit", 4)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "exit", 4)) {
-#endif // __linux__
 			Echo("Exits the simulation session and returns to the Launchpad dialog.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "vessel", 6)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "vessel", 6)) {
-#endif // __linux__
 			ppc = trim_string(pc + 6);
-#ifndef __linux__
-			if (!_strnicmp(ppc, "list", 4)) {
-#else // __linux__
 			if (!strncasecmp(ppc, "list", 4)) {
-#endif // __linux__
 				Echo("Lists all vessels in the current session.");
 			}
-#ifndef __linux__
-			else if (!_strnicmp(ppc, "count", 5)) {
-#else // __linux__
 			else if (!strncasecmp(ppc, "count", 5)) {
-#endif // __linux__
 				Echo("Prints the number of vessels in the current session.");
 			}
-#ifndef __linux__
-			else if (!_strnicmp(ppc, "focus", 5)) {
-#else // __linux__
 			else if (!strncasecmp(ppc, "focus", 5)) {
-#endif // __linux__
 				Echo("Prints the name of the current focus vessel.");
 			}
-#ifndef __linux__
-			else if (!_strnicmp(ppc, "del", 3)) {
-#else // __linux__
 			else if (!strncasecmp(ppc, "del", 3)) {
-#endif // __linux__
 				Echo("vessel del <name> -- Destroy vessel <name>.");
 			}
 			else {
@@ -195,11 +163,7 @@ bool orbiter::ConsoleNG::ParseCmd()
 				Echo("Type \"help vessel <subcommand>\" to get information for a command.");
 			}
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "time", 4)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "time", 4)) {
-#endif // __linux__
 			Echo("Output current simulation time.");
 			Echo("time syst  --  Session up time (seconds)");
 			Echo("time simt  --  Simulation time (seconds)");
@@ -207,38 +171,22 @@ bool orbiter::ConsoleNG::ParseCmd()
 			Echo("time ut    --  Absolute simulation time (UT format)");
 			Echo("Without arguments, all 4 time values are displayed.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "tacc", 4)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "tacc", 4)) {
-#endif // __linux__
 			Echo("Display or set time acceleration factor.");
 			Echo("tacc <x>  --  Set new time acceleration factor x.");
 			Echo("Without argument, prints the current time acceleration factor.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "pause", 5)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "pause", 5)) {
-#endif // __linux__
 			Echo("Pause/resume simulation session.");
 			Echo("pause on      --  pause simulation");
 			Echo("pause off     --  resume simulation");
 			Echo("pause toggle  --  toggle pause/resume state");
 			Echo("Without arguments, the current simulation state is displayed.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "step", 4)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "step", 4)) {
-#endif // __linux__
 			Echo("Display momentary simulation step length and steps per second.");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "dlg", 3)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "dlg", 3)) {
-#endif // __linux__
 			Echo("Open a dialog.");
 			Echo("dlg focus    -- Open the vessel selction dialog");
 			Echo("dlg map      -- Open the map window");
@@ -248,11 +196,7 @@ bool orbiter::ConsoleNG::ParseCmd()
 			Echo("dlg record   -- Open the flight recorder dialog");
 			Echo("dlg function -- Open the plugin function list");
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "gui", 3)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "gui", 3)) {
-#endif // __linux__
 			Echo("Toggles the display of a dialog box that continuously monitors the simulation");
 			Echo("state.");
 		}
@@ -262,58 +206,30 @@ bool orbiter::ConsoleNG::ParseCmd()
 			Echo("To get help for a command, type \"help <cmd>\"");
 		}
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "exit", 4)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "exit", 4)) {
-#endif // __linux__
 		m_pOrbiter->CloseSession();
 		return true;
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "vessel", 6)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "vessel", 6)) {
-#endif // __linux__
 		pc = trim_string(cmd + 6);
-#ifndef __linux__
-		if (!_strnicmp(pc, "list", 4)) {
-#else // __linux__
 		if (!strncasecmp(pc, "list", 4)) {
-#endif // __linux__
 			for (i = 0; i < g_psys->nVessel(); i++)
 				Echo(g_psys->GetVessel(i)->Name());
 			return true;
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "count", 5)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "count", 5)) {
-#endif // __linux__
 			sprintf(cbuf, "%zu", g_psys->nVessel());
 			Echo(cbuf);
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "focus", 5)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "focus", 5)) {
-#endif // __linux__
 			Echo(g_focusobj->Name());
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "del", 3)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "del", 3)) {
-#endif // __linux__
 			Vessel* v = g_psys->GetVessel(trim_string(pc + 3), true);
 			if (v) v->RequestDestruct();
 		}
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "tacc", 4)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "tacc", 4)) {
-#endif // __linux__
 		double w;
 		if (sscanf(trim_string(cmd + 4), "%lf", &w) == 1)
 			m_pOrbiter->SetWarpFactor(w);
@@ -322,38 +238,18 @@ bool orbiter::ConsoleNG::ParseCmd()
 			Echo(cbuf);
 		}
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "time", 4)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "time", 4)) {
-#endif // __linux__
 		pc = trim_string(cmd + 4);
-#ifndef __linux__
-		if (!_strnicmp(pc, "simt", 4)) {
-#else // __linux__
 		if (!strncasecmp(pc, "simt", 4)) {
-#endif // __linux__
 			sprintf(cbuf, "%0.1f", td.SimT0);
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "syst", 4)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "syst", 4)) {
-#endif // __linux__
 			sprintf(cbuf, "%0.1f", td.SysT0);
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "mjd", 3)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "mjd", 3)) {
-#endif // __linux__
 			sprintf(cbuf, "%0.6f", td.MJD0);
 		}
-#ifndef __linux__
-		else if (!_strnicmp(pc, "ut", 2)) {
-#else // __linux__
 		else if (!strncasecmp(pc, "ut", 2)) {
-#endif // __linux__
 			strcpy(cbuf, DateStr(td.MJD0));
 		}
 		else {
@@ -361,11 +257,7 @@ bool orbiter::ConsoleNG::ParseCmd()
 		}
 		Echo(cbuf);
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "pause", 5)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "pause", 5)) {
-#endif // __linux__
 		pc = trim_string(cmd + 5);
 #ifndef __linux__
 		if (!_strnicmp(pc, "on", 2)) m_pOrbiter->Pause(true);
@@ -402,55 +294,23 @@ bool orbiter::ConsoleNG::ParseCmd()
 		}
 #endif // __linux__
 	}
-#ifndef __linux__
-	else if (!_strnicmp(cmd, "dlg", 3)) {
-#else // __linux__
 	else if (!strncasecmp(cmd, "dlg", 3)) {
-#endif // __linux__
 		DialogManager* pDlgMgr = m_pOrbiter->DlgMgr();
 		if (pDlgMgr) {
 			pc = trim_string(cmd + 3);
-#ifndef __linux__
-			if (!_strnicmp(pc, "focus", 5))
-#else // __linux__
 			if (!strncasecmp(pc, "focus", 5))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgFocus>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "map", 3))
-#else // __linux__
 			else if (!strncasecmp(pc, "map", 3))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgMap>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "info", 4))
-#else // __linux__
 			else if (!strncasecmp(pc, "info", 4))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgInfo>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "tacc", 4))
-#else // __linux__
 			else if (!strncasecmp(pc, "tacc", 4))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgTacc>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "function", 8))
-#else // __linux__
 			else if (!strncasecmp(pc, "function", 8))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgFunction>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "record", 6))
-#else // __linux__
 			else if (!strncasecmp(pc, "record", 6))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgRecorder>();
-#ifndef __linux__
-			else if (!_strnicmp(pc, "help", 4))
-#else // __linux__
 			else if (!strncasecmp(pc, "help", 4))
-#endif // __linux__
 				pDlgMgr->EnsureEntry<DlgHelp>();
 		}
 	}

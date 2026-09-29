@@ -116,27 +116,9 @@ Instrument *Instrument::Create (ifstream &ifs, Pane *_pane,
 	for (;instr == 0;) {
 		if (!ifs.getline (cbuf, 256)) return 0;
 		pc = trim_string (cbuf);
-#ifndef __linux__
-		if (!_strnicmp (pc, "END_MFD", 7)) return 0;
-		if (!_strnicmp (pc, "TYPE", 4)) {
-#else // __linux__
 		if (!strncasecmp (pc, "END_MFD", 7)) return 0;
 		if (!strncasecmp (pc, "TYPE", 4)) {
-#endif // __linux__
 			pc = trim_string (pc+4);
-#ifndef __linux__
-			if      (!_strnicmp (pc, "Orbit", 5))    instr = Create (MFD_ORBIT, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Surface", 7))  instr = Create (MFD_SURFACE, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Map", 3))      instr = Create (MFD_MAP, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "HSI", 3))      instr = Create (MFD_HSI, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Launch", 6))   instr = Create (MFD_LANDING, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "Docking", 7))  instr = Create (MFD_DOCKING, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "OAlign", 6))   instr = Create (MFD_OPLANEALIGN, _pane, _id, spec, _vessel, false);
-			else if (!_strnicmp (pc, "OSync", 5))    instr = Create (MFD_OSYNC, _pane, _id, spec, _vessel, false);
-			else if (!_strnicmp (pc, "Transfer", 8)) instr = Create (MFD_TRANSFER, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "COM/NAV", 4))  instr = Create (MFD_COMMS, _pane, _id, spec, _vessel);
-			else if (!_strnicmp (pc, "User", 4))     instr = Create (MFD_USERTYPE, _pane, _id, spec, _vessel);
-#else // __linux__
 			if      (!strncasecmp (pc, "Orbit", 5))    instr = Create (MFD_ORBIT, _pane, _id, spec, _vessel);
 			else if (!strncasecmp (pc, "Surface", 7))  instr = Create (MFD_SURFACE, _pane, _id, spec, _vessel);
 			else if (!strncasecmp (pc, "Map", 3))      instr = Create (MFD_MAP, _pane, _id, spec, _vessel);
@@ -148,7 +130,6 @@ Instrument *Instrument::Create (ifstream &ifs, Pane *_pane,
 			else if (!strncasecmp (pc, "Transfer", 8)) instr = Create (MFD_TRANSFER, _pane, _id, spec, _vessel);
 			else if (!strncasecmp (pc, "COM/NAV", 4))  instr = Create (MFD_COMMS, _pane, _id, spec, _vessel);
 			else if (!strncasecmp (pc, "User", 4))     instr = Create (MFD_USERTYPE, _pane, _id, spec, _vessel);
-#endif // __linux__
 		}
 	}
 	if (instr) {
@@ -303,11 +284,7 @@ int Instrument::ModeIdFromKey (DWORD key)
 int Instrument::ModeFromNameOld (char *name, MFDMODESPEC **spec)
 {
 	for (DWORD i = 0; i < nGlobalModes; i++) {
-#ifndef __linux__
-		if (!_stricmp (GlobalMode[i].spec->name, name)) {
-#else // __linux__
 		if (!strcasecmp (GlobalMode[i].spec->name, name)) {
-#endif // __linux__
 			if (spec) *spec = GlobalMode[i].oldspec;
 			return GlobalMode[i].id;
 		}
@@ -318,11 +295,7 @@ int Instrument::ModeFromNameOld (char *name, MFDMODESPEC **spec)
 int Instrument::ModeFromName (char *name, MFDMODESPECEX **spec)
 {
 	for (DWORD i = 0; i < nGlobalModes; i++) {
-#ifndef __linux__
-		if (!_stricmp (GlobalMode[i].spec->name, name)) {
-#else // __linux__
 		if (!strcasecmp (GlobalMode[i].spec->name, name)) {
-#endif // __linux__
 			if (spec) *spec = GlobalMode[i].spec;
 			return GlobalMode[i].id;
 		}
@@ -335,11 +308,7 @@ int Instrument::VesselModeFromName (const char *name, MFDMODESPECEX **spec)
 	const MFDMODE *mlist;
 	DWORD nmode = vessel->GetMFDModes (&mlist);
 	for (DWORD i = 0; i < nmode; i++) {
-#ifndef __linux__
-		if (!_stricmp (mlist[i].spec->name, name)) {
-#else // __linux__
 		if (!strcasecmp (mlist[i].spec->name, name)) {
-#endif // __linux__
 			if (spec) *spec = mlist[i].spec;
 			return mlist[i].id;
 		}

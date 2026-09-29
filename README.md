@@ -1,6 +1,15 @@
 ![Orbiter logo](./Src/Orbiter/Bitmaps/banner.png)
 
 # Orbiter Space Flight Simulator — native Linux port
+# THIS REPOSITORY HAS BEEN RETIRED. USE THE NEW ONE LOCATED HERE: https://github.com/racerx2/orbiter-linux
+#
+#
+#
+#
+#
+
+
+
 
 Orbiter is a spaceflight simulator based on Newtonian mechanics. Its playground
 is our solar system with many of its major bodies – the sun, planets and moons.
